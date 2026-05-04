@@ -10,6 +10,7 @@ Valores padrao do fluxo:
 - Dataset: `Cabiunas 2025`
 - Dataset ID: `e2765c3eef2349cda5f5cbcb0fcd5a40`
 - Queue remota: `default`
+- Docker remoto: `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`
 
 O arquivo `clearml.conf` deve existir localmente na raiz do projeto, mas fica fora do Git.
 

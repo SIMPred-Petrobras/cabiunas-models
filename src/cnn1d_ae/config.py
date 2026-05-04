@@ -99,7 +99,7 @@ class PipelineConfig:
     CLEARML_PROJECT_NAME: str = "TesteMLCab"
     CLEARML_DATASET_ID: str = ""
     USE_CLEARML_DATASET: bool = True
-    CLEARML_DOCKER_IMAGE: str = "nvidia/cuda:12.6.3-cudnn-runtime-ubuntu20.04"
+    CLEARML_DOCKER_IMAGE: str = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime"
     RUN_REMOTE: bool = False
     REMOTE_QUEUE: str = "default"
 
