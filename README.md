@@ -24,7 +24,13 @@ export CLEARML_CONFIG_FILE="$(pwd)/clearml.conf"
 
 ## Criar/Atualizar Dataset
 
-O dataset ja foi criado no ClearML. Para criar uma nova versao a partir de um config:
+O dataset ja foi criado no ClearML. Para criar uma nova versao a partir de um config, use o uploader Python:
+
+```bash
+PYTHONPATH=. ../venv/bin/python scripts/upload_cabiunas_dataset.py --config configs/calibracao_v4_eq/record2025_tzm3_interpolado_v4_T5_AVG_A.json
+```
+
+Tambem existe o wrapper CLI legado:
 
 ```bash
 scripts/create_clearml_dataset_from_config.sh configs/calibracao_v4_eq/record2025_tzm3_interpolado_v4_T5_AVG_A.json "TesteMLCab" "Cabiunas 2025"

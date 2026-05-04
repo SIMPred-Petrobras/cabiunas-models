@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pickle
+import re
+import shutil
 from pathlib import Path
 from typing import Dict, List
 
@@ -17,17 +20,52 @@ def parse_args():
     return p.parse_args()
 
 
-def _safe_upload_file(task: Task, artifact_name: str, file_path: str) -> None:
-    if os.path.isfile(file_path):
-        try:
-            task.upload_artifact(name=artifact_name, artifact_object=file_path)
-        except Exception as exc:
-            print(f"[WARN] Falha no upload ClearML do artifact '{artifact_name}': {exc}")
+def _save_artifact_local(local_dir: Path, artifact_name: str, artifact_object) -> Path:
+    local_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^0-9a-zA-Z_.-]+", "_", artifact_name)
+
+    if isinstance(artifact_object, (str, Path)):
+        src = Path(artifact_object)
+        if src.exists() and src.is_file():
+            target = local_dir / f"{safe_name}{src.suffix}"
+            shutil.copy2(src, target)
+            return target
+
+    target = local_dir / f"{safe_name}.pkl"
+    with target.open("wb") as f:
+        pickle.dump(artifact_object, f)
+    return target
+
+
+def _publish_artifact(
+    task: Task,
+    artifact_name: str,
+    artifact_object,
+    local_dir: Path,
+    upload_to_clearml: bool = True,
+) -> Path | None:
+    local_path = None
+    try:
+        local_path = _save_artifact_local(local_dir, artifact_name, artifact_object)
+    except Exception as exc:
+        print(f"[WARN] Falha ao salvar artifact local '{artifact_name}': {exc}")
+
+    if not upload_to_clearml:
+        return local_path
+
+    try:
+        task.upload_artifact(name=artifact_name, artifact_object=artifact_object)
+    except Exception as exc:
+        print(f"[WARN] Falha no upload ClearML do artifact '{artifact_name}': {exc}")
+        if local_path is not None:
+            print(f"[INFO] Artifact '{artifact_name}' preservado localmente em: {local_path}")
+    return local_path
 
 
 def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
-    _safe_upload_file(task, "summary_all_sensors_csv", run_info.get("summary_path", ""))
-    _safe_upload_file(task, "time_integrity_report_json", run_info.get("time_report_path", ""))
+    local_task_dir = Path("artifacts_local") / task.id
+    _publish_artifact(task, "summary_all_sensors_csv", run_info.get("summary_path", ""), local_task_dir)
+    _publish_artifact(task, "time_integrity_report_json", run_info.get("time_report_path", ""), local_task_dir)
 
     sensor_outputs: List[Dict] = run_info.get("sensor_outputs", [])
     for out in sensor_outputs:
@@ -42,10 +80,10 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
                 file_path = os.path.join(csv_dir, name)
                 if os.path.isfile(file_path):
                     artifact_name = f"{sensor}/csv/{name}"
-                    _safe_upload_file(task, artifact_name, file_path)
+                    _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
 
         hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
-        _safe_upload_file(task, f"{sensor}/best_hyperparameters_json", hp_path)
+        _publish_artifact(task, f"{sensor}/best_hyperparameters_json", hp_path, local_task_dir / sensor)
 
 
 def main():

@@ -97,6 +97,7 @@ class PipelineConfig:
 
     # ClearML
     CLEARML_PROJECT_NAME: str = "TesteMLCab"
+    CLEARML_DATASET_NAME: str = "Cabiunas 2025"
     CLEARML_DATASET_ID: str = ""
     USE_CLEARML_DATASET: bool = True
     CLEARML_DOCKER_IMAGE: str = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime"

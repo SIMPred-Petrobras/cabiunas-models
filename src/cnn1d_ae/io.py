@@ -133,14 +133,21 @@ def _resolve_dataset_file(dataset_root: Path, configured_path: str) -> Path:
 
 def _resolve_input_paths(cfg: PipelineConfig) -> Tuple[str, str, str]:
     dataset_id = (cfg.CLEARML_DATASET_ID or os.getenv("CLEARML_DATASET_ID", "")).strip()
-    if not (cfg.USE_CLEARML_DATASET and dataset_id):
+    if not cfg.USE_CLEARML_DATASET:
         return cfg.ALARM_CSV, cfg.FEATURES_CSV, cfg.RAW_CSV
 
     from clearml import Dataset
 
-    dataset = Dataset.get(dataset_id=dataset_id)
+    if dataset_id:
+        dataset = Dataset.get(dataset_id=dataset_id)
+    else:
+        dataset = Dataset.get(
+            dataset_name=cfg.CLEARML_DATASET_NAME,
+            dataset_project=cfg.CLEARML_PROJECT_NAME,
+        )
     dataset_root = Path(dataset.get_local_copy())
-    print(f"[CLEARML-DATASET] Usando dataset_id={dataset_id}")
+    print(f"[CLEARML-DATASET] Usando dataset_id={dataset.id}")
+    print(f"[CLEARML-DATASET] Dataset: {cfg.CLEARML_PROJECT_NAME}/{cfg.CLEARML_DATASET_NAME}")
     print(f"[CLEARML-DATASET] Local copy: {dataset_root}")
 
     alarm_csv = _resolve_dataset_file(dataset_root, cfg.ALARM_CSV)
