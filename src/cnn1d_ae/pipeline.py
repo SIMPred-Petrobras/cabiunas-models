@@ -1,0 +1,304 @@
+from __future__ import annotations
+
+import os
+import json
+import re
+from dataclasses import asdict
+from typing import Dict, List, Any
+
+import numpy as np
+import pandas as pd
+
+from .config import PipelineConfig
+from .io import ensure_sensor_dirs, save_run_config, load_data, resolve_output_dir
+from .model import setup_gpu
+from .preprocess import (
+    build_sensor_dataframe,
+    build_exclusion_mask,
+    clip_outliers,
+    normalize_train_only,
+)
+from .sequences import make_sequences, train_val_split
+from .tuning import run_tuner, refit_best_model
+from .scoring import (
+    reconstruction_mae_per_seq,
+    compute_threshold,
+    map_seq_to_point_anomalies,
+    build_sequence_scores_df,
+    compute_anomaly_rate_per_day,
+    build_operational_state,
+    mask_anomaly_seq_by_operational_state,
+)
+from .plots import (
+    plot_loss,
+    plot_hist_mae,
+    plot_series_with_anomalies,
+    plot_series_alarm_anomaly_subplots,
+)
+
+
+def discover_sensors(cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.DataFrame) -> List[str]:
+    source_df = df_raw if cfg.TRAIN_SOURCE.lower() == "raw" else df_feat
+    cols = [c for c in source_df.columns if c != cfg.TIME_COL]
+
+    if cfg.SENSOR_REGEX:
+        pat = re.compile(cfg.SENSOR_REGEX)
+        cols = [c for c in cols if pat.search(c)]
+
+    if cfg.MODE.lower() == "local":
+        if cfg.SENSOR_LIST:
+            want = set(cfg.SENSOR_LIST)
+            cols = [c for c in cols if c in want]
+
+    if cfg.SENSOR_EXCLUDE:
+        bad = set(cfg.SENSOR_EXCLUDE)
+        cols = [c for c in cols if c not in bad]
+
+    return sorted(cols)
+
+
+def eval_alarm_hit_rate(df_alarm: pd.DataFrame, df_point: pd.DataFrame, minutes: int) -> Dict:
+    win = pd.Timedelta(minutes=minutes)
+    hits = 0
+    for t in df_alarm["Data da Ocorrencia"]:
+        t0 = t - win
+        t1 = t + win
+        if df_point.loc[(df_point.index >= t0) & (df_point.index <= t1), "is_anom_point"].sum() > 0:
+            hits += 1
+
+    total = len(df_alarm)
+    hit_rate = hits / total if total > 0 else np.nan
+    return {
+        "n_alarms": int(total),
+        "alarms_with_detected_anomaly_in_window": int(hits),
+        "hit_rate": float(hit_rate) if np.isfinite(hit_rate) else None,
+    }
+
+
+def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.DataFrame, df_raw: pd.DataFrame, sensor: str) -> Dict:
+    out_dirs = ensure_sensor_dirs(cfg, sensor)
+    save_run_config(cfg, out_dirs)
+
+    model_path = os.path.join(out_dirs["best_model"], "model.keras")
+    if (not cfg.OVERWRITE) and os.path.exists(model_path):
+        print(f"[SKIP] {sensor} (modelo ja existe: {model_path})")
+        return {"sensor": sensor, "skipped": True, "reason": "model_exists", "model_path": model_path}
+
+    print("\n==============================")
+    print(f"[SENSOR] {sensor}")
+    print(f"[OUT]    {out_dirs['root']}")
+    print("==============================")
+
+    df_use, long_gap_mask = build_sensor_dataframe(cfg, df_feat, df_raw, sensor)
+
+    if "Tag" in df_alarm.columns:
+        df_alarm_sensor = df_alarm.loc[df_alarm["Tag"] == sensor].copy()
+    else:
+        df_alarm_sensor = df_alarm.copy()
+    if "Data da Ocorrencia" in df_alarm_sensor.columns:
+        df_alarm_sensor = df_alarm_sensor.dropna(subset=["Data da Ocorrencia"]).sort_values("Data da Ocorrencia")
+
+    if float(df_use[sensor].std()) < cfg.MIN_STD:
+        print(f"[SKIP] {sensor} (std muito baixo, sensor provavelmente travado)")
+        return {"sensor": sensor, "skipped": True, "reason": "low_std"}
+
+    exclude_alarm = build_exclusion_mask(
+        df_use.index,
+        df_alarm_sensor["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_sensor.columns else pd.Series(dtype="datetime64[ns]"),
+        cfg.EXCLUDE_MINUTES_AROUND_ALARM,
+    )
+
+    exclude = exclude_alarm.copy()
+    if cfg.EXCLUDE_LONG_GAPS_FROM_TRAIN:
+        long_gap_mask = long_gap_mask.reindex(df_use.index).fillna(False)
+        exclude = exclude | long_gap_mask
+
+    df_normal = df_use.loc[~exclude].copy()
+    df_all = df_use.copy()
+
+    if len(df_normal) < cfg.TIME_STEPS + 10:
+        print(f"[SKIP] {sensor} (poucos dados normais apos exclusao)")
+        return {"sensor": sensor, "skipped": True, "reason": "few_normal_points"}
+
+    df_normal = clip_outliers(df_normal, cfg)
+    df_all = clip_outliers(df_all, cfg)
+
+    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all)
+
+    values_normal = df_normal_z.values.astype(np.float32)
+    values_all = df_all_z.values.astype(np.float32)
+
+    x_train_full = make_sequences(values_normal, cfg.TIME_STEPS, cfg.STRIDE)
+    x_train, x_val = train_val_split(
+        x_train_full,
+        cfg.VAL_FRAC,
+        cfg.SHUFFLE_TRAIN,
+        cfg.RANDOM_SEED,
+        split_mode=cfg.SPLIT_MODE,
+    )
+    n_features = x_train.shape[-1]
+
+    best_hp, best_model, df_trials = run_tuner(cfg, out_dirs, x_train, x_val, n_features)
+    df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
+
+    with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w", encoding="utf-8") as f:
+        json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
+
+    history = refit_best_model(cfg, best_model, x_train, x_val)
+    best_model.save(model_path)
+
+    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+
+    train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
+    threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
+
+    plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
+
+    x_all = make_sequences(values_all, cfg.TIME_STEPS, cfg.STRIDE)
+    mae_seq_all = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
+    anomaly_seq = mae_seq_all > threshold
+    state = None
+    if cfg.ENABLE_OPERATIONAL_MASK:
+        state = build_operational_state(
+            index=df_all_z.index,
+            sensor_series=df_all[sensor],
+            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
+            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
+            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
+            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+        )
+        anomaly_seq = mask_anomaly_seq_by_operational_state(
+            anomaly_seq=anomaly_seq,
+            index=df_all_z.index,
+            time_steps=cfg.TIME_STEPS,
+            state=state,
+        )
+
+    all_index = df_all_z.index
+    df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq)
+    df_seq_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"), index=False)
+
+    df_point = map_seq_to_point_anomalies(
+        anomaly_seq,
+        all_index,
+        cfg.TIME_STEPS,
+        cfg.POINT_RULE,
+        cfg.POINT_WINDOW,
+        cfg.POINT_MIN_COUNT,
+    )
+    if state is not None:
+        df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
+        df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+    df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
+
+    anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
+    plot_series_with_anomalies(
+        df_all[sensor],
+        anomalous_times,
+        os.path.join(out_dirs["figs"], "series_with_anomalies.png"),
+        title=f"Serie + anomalias (CNN1D-AE) | sensor={sensor}",
+        operational_state=state,
+    )
+    plot_series_alarm_anomaly_subplots(
+        df_all[sensor],
+        anomalous_times,
+        df_alarm_sensor["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_sensor.columns else pd.Series(dtype="datetime64[ns]"),
+        os.path.join(out_dirs["figs"], "series_alarm_anomaly_subplots.png"),
+        title=f"{sensor}",
+        operational_state=state,
+    )
+
+    eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+
+    calibration_report = {
+        "sensor": sensor,
+        "threshold": float(threshold),
+        "THRESH_MODE": cfg.THRESH_MODE,
+        "TARGET_ANOMALY_RATE": float(cfg.TARGET_ANOMALY_RATE),
+        "POINT_RULE": cfg.POINT_RULE,
+        "POINT_WINDOW": int(cfg.POINT_WINDOW),
+        "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
+        "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
+        "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        **eval_stats,
+    }
+    if state is not None:
+        counts = state.value_counts().to_dict()
+        calibration_report["operational_state_counts"] = {str(k): int(v) for k, v in counts.items()}
+    with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
+        json.dump(calibration_report, f, indent=2, ensure_ascii=False)
+
+    report = {
+        "sensor": sensor,
+        "output_dir": out_dirs["root"],
+        "model_path": model_path,
+        "threshold": float(threshold),
+        "THRESH_MODE": cfg.THRESH_MODE,
+        **eval_stats,
+        "skipped": False,
+    }
+    with open(os.path.join(out_dirs["csv"], "evaluation_alarm_hit_rate.json"), "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    return report
+
+
+def _worker_entry(cfg_dict: Dict, sensor: str) -> Dict:
+    cfg = PipelineConfig(**cfg_dict)
+    setup_gpu()
+    df_alarm, df_feat, df_raw, _ = load_data(cfg)
+    return run_one_sensor(cfg, df_alarm, df_feat, df_raw, sensor)
+
+
+def run(cfg: PipelineConfig) -> Dict[str, Any]:
+    setup_gpu()
+    df_alarm, df_feat, df_raw, time_report = load_data(cfg)
+
+    sensors = discover_sensors(cfg, df_feat, df_raw)
+    if not sensors:
+        raise ValueError("Nenhum sensor encontrado apos filtros do config.")
+
+    print(f"[MODE] {cfg.MODE} | sensors={len(sensors)} | N_WORKERS={cfg.N_WORKERS}")
+    print(f"[SENSORS] primeiros 20: {sensors[:20]}")
+
+    summary_out_root = cfg.OUTPUT_ROOT if cfg.OUTPUT_ROOT else "."
+    os.makedirs(summary_out_root, exist_ok=True)
+    summary_path = os.path.join(summary_out_root, "summary_all_sensors.csv")
+    time_report_path = os.path.join(summary_out_root, "time_integrity_report.json")
+    with open(time_report_path, "w", encoding="utf-8") as f:
+        json.dump(time_report, f, indent=2, ensure_ascii=False)
+
+    rows = []
+
+    if cfg.N_WORKERS <= 1:
+        for s in sensors:
+            try:
+                rows.append(run_one_sensor(cfg, df_alarm, df_feat, df_raw, s))
+            except Exception as e:
+                print(f"[ERROR] sensor={s} -> {e}")
+                rows.append({"sensor": s, "skipped": True, "reason": f"exception: {e}", "output_dir": resolve_output_dir(cfg, s)})
+    else:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        cfg_dict = asdict(cfg)
+        with ProcessPoolExecutor(max_workers=cfg.N_WORKERS) as ex:
+            futures = {ex.submit(_worker_entry, cfg_dict, s): s for s in sensors}
+            for fut in as_completed(futures):
+                s = futures[fut]
+                try:
+                    rows.append(fut.result())
+                except Exception as e:
+                    print(f"[ERROR] sensor={s} -> {e}")
+                    rows.append({"sensor": s, "skipped": True, "reason": f"exception: {e}", "output_dir": resolve_output_dir(cfg, s)})
+
+    df_summary = pd.DataFrame(rows).sort_values(["skipped", "sensor"])
+    df_summary.to_csv(summary_path, index=False)
+    print(f"\n[DONE] Summary salvo em: {summary_path}")
+
+    return {
+        "summary_path": summary_path,
+        "time_report_path": time_report_path,
+        "sensor_outputs": rows,
+        "sensors": sensors,
+    }

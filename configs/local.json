@@ -1,0 +1,36 @@
+{
+  "MODE": "local",
+  "N_WORKERS": 1,
+
+  "FEATURES_CSV": "data/features_TodosSensores.csv",
+  "RAW_CSV": "data/sensores_filtrados_2025.csv",
+  "ALARM_CSV": "data/ocorrencia_alarmes_sensores_2025.csv",
+  "TIME_COL": "data_datetime",
+
+  "OUTPUT_ROOT": "runs_local",
+  "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
+
+  "TRAIN_SOURCE": "raw",
+
+  "SENSOR_LIST": ["T5_AVG_A", "TC382_05_A"],
+  "SENSOR_EXCLUDE": null,
+  "SENSOR_REGEX": null,
+
+  "EXCLUDE_MINUTES_AROUND_ALARM": 1440,
+  "TIME_STEPS": 60,
+  "STRIDE": 1,
+
+  "VAL_FRAC": 0.10,
+  "SHUFFLE_TRAIN": true,
+
+  "MAX_TRIALS": 10,
+  "EXECUTIONS_PER_TRIAL": 1,
+  "EPOCHS": 20,
+  "BATCH_SIZE": 1024,
+  "PATIENCE": 6,
+
+  "THRESH_MODE": "p99",
+  "RANDOM_SEED": 42,
+
+  "OVERWRITE": true
+}
