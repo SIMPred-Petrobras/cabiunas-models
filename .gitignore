@@ -9,6 +9,7 @@ runs*/
 OUTPUT*/
 resultados*/
 artifacts_local/
+task_plots/
 
 venv/
 .venv/
