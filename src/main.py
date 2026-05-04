@@ -102,13 +102,6 @@ def main():
         cfg.CLEARML_DATASET_ID = dataset_id
         d["CLEARML_DATASET_ID"] = dataset_id
 
-    Task.add_requirements("clearml")
-    Task.add_requirements("numpy")
-    Task.add_requirements("pandas")
-    Task.add_requirements("matplotlib")
-    Task.add_requirements("tensorflow")
-    Task.add_requirements("keras-tuner")
-
     project_name = cfg.CLEARML_PROJECT_NAME
     task_name = f"cnn1d-ae::{path.stem}"
     task = Task.init(
