@@ -14,7 +14,10 @@ from .io import ensure_sensor_dirs, save_run_config, load_data, resolve_output_d
 from .model import setup_gpu
 from .preprocess import (
     build_sensor_dataframe,
+    apply_hampel_filter,
     build_exclusion_mask,
+    build_startup_exclusion_mask,
+    build_stable_gradient_mask,
     clip_outliers,
     apply_feature_engineering,
     normalize_train_only,
@@ -130,6 +133,9 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     time_steps_report = _validate_or_resolve_time_steps(cfg, df_use.index, sensor)
     save_run_config(cfg, out_dirs)
 
+    # Filtro de Hampel para spikes isolados (pós-interpolação, pré-divisão normal/all)
+    df_use = apply_hampel_filter(df_use, sensor, cfg)
+
     if "Tag" in df_alarm.columns:
         df_alarm_sensor = df_alarm.loc[df_alarm["Tag"] == sensor].copy()
     else:
@@ -151,6 +157,24 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     if cfg.EXCLUDE_LONG_GAPS_FROM_TRAIN:
         long_gap_mask = long_gap_mask.reindex(df_use.index).fillna(False)
         exclude = exclude | long_gap_mask
+
+    # Exclusão pós-startup: remove rampa de temperatura do conjunto de treino
+    if cfg.EXCLUDE_STARTUP_MINUTES > 0:
+        off_thr = (
+            float(cfg.OFF_ABS_THRESHOLD)
+            if cfg.OFF_ABS_THRESHOLD is not None
+            else float(df_use[sensor].quantile(cfg.OFF_VALUE_QUANTILE))
+        )
+        startup_excl = build_startup_exclusion_mask(
+            df_use.index, df_use[sensor], off_thr, cfg.EXCLUDE_STARTUP_MINUTES
+        )
+        n_startup_excl = int(startup_excl.sum())
+        if n_startup_excl:
+            print(
+                f"[STARTUP-EXCL] sensor={sensor}: {n_startup_excl} pontos excluidos do treino "
+                f"({n_startup_excl*30/60:.0f} min, EXCLUDE_STARTUP_MINUTES={cfg.EXCLUDE_STARTUP_MINUTES})."
+            )
+        exclude = exclude | startup_excl
 
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
@@ -174,9 +198,20 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "context_cols": [c for c in (cfg.CONTEXT_COLS or []) if c in df_normal.columns and c != sensor],
         "feature_columns": list(df_normal.columns),
         "n_features": int(df_normal.shape[1]),
+        "sentinel_mode": cfg.SENTINEL_MODE,
+        "hampel_filter_enabled": bool(cfg.ENABLE_HAMPEL_FILTER),
+        "normalize_on_stable_only": bool(cfg.NORMALIZE_ON_STABLE_ONLY),
+        "exclude_startup_minutes": int(cfg.EXCLUDE_STARTUP_MINUTES),
     }
 
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all)
+    # Máscara de gradiente estável para normalização robusta (anti-bimodalidade)
+    stable_mask = None
+    if cfg.NORMALIZE_ON_STABLE_ONLY:
+        stable_mask = build_stable_gradient_mask(
+            df_normal, sensor, cfg.STABLE_ON_GRADIENT_QUANTILE
+        )
+
+    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all, stable_mask=stable_mask)
 
     values_normal = df_normal_z.values.astype(np.float32)
     values_all = df_all_z.values.astype(np.float32)

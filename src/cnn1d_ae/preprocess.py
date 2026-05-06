@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from typing import Optional, Tuple
+
 import numpy as np
 import pandas as pd
-from typing import Tuple
 
 from .config import PipelineConfig
 from .feature_engineering import generate_features
 
+
+# ---------------------------------------------------------------------------
+# Helpers internos
+# ---------------------------------------------------------------------------
 
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     missing = series.isna()
@@ -15,11 +20,151 @@ def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     return missing & (run_len > int(interpolate_limit))
 
 
+# ---------------------------------------------------------------------------
+# 1. Detecção de valores sentinela
+# ---------------------------------------------------------------------------
+
+def detect_and_mask_sentinels(
+    series: pd.Series,
+    low: Optional[float],
+    high: Optional[float],
+) -> Tuple[pd.Series, int]:
+    """
+    Substitui por NaN valores fora dos limites físicos do sensor antes da interpolação.
+
+    Valores como -40.5 °C indicam falha de instrumento (thermocouple aberto) e criam
+    gradientes artificiais de 600+ °C/30 s que disparam falsos positivos no autoencoder.
+    Marcá-los como NaN permite que a interpolação (limitada a INTERPOLATE_LIMIT pontos)
+    ou o long_gap_mask os trate corretamente.
+
+    Returns:
+        (série corrigida, número de pontos mascarados)
+    """
+    result = series.copy()
+    mask = pd.Series(False, index=series.index)
+    if low is not None:
+        mask |= result < float(low)
+    if high is not None:
+        mask |= result > float(high)
+    result[mask] = np.nan
+    n_masked = int(mask.sum())
+    return result, n_masked
+
+
+# ---------------------------------------------------------------------------
+# 2. Filtro de Hampel para spikes isolados
+# ---------------------------------------------------------------------------
+
+def hampel_filter(
+    series: pd.Series,
+    window: int = 5,
+    sigma: float = 3.0,
+) -> Tuple[pd.Series, int]:
+    """
+    Filtro de Hampel: detecta e substitui outliers isolados usando MAD em janela deslizante.
+
+    Diferente do clipping global, o Hampel usa contexto local, preservando rampas
+    sustentadas (startups) e removendo apenas picos de medição isolados.
+
+    Algoritmo:
+        mediana_local = mediana(janela de 2k+1 pontos centrada no ponto)
+        MAD_local = mediana(|x - mediana_local|) na mesma janela
+        spike se |x - mediana_local| > sigma * 1.4826 * MAD_local
+        substituição: mediana_local (não NaN, série contínua)
+
+    Returns:
+        (série filtrada, número de spikes substituídos)
+    """
+    k = max(1, int(window))
+    w = 2 * k + 1
+    result = series.copy().astype(float)
+
+    roll_median = series.rolling(window=w, center=True, min_periods=1).median()
+    roll_mad = (series - roll_median).abs().rolling(window=w, center=True, min_periods=1).median()
+    threshold = float(sigma) * 1.4826 * roll_mad
+
+    # Quando MAD=0 (sinal perfeitamente plano) qualquer desvio da mediana é spike;
+    # quando MAD>0 usa o critério sigma*1.4826*MAD como limiar.
+    spike_mask = (series - roll_median).abs() > threshold
+
+    result[spike_mask] = roll_median[spike_mask]
+    n_spikes = int(spike_mask.sum())
+    return result, n_spikes
+
+
+# ---------------------------------------------------------------------------
+# 3. Máscara de gradiente estável para normalização robusta
+# ---------------------------------------------------------------------------
+
+def build_stable_gradient_mask(
+    df: pd.DataFrame,
+    sensor: str,
+    quantile: float = 0.95,
+) -> pd.Series:
+    """
+    Identifica pontos de operação estável: gradiente do sensor abaixo do quantile dado.
+
+    Usado para calcular center/scale da normalização somente sobre dados estáveis,
+    evitando que a distribuição bimodal ON/OFF desloque o z-score para o "vácuo"
+    entre os dois regimes e comprima o sinal de temperatura de operação normal.
+    """
+    s = pd.to_numeric(df[sensor], errors="coerce")
+    grad = s.diff().abs().fillna(0.0)
+    thr = float(grad.quantile(float(np.clip(quantile, 0.0, 1.0))))
+    return grad <= thr
+
+
+# ---------------------------------------------------------------------------
+# 4. Máscara de exclusão pós-startup
+# ---------------------------------------------------------------------------
+
+def build_startup_exclusion_mask(
+    index: pd.DatetimeIndex,
+    sensor_series: pd.Series,
+    off_threshold: float,
+    minutes_after_startup: int,
+) -> pd.Series:
+    """
+    Exclui do treino X minutos após cada evento de startup (sensor cruza OFF→ON).
+
+    O modelo não deve aprender a rampa de temperatura (32→670 °C em ~3 min) como
+    padrão normal — ela cria janelas com gradiente extremo que o autoencoder não
+    consegue reconstruir, gerando falsos positivos no início de cada partida.
+
+    Startup detectado quando: sensor_series cruza de ≤ off_threshold para > off_threshold.
+    """
+    mask = pd.Series(False, index=index)
+    if minutes_after_startup <= 0:
+        return mask
+
+    s = pd.to_numeric(sensor_series.reindex(index), errors="coerce").ffill().bfill()
+    is_off = s <= float(off_threshold)
+    # Startup: ponto atual ON, ponto anterior OFF
+    startup = (~is_off) & is_off.shift(1, fill_value=True)
+    startup_times = index[startup.values]
+
+    delta = pd.Timedelta(minutes=int(minutes_after_startup))
+    for t in startup_times:
+        mask.loc[(mask.index >= t) & (mask.index <= t + delta)] = True
+    return mask
+
+
+# ---------------------------------------------------------------------------
+# 5. Construção do DataFrame do sensor (com sentinel + interpolação)
+# ---------------------------------------------------------------------------
+
 def build_sensor_dataframe(
     cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.DataFrame, sensor: str
 ) -> Tuple[pd.DataFrame, pd.Series]:
     """
-    Retorna DF indexado pelo tempo com coluna(s) do sensor + mascara de pontos em gaps longos.
+    Retorna DF indexado pelo tempo com coluna(s) do sensor + máscara de gaps longos.
+
+    Pipeline de limpeza:
+        1. Selecionar colunas e deduplicar timestamps
+        2. Converter para numérico
+        3. Detectar e mascarar valores sentinela (se SENTINEL_MODE != "none")
+        4. Calcular long_gap_mask ANTES da interpolação (inclui buracos criados por sentinelas)
+        5. Interpolar (limit=INTERPOLATE_LIMIT), fallback temporal, fallback borda
     """
     source = cfg.TRAIN_SOURCE.lower()
 
@@ -42,13 +187,25 @@ def build_sensor_dataframe(
 
     before_dupes = int(df_use.duplicated(subset=[cfg.TIME_COL]).sum())
     if before_dupes:
-        print(f"[DATA-CLEAN] sensor={sensor}: removendo {before_dupes} timestamps duplicados antes das sequencias.")
+        print(f"[DATA-CLEAN] sensor={sensor}: removendo {before_dupes} timestamps duplicados.")
     df_use = df_use.sort_values(cfg.TIME_COL).drop_duplicates(subset=[cfg.TIME_COL], keep="first")
 
     for col in selected_cols:
         if col != cfg.TIME_COL:
             df_use[col] = pd.to_numeric(df_use[col], errors="coerce")
 
+    # --- Detecção de sentinelas (antes da interpolação para não propagar artefatos) ---
+    if cfg.SENTINEL_MODE.lower() != "none":
+        df_use[sensor], n_sentinel = detect_and_mask_sentinels(
+            df_use[sensor], cfg.SENTINEL_LOW, cfg.SENTINEL_HIGH
+        )
+        if n_sentinel:
+            print(
+                f"[SENTINEL] sensor={sensor}: {n_sentinel} valores sentinela mascarados "
+                f"(low={cfg.SENTINEL_LOW}, high={cfg.SENTINEL_HIGH})."
+            )
+
+    # long_gap_mask calculado sobre os dados já com sentinelas como NaN
     long_gap_raw = _long_gap_mask(df_use[sensor], cfg.INTERPOLATE_LIMIT)
 
     df_use = df_use.set_index(cfg.TIME_COL).sort_index()
@@ -60,16 +217,15 @@ def build_sensor_dataframe(
         print(
             f"[DATA-CLEAN] sensor={sensor}: {n_missing_after_interp} NaNs restantes apos "
             f"interpolacao limitada (INTERPOLATE_LIMIT={cfg.INTERPOLATE_LIMIT}). "
-            "Aplicando fallback explicito de interpolacao temporal; gaps longos seguem "
-            "marcados para exclusao do treino via long_gap_mask."
+            "Aplicando fallback de interpolacao temporal."
         )
         df_use[sensor] = df_use[sensor].interpolate(method="time", limit_direction="both")
 
     n_missing_after_fallback = int(df_use[sensor].isna().sum())
     if n_missing_after_fallback:
         print(
-            f"[DATA-CLEAN] sensor={sensor}: {n_missing_after_fallback} NaNs ainda restantes "
-            "apos interpolacao temporal; aplicando preenchimento de borda como ultimo recurso."
+            f"[DATA-CLEAN] sensor={sensor}: {n_missing_after_fallback} NaNs restantes "
+            "apos interpolacao temporal; preenchendo bordas."
         )
         df_use[sensor] = df_use[sensor].ffill().bfill()
 
@@ -77,6 +233,37 @@ def build_sensor_dataframe(
 
     return df_use, long_gap_raw
 
+
+# ---------------------------------------------------------------------------
+# 6. Aplicação do filtro de Hampel pós-interpolação
+# ---------------------------------------------------------------------------
+
+def apply_hampel_filter(
+    df: pd.DataFrame,
+    sensor: str,
+    cfg: PipelineConfig,
+) -> pd.DataFrame:
+    """
+    Aplica o filtro de Hampel ao sensor principal se ENABLE_HAMPEL_FILTER=True.
+    Chamado após interpolação e antes da divisão df_normal/df_all.
+    """
+    if not cfg.ENABLE_HAMPEL_FILTER:
+        return df
+
+    out = df.copy()
+    cleaned, n_spikes = hampel_filter(out[sensor], window=cfg.HAMPEL_WINDOW, sigma=cfg.HAMPEL_SIGMA)
+    if n_spikes:
+        print(
+            f"[HAMPEL] sensor={sensor}: {n_spikes} spikes isolados substituidos "
+            f"(window={cfg.HAMPEL_WINDOW}, sigma={cfg.HAMPEL_SIGMA})."
+        )
+    out[sensor] = cleaned
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 7. Feature engineering wrapper
+# ---------------------------------------------------------------------------
 
 def apply_feature_engineering(
     df_normal: pd.DataFrame,
@@ -93,6 +280,10 @@ def apply_feature_engineering(
     )
 
 
+# ---------------------------------------------------------------------------
+# 8. Máscara de exclusão baseada em alarmes
+# ---------------------------------------------------------------------------
+
 def build_exclusion_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minutes: int) -> pd.Series:
     exclude = pd.Series(False, index=index)
     delta = pd.Timedelta(minutes=minutes)
@@ -102,6 +293,10 @@ def build_exclusion_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minute
         exclude.loc[(exclude.index >= t0) & (exclude.index <= t1)] = True
     return exclude
 
+
+# ---------------------------------------------------------------------------
+# 9. Clipping de outliers globais
+# ---------------------------------------------------------------------------
 
 def clip_outliers(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
     mode = cfg.OUTLIER_MODE.lower()
@@ -124,18 +319,51 @@ def clip_outliers(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
     raise ValueError("OUTLIER_MODE invalido. Use 'none', 'quantile' ou 'mad'.")
 
 
+# ---------------------------------------------------------------------------
+# 10. Normalização com suporte a subconjunto estável
+# ---------------------------------------------------------------------------
+
 def normalize_train_only(
-    cfg: PipelineConfig, df_normal: pd.DataFrame, df_all: pd.DataFrame
+    cfg: PipelineConfig,
+    df_normal: pd.DataFrame,
+    df_all: pd.DataFrame,
+    stable_mask: Optional[pd.Series] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """
+    Calcula center/scale a partir de df_normal (dados sem alarmes).
+
+    Se NORMALIZE_ON_STABLE_ONLY=True e stable_mask fornecida, restringe o cálculo
+    de estatísticas aos pontos estáveis (baixo gradiente), corrigindo a distorção
+    causada pela distribuição bimodal ON/OFF dos sensores de temperatura.
+
+    Retorna: (df_normal_z, df_all_z, center, scale)
+    """
     mode = cfg.NORMALIZE_MODE.lower()
 
+    df_ref = df_normal
+    if cfg.NORMALIZE_ON_STABLE_ONLY and stable_mask is not None:
+        stable_in_normal = stable_mask.reindex(df_normal.index).fillna(False)
+        df_stable = df_normal[stable_in_normal]
+        min_pts = max(cfg.TIME_STEPS * 2, 100)
+        if len(df_stable) >= min_pts:
+            df_ref = df_stable
+            print(
+                f"[NORMALIZE] Usando {len(df_ref):,} pontos estaveis de {len(df_normal):,} "
+                f"normais ({100*len(df_ref)/max(len(df_normal),1):.1f}%) para center/scale."
+            )
+        else:
+            print(
+                f"[NORMALIZE] Pontos estaveis insuficientes ({len(df_stable)}); "
+                "usando conjunto normal completo."
+            )
+
     if mode == "zscore":
-        center = df_normal.mean(axis=0)
-        scale = df_normal.std(axis=0).replace(0, 1.0)
+        center = df_ref.mean(axis=0)
+        scale = df_ref.std(axis=0).replace(0, 1.0)
     elif mode == "robust":
-        center = df_normal.median(axis=0)
-        q1 = df_normal.quantile(0.25)
-        q3 = df_normal.quantile(0.75)
+        center = df_ref.median(axis=0)
+        q1 = df_ref.quantile(0.25)
+        q3 = df_ref.quantile(0.75)
         scale = (q3 - q1).replace(0, 1.0)
     else:
         raise ValueError("NORMALIZE_MODE invalido. Use 'zscore' ou 'robust'.")

@@ -58,6 +58,27 @@ class PipelineConfig:
     OUTLIER_MAD_K: float = 6.0
     NORMALIZE_MODE: str = "zscore"  # "zscore" | "robust"
 
+    # Detecção e remoção de valores sentinela (ex: -40.5°C = thermocouple aberto)
+    # Aplicado antes da interpolação; valores fora do range físico viram NaN
+    SENTINEL_MODE: str = "none"  # "none" | "clip"
+    SENTINEL_LOW: Optional[float] = None   # ex: -10.0 para sensores de temperatura
+    SENTINEL_HIGH: Optional[float] = None  # ex: 900.0 para sensores de temperatura
+
+    # Filtro de Hampel: remove spikes isolados (não remove rampas sustentadas)
+    # Janela efetiva = 2*HAMPEL_WINDOW + 1 pontos; limiar = HAMPEL_SIGMA * 1.4826 * MAD
+    ENABLE_HAMPEL_FILTER: bool = False
+    HAMPEL_WINDOW: int = 5     # pontos de cada lado da janela central
+    HAMPEL_SIGMA: float = 3.0  # equivalente a 3σ
+
+    # Normalização somente sobre períodos de operação estável
+    # Evita distorção do z-score pela distribuição bimodal ON/OFF
+    NORMALIZE_ON_STABLE_ONLY: bool = False
+    STABLE_ON_GRADIENT_QUANTILE: float = 0.95  # pontos com grad <= quantile são "estáveis"
+
+    # Exclusão de X minutos após cada startup do conjunto de treino
+    # Cobre a rampa de temperatura que o modelo não deve aprender como "normal"
+    EXCLUDE_STARTUP_MINUTES: int = 0
+
     # Sequencias
     # Exploratorio: TIME_STEPS=48, EPOCHS=10, PATIENCE=2, MAX_TRIALS=10.
     # Calibracao final recomendada: definir CONTEXT_HOURS conforme janela fisica desejada,
