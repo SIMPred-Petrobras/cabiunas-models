@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,6 +10,21 @@ from urllib.parse import urlparse
 import matplotlib.pyplot as plt
 import pandas as pd
 from clearml import Dataset, Task
+
+
+def _ensure_clearml_config() -> None:
+    if os.getenv("CLEARML_CONFIG_FILE"):
+        return
+
+    local_config = Path.cwd() / "clearml.conf"
+    if local_config.is_file():
+        os.environ["CLEARML_CONFIG_FILE"] = str(local_config)
+        return
+
+    raise RuntimeError(
+        "ClearML nao esta configurado. Rode a partir da raiz do projeto com clearml.conf "
+        "ou exporte CLEARML_CONFIG_FILE=/caminho/para/clearml.conf"
+    )
 
 
 def _copy_artifact(task: Task, artifact_name: str, out_dir: Path) -> Path:
@@ -186,6 +202,7 @@ def _plot_summary(summary: pd.DataFrame, out_path: Path) -> None:
 
 
 def generate_plots(task_id: str, out_dir: Path, include_raw: bool = False) -> None:
+    _ensure_clearml_config()
     task = Task.get_task(task_id=task_id)
     cfg = _pipeline_params(task)
     sensor_list = cfg.get("SENSOR_LIST") or []
