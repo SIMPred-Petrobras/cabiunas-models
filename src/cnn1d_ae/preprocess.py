@@ -57,11 +57,22 @@ def build_sensor_dataframe(
     df_use[sensor] = df_use[sensor].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
     n_missing_after_interp = int(df_use[sensor].isna().sum())
     if n_missing_after_interp:
-        raise ValueError(
-            f"Sensor '{sensor}' ainda possui {n_missing_after_interp} NaNs apos interpolacao "
-            f"(INTERPOLATE_LIMIT={cfg.INTERPOLATE_LIMIT}). Como os dados devem chegar 100% "
-            "interpolados/confiaveis, revise o CSV ou aumente explicitamente o limite."
+        print(
+            f"[DATA-CLEAN] sensor={sensor}: {n_missing_after_interp} NaNs restantes apos "
+            f"interpolacao limitada (INTERPOLATE_LIMIT={cfg.INTERPOLATE_LIMIT}). "
+            "Aplicando fallback explicito de interpolacao temporal; gaps longos seguem "
+            "marcados para exclusao do treino via long_gap_mask."
         )
+        df_use[sensor] = df_use[sensor].interpolate(method="time", limit_direction="both")
+
+    n_missing_after_fallback = int(df_use[sensor].isna().sum())
+    if n_missing_after_fallback:
+        print(
+            f"[DATA-CLEAN] sensor={sensor}: {n_missing_after_fallback} NaNs ainda restantes "
+            "apos interpolacao temporal; aplicando preenchimento de borda como ultimo recurso."
+        )
+        df_use[sensor] = df_use[sensor].ffill().bfill()
+
     assert not df_use[sensor].isna().any(), "Falha interna: NaN remanescente apos interpolacao."
 
     return df_use, long_gap_raw
