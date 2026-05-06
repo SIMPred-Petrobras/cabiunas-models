@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Any, Dict, List, Optional
 
 
@@ -41,8 +41,17 @@ class PipelineConfig:
     EXCLUDE_MINUTES_AROUND_ALARM: int = 1440
     INTERPOLATE_LIMIT: int = 3
     EXCLUDE_LONG_GAPS_FROM_TRAIN: bool = True
+    # Deprecated: substituido por ENABLE_ROLLING_FEATURES / ENABLE_SPECTRAL_FEATURES / ENABLE_CONTEXT_FEATURES.
     ENABLE_DERIVED_FEATURES: bool = False
     DERIVED_ROLLING_WINDOW: int = 12
+    ENABLE_ROLLING_FEATURES: bool = True
+    ROLLING_WINDOW: Optional[int] = None  # None = usa TIME_STEPS
+    ENABLE_SPECTRAL_FEATURES: bool = False
+    SPECTRAL_WINDOW: Optional[int] = None  # None = usa TIME_STEPS
+    SPECTRAL_STRIDE: Optional[int] = None  # None = usa STRIDE
+    SENSOR_TYPE: str = "temperature"  # "temperature" | "pressure" | "vibration"
+    ENABLE_CONTEXT_FEATURES: bool = False
+    CONTEXT_COLS: List[str] = field(default_factory=list)
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995

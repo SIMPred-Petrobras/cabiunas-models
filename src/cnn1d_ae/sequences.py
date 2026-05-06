@@ -5,7 +5,13 @@ from typing import Tuple
 
 
 def make_sequences(values_2d: np.ndarray, time_steps: int, stride: int) -> np.ndarray:
+    if values_2d.ndim != 2:
+        raise ValueError("make_sequences espera entrada 2D: [n_pontos, n_features].")
+
     n = len(values_2d)
+    if n < time_steps:
+        raise ValueError("Quantidade de pontos menor que TIME_STEPS; nao ha sequencias suficientes.")
+
     last = n - time_steps
     out = []
     for i in range(0, last + 1, stride):

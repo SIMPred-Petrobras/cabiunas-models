@@ -16,6 +16,7 @@ from .preprocess import (
     build_sensor_dataframe,
     build_exclusion_mask,
     clip_outliers,
+    apply_feature_engineering,
     normalize_train_only,
 )
 from .sequences import make_sequences, train_val_split
@@ -161,6 +162,20 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     df_normal = clip_outliers(df_normal, cfg)
     df_all = clip_outliers(df_all, cfg)
 
+    df_normal, df_all = apply_feature_engineering(df_normal, df_all, sensor, cfg)
+    feature_engineering_report = {
+        "rolling_features_enabled": bool(cfg.ENABLE_ROLLING_FEATURES),
+        "rolling_window": int(cfg.ROLLING_WINDOW if cfg.ROLLING_WINDOW is not None else cfg.TIME_STEPS),
+        "spectral_features_enabled": bool(cfg.ENABLE_SPECTRAL_FEATURES and cfg.SENSOR_TYPE.lower() == "vibration"),
+        "spectral_window": int(cfg.SPECTRAL_WINDOW if cfg.SPECTRAL_WINDOW is not None else cfg.TIME_STEPS),
+        "spectral_stride": int(cfg.SPECTRAL_STRIDE if cfg.SPECTRAL_STRIDE is not None else cfg.STRIDE),
+        "sensor_type": cfg.SENSOR_TYPE,
+        "context_features_enabled": bool(cfg.ENABLE_CONTEXT_FEATURES),
+        "context_cols": [c for c in (cfg.CONTEXT_COLS or []) if c in df_normal.columns and c != sensor],
+        "feature_columns": list(df_normal.columns),
+        "n_features": int(df_normal.shape[1]),
+    }
+
     df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all)
 
     values_normal = df_normal_z.values.astype(np.float32)
@@ -281,6 +296,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        "feature_engineering": feature_engineering_report,
         "time_steps_report": time_steps_report,
         "monthly_mae_drift_summary": drift_summary,
         **eval_stats,

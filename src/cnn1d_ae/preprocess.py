@@ -5,15 +5,7 @@ import pandas as pd
 from typing import Tuple
 
 from .config import PipelineConfig
-
-
-def _build_derived_features(df: pd.DataFrame, sensor: str, window: int) -> pd.DataFrame:
-    out = df.copy()
-    w = max(2, int(window))
-    out[f"{sensor}__roll_med_{w}"] = out[sensor].rolling(w, min_periods=1).median()
-    out[f"{sensor}__roll_std_{w}"] = out[sensor].rolling(w, min_periods=1).std().fillna(0.0)
-    out[f"{sensor}__delta_1"] = out[sensor].diff().fillna(0.0)
-    return out
+from .feature_engineering import generate_features
 
 
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
@@ -34,18 +26,28 @@ def build_sensor_dataframe(
     if source == "raw":
         if sensor not in df_raw.columns:
             raise ValueError(f"Sensor '{sensor}' nao existe em RAW.")
-        df_use = df_raw[[cfg.TIME_COL, sensor]].copy()
+        source_df = df_raw
     else:
         if sensor not in df_feat.columns:
             raise ValueError(f"Sensor '{sensor}' nao existe em FEATURES.")
-        df_use = df_feat[[cfg.TIME_COL, sensor]].copy()
+        source_df = df_feat
+
+    context_cols = [
+        c
+        for c in (cfg.CONTEXT_COLS or [])
+        if cfg.ENABLE_CONTEXT_FEATURES and c in source_df.columns and c not in {cfg.TIME_COL, sensor}
+    ]
+    selected_cols = [cfg.TIME_COL, sensor, *context_cols]
+    df_use = source_df[selected_cols].copy()
 
     before_dupes = int(df_use.duplicated(subset=[cfg.TIME_COL]).sum())
     if before_dupes:
         print(f"[DATA-CLEAN] sensor={sensor}: removendo {before_dupes} timestamps duplicados antes das sequencias.")
     df_use = df_use.sort_values(cfg.TIME_COL).drop_duplicates(subset=[cfg.TIME_COL], keep="first")
 
-    df_use[sensor] = pd.to_numeric(df_use[sensor], errors="coerce")
+    for col in selected_cols:
+        if col != cfg.TIME_COL:
+            df_use[col] = pd.to_numeric(df_use[col], errors="coerce")
 
     long_gap_raw = _long_gap_mask(df_use[sensor], cfg.INTERPOLATE_LIMIT)
 
@@ -62,10 +64,22 @@ def build_sensor_dataframe(
         )
     assert not df_use[sensor].isna().any(), "Falha interna: NaN remanescente apos interpolacao."
 
-    if cfg.ENABLE_DERIVED_FEATURES:
-        df_use = _build_derived_features(df_use, sensor=sensor, window=cfg.DERIVED_ROLLING_WINDOW)
-
     return df_use, long_gap_raw
+
+
+def apply_feature_engineering(
+    df_normal: pd.DataFrame,
+    df_all: pd.DataFrame,
+    sensor: str,
+    cfg: PipelineConfig,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if not (cfg.ENABLE_ROLLING_FEATURES or cfg.ENABLE_SPECTRAL_FEATURES or cfg.ENABLE_CONTEXT_FEATURES):
+        return df_normal, df_all
+
+    return (
+        generate_features(df_normal, sensor, cfg),
+        generate_features(df_all, sensor, cfg),
+    )
 
 
 def build_exclusion_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minutes: int) -> pd.Series:
