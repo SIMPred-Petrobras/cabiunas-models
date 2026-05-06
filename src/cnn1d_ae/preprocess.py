@@ -40,6 +40,11 @@ def build_sensor_dataframe(
             raise ValueError(f"Sensor '{sensor}' nao existe em FEATURES.")
         df_use = df_feat[[cfg.TIME_COL, sensor]].copy()
 
+    before_dupes = int(df_use.duplicated(subset=[cfg.TIME_COL]).sum())
+    if before_dupes:
+        print(f"[DATA-CLEAN] sensor={sensor}: removendo {before_dupes} timestamps duplicados antes das sequencias.")
+    df_use = df_use.sort_values(cfg.TIME_COL).drop_duplicates(subset=[cfg.TIME_COL], keep="first")
+
     df_use[sensor] = pd.to_numeric(df_use[sensor], errors="coerce")
 
     long_gap_raw = _long_gap_mask(df_use[sensor], cfg.INTERPOLATE_LIMIT)
@@ -48,7 +53,14 @@ def build_sensor_dataframe(
     long_gap_raw.index = df_use.index
 
     df_use[sensor] = df_use[sensor].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
-    df_use[sensor] = df_use[sensor].ffill().bfill()
+    n_missing_after_interp = int(df_use[sensor].isna().sum())
+    if n_missing_after_interp:
+        raise ValueError(
+            f"Sensor '{sensor}' ainda possui {n_missing_after_interp} NaNs apos interpolacao "
+            f"(INTERPOLATE_LIMIT={cfg.INTERPOLATE_LIMIT}). Como os dados devem chegar 100% "
+            "interpolados/confiaveis, revise o CSV ou aumente explicitamente o limite."
+        )
+    assert not df_use[sensor].isna().any(), "Falha interna: NaN remanescente apos interpolacao."
 
     if cfg.ENABLE_DERIVED_FEATURES:
         df_use = _build_derived_features(df_use, sensor=sensor, window=cfg.DERIVED_ROLLING_WINDOW)

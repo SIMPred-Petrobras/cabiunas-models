@@ -50,7 +50,13 @@ class PipelineConfig:
     NORMALIZE_MODE: str = "zscore"  # "zscore" | "robust"
 
     # Sequencias
+    # Exploratorio: TIME_STEPS=48, EPOCHS=10, PATIENCE=2, MAX_TRIALS=10.
+    # Calibracao final recomendada: definir CONTEXT_HOURS conforme janela fisica desejada,
+    # EPOCHS=50-100, PATIENCE=8-12 e MAX_TRIALS=30-50.
     TIME_STEPS: int = 60
+    CONTEXT_HOURS: Optional[float] = None
+    TIME_STEPS_TOLERANCE: float = 0.05
+    REQUIRE_CONTEXT_MATCH: bool = False
     STRIDE: int = 1
 
     # Split
@@ -68,6 +74,9 @@ class PipelineConfig:
     # Threshold
     THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate"
     TARGET_ANOMALY_RATE: float = 0.01
+
+    # Avaliacao
+    EVAL_WINDOW_MINUTES: Optional[int] = None
 
     # Regra de ponto
     POINT_RULE: str = "k_of_window"  # "all_of_window" | "k_of_window"

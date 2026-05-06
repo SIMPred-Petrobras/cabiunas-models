@@ -2,7 +2,9 @@ import unittest
 import numpy as np
 
 from src.cnn1d_ae.sequences import train_val_split
-from src.cnn1d_ae.scoring import compute_threshold
+import pandas as pd
+
+from src.cnn1d_ae.scoring import compute_threshold, evaluate_alarm_detection, compute_monthly_mae_drift
 
 
 class TestSplitAndThreshold(unittest.TestCase):
@@ -26,6 +28,35 @@ class TestSplitAndThreshold(unittest.TestCase):
         self.assertAlmostEqual(compute_threshold(arr, "p97"), np.percentile(arr, 97))
         self.assertAlmostEqual(compute_threshold(arr, "p99_5"), np.percentile(arr, 99.5))
         self.assertAlmostEqual(compute_threshold(arr, "target_rate", target_rate=0.2), np.quantile(arr, 0.8))
+
+    def test_alarm_detection_metrics_include_precision_f1_and_lead_time(self):
+        idx = pd.date_range("2025-04-01 00:00:00", periods=12, freq="h")
+        df_point = pd.DataFrame({"is_anom_point": [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]}, index=idx)
+        df_alarm = pd.DataFrame({"Data da Ocorrencia": [idx[2], idx[5]]})
+
+        metrics = evaluate_alarm_detection(df_alarm, df_point, window_minutes=90)
+
+        self.assertEqual(metrics["n_alarms"], 2)
+        self.assertEqual(metrics["alarms_with_detected_anomaly_in_window"], 2)
+        self.assertEqual(metrics["n_predicted_anomaly_episodes"], 3)
+        self.assertEqual(metrics["n_false_positive_anomaly_episodes"], 1)
+        self.assertAlmostEqual(metrics["precision_event"], 2 / 3)
+        self.assertAlmostEqual(metrics["f1_event"], 0.8)
+        self.assertAlmostEqual(metrics["median_lead_time_minutes_before_alarm"], 60.0)
+
+    def test_monthly_mae_drift_returns_monthly_threshold_ratios(self):
+        df = pd.DataFrame(
+            {
+                "seq_start_time": pd.to_datetime(["2025-04-01", "2025-04-02", "2025-05-01"]),
+                "mae_seq": [0.1, 0.2, 0.5],
+                "is_anom_seq": [0, 0, 1],
+            }
+        )
+
+        drift = compute_monthly_mae_drift(df, threshold=0.3)
+
+        self.assertEqual(list(drift["month"]), ["2025-04", "2025-05"])
+        self.assertTrue(bool(drift.loc[drift["month"] == "2025-05", "drift_flag_p99_above_threshold"].iloc[0]))
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ from .scoring import (
     map_seq_to_point_anomalies,
     build_sequence_scores_df,
     compute_anomaly_rate_per_day,
+    evaluate_alarm_detection,
+    compute_monthly_mae_drift,
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
 )
@@ -58,24 +60,58 @@ def discover_sensors(cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.Data
 
 
 def eval_alarm_hit_rate(df_alarm: pd.DataFrame, df_point: pd.DataFrame, minutes: int) -> Dict:
-    win = pd.Timedelta(minutes=minutes)
-    hits = 0
-    for t in df_alarm["Data da Ocorrencia"]:
-        t0 = t - win
-        t1 = t + win
-        if df_point.loc[(df_point.index >= t0) & (df_point.index <= t1), "is_anom_point"].sum() > 0:
-            hits += 1
+    return evaluate_alarm_detection(df_alarm, df_point, minutes)
 
-    total = len(df_alarm)
-    hit_rate = hits / total if total > 0 else np.nan
-    return {
-        "n_alarms": int(total),
-        "alarms_with_detected_anomaly_in_window": int(hits),
-        "hit_rate": float(hit_rate) if np.isfinite(hit_rate) else None,
+
+def _infer_sampling_interval_seconds(index: pd.DatetimeIndex) -> float:
+    if len(index) < 2:
+        raise ValueError("Nao ha pontos suficientes para inferir granularidade temporal.")
+    deltas = index.to_series().diff().dt.total_seconds().dropna()
+    deltas = deltas[deltas > 0]
+    if deltas.empty:
+        raise ValueError("Nao foi possivel inferir granularidade temporal: deltas invalidos.")
+    median_dt = float(deltas.median())
+    if not np.isfinite(median_dt) or median_dt <= 0:
+        raise ValueError("Granularidade temporal inferida invalida.")
+    return median_dt
+
+
+def _validate_or_resolve_time_steps(cfg: PipelineConfig, index: pd.DatetimeIndex, sensor: str) -> Dict[str, Any]:
+    median_dt_seconds = _infer_sampling_interval_seconds(index)
+    report = {
+        "sensor": sensor,
+        "median_sampling_interval_seconds": float(median_dt_seconds),
+        "configured_time_steps": int(cfg.TIME_STEPS),
+        "context_hours": float(cfg.CONTEXT_HOURS) if cfg.CONTEXT_HOURS is not None else None,
+        "inferred_time_steps_from_context": None,
+        "effective_time_steps": int(cfg.TIME_STEPS),
     }
+
+    if cfg.CONTEXT_HOURS is None:
+        return report
+
+    inferred = int(max(1, round((float(cfg.CONTEXT_HOURS) * 3600.0) / median_dt_seconds)))
+    report["inferred_time_steps_from_context"] = inferred
+    diff_ratio = abs(inferred - int(cfg.TIME_STEPS)) / max(1, int(cfg.TIME_STEPS))
+    report["time_steps_diff_ratio"] = float(diff_ratio)
+
+    if diff_ratio > float(cfg.TIME_STEPS_TOLERANCE):
+        msg = (
+            f"TIME_STEPS={cfg.TIME_STEPS} difere do contexto desejado "
+            f"CONTEXT_HOURS={cfg.CONTEXT_HOURS}h para sensor={sensor}. "
+            f"Granularidade mediana={median_dt_seconds:.3f}s, TIME_STEPS inferido={inferred}."
+        )
+        if cfg.REQUIRE_CONTEXT_MATCH:
+            raise ValueError(msg)
+        print(f"[TIME-STEPS] {msg} Usando TIME_STEPS inferido.")
+        cfg.TIME_STEPS = inferred
+
+    report["effective_time_steps"] = int(cfg.TIME_STEPS)
+    return report
 
 
 def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.DataFrame, df_raw: pd.DataFrame, sensor: str) -> Dict:
+    cfg = PipelineConfig(**asdict(cfg))
     out_dirs = ensure_sensor_dirs(cfg, sensor)
     save_run_config(cfg, out_dirs)
 
@@ -90,6 +126,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     print("==============================")
 
     df_use, long_gap_mask = build_sensor_dataframe(cfg, df_feat, df_raw, sensor)
+    time_steps_report = _validate_or_resolve_time_steps(cfg, df_use.index, sensor)
+    save_run_config(cfg, out_dirs)
 
     if "Tag" in df_alarm.columns:
         df_alarm_sensor = df_alarm.loc[df_alarm["Tag"] == sensor].copy()
@@ -209,7 +247,29 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         operational_state=state,
     )
 
-    eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    eval_window_minutes = (
+        int(cfg.EVAL_WINDOW_MINUTES)
+        if cfg.EVAL_WINDOW_MINUTES is not None
+        else int(cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    )
+    eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_point, eval_window_minutes)
+
+    df_monthly_drift = compute_monthly_mae_drift(df_seq_scores, threshold)
+    monthly_drift_path = os.path.join(out_dirs["csv"], "monthly_mae_drift.csv")
+    df_monthly_drift.to_csv(monthly_drift_path, index=False)
+    drift_summary = {
+        "n_months": int(len(df_monthly_drift)),
+        "n_months_p99_above_threshold": (
+            int(df_monthly_drift["drift_flag_p99_above_threshold"].sum())
+            if not df_monthly_drift.empty
+            else 0
+        ),
+        "max_p99_threshold_ratio": (
+            float(df_monthly_drift["p99_threshold_ratio"].max())
+            if not df_monthly_drift.empty
+            else None
+        ),
+    }
 
     calibration_report = {
         "sensor": sensor,
@@ -221,6 +281,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        "time_steps_report": time_steps_report,
+        "monthly_mae_drift_summary": drift_summary,
         **eval_stats,
     }
     if state is not None:

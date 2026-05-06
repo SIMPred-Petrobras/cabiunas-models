@@ -86,6 +86,167 @@ def compute_anomaly_rate_per_day(df_point: pd.DataFrame) -> float:
     return float(n_anom / n_days)
 
 
+def build_alarm_window_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minutes: int) -> pd.Series:
+    mask = pd.Series(False, index=index)
+    win = pd.Timedelta(minutes=max(0, int(minutes)))
+    alarm_idx = pd.to_datetime(alarm_times, errors="coerce")
+    for t in pd.Series(alarm_idx).dropna().drop_duplicates().sort_values():
+        mask.loc[(mask.index >= t - win) & (mask.index <= t + win)] = True
+    return mask
+
+
+def _estimate_index_duration_days(index: pd.DatetimeIndex) -> float:
+    if len(index) == 0:
+        return 0.0
+    if len(index) == 1:
+        return 1.0 / 86400.0
+
+    deltas = index.to_series().diff().dt.total_seconds().dropna()
+    median_dt = float(deltas[deltas > 0].median()) if (deltas > 0).any() else 1.0
+    if not np.isfinite(median_dt) or median_dt <= 0:
+        median_dt = 1.0
+    return float((len(index) * median_dt) / 86400.0)
+
+
+def _count_anomaly_episodes(df_anom: pd.DataFrame, base_index: pd.DatetimeIndex) -> tuple[int, int]:
+    if df_anom.empty:
+        return 0, 0
+
+    idx = pd.DatetimeIndex(df_anom.index).sort_values()
+    if len(idx) <= 1:
+        return 1, int(bool(df_anom["inside_alarm_window"].any()))
+
+    deltas = base_index.to_series().diff().dt.total_seconds().dropna()
+    median_dt = float(deltas[deltas > 0].median()) if (deltas > 0).any() else 1.0
+    if not np.isfinite(median_dt) or median_dt <= 0:
+        median_dt = 1.0
+
+    # Quebras maiores que 3x a granularidade mediana separam episodios independentes.
+    episode_id = idx.to_series().diff().dt.total_seconds().fillna(0).ge(3.0 * median_dt).cumsum()
+    episode_df = df_anom.copy()
+    episode_df["_episode_id"] = episode_id.values
+    total = int(episode_df["_episode_id"].nunique())
+    matched = int(episode_df.groupby("_episode_id")["inside_alarm_window"].any().sum())
+    return total, matched
+
+
+def evaluate_alarm_detection(
+    df_alarm: pd.DataFrame,
+    df_point: pd.DataFrame,
+    window_minutes: int,
+) -> dict[str, object]:
+    alarm_times = (
+        pd.to_datetime(df_alarm["Data da Ocorrencia"], errors="coerce")
+        if "Data da Ocorrencia" in df_alarm.columns
+        else pd.Series(dtype="datetime64[ns]")
+    )
+    alarm_times = pd.Series(alarm_times).dropna().drop_duplicates().sort_values()
+    n_alarms = int(len(alarm_times))
+
+    if df_point.empty or "is_anom_point" not in df_point.columns:
+        return {
+            "n_alarms": n_alarms,
+            "alarms_with_detected_anomaly_in_window": 0,
+            "hit_rate": 0.0 if n_alarms else None,
+            "eval_window_minutes": int(window_minutes),
+            "precision_event": None,
+            "f1_event": None,
+            "anomaly_rate_points_per_day_no_alarm_periods": 0.0,
+            "median_lead_time_minutes_before_alarm": None,
+            "n_predicted_anomaly_episodes": 0,
+            "n_false_positive_anomaly_episodes": 0,
+        }
+
+    df_eval = df_point.copy()
+    df_eval.index = pd.to_datetime(df_eval.index, errors="coerce")
+    df_eval = df_eval[~df_eval.index.isna()].sort_index()
+    df_eval["is_anom_point"] = pd.to_numeric(df_eval["is_anom_point"], errors="coerce").fillna(0).astype(int)
+    df_eval["inside_alarm_window"] = build_alarm_window_mask(df_eval.index, alarm_times, window_minutes)
+
+    hits = 0
+    lead_minutes: list[float] = []
+    win = pd.Timedelta(minutes=max(0, int(window_minutes)))
+    anom_idx = df_eval.index[df_eval["is_anom_point"].eq(1)]
+    for t in alarm_times:
+        in_window = anom_idx[(anom_idx >= t - win) & (anom_idx <= t + win)]
+        if len(in_window) > 0:
+            hits += 1
+        before_alarm = anom_idx[(anom_idx >= t - win) & (anom_idx <= t)]
+        if len(before_alarm) > 0:
+            first_detection = before_alarm.min()
+            lead_minutes.append(float((t - first_detection).total_seconds() / 60.0))
+
+    recall_event = hits / n_alarms if n_alarms else np.nan
+
+    df_anom = df_eval.loc[df_eval["is_anom_point"].eq(1), ["inside_alarm_window"]]
+    n_episodes, matched_episodes = _count_anomaly_episodes(df_anom, pd.DatetimeIndex(df_eval.index))
+    false_positive_episodes = max(0, n_episodes - matched_episodes)
+    precision_event = matched_episodes / n_episodes if n_episodes else np.nan
+    f1_event = (
+        2.0 * precision_event * recall_event / (precision_event + recall_event)
+        if np.isfinite(precision_event) and np.isfinite(recall_event) and (precision_event + recall_event) > 0
+        else np.nan
+    )
+
+    no_alarm = ~df_eval["inside_alarm_window"]
+    no_alarm_days = _estimate_index_duration_days(pd.DatetimeIndex(df_eval.index[no_alarm]))
+    false_positive_points = int(df_eval.loc[no_alarm, "is_anom_point"].sum())
+    fp_rate_no_alarm = false_positive_points / max(no_alarm_days, 1e-9)
+
+    return {
+        "n_alarms": n_alarms,
+        "alarms_with_detected_anomaly_in_window": int(hits),
+        "hit_rate": float(recall_event) if np.isfinite(recall_event) else None,
+        "eval_window_minutes": int(window_minutes),
+        "precision_event": float(precision_event) if np.isfinite(precision_event) else None,
+        "f1_event": float(f1_event) if np.isfinite(f1_event) else None,
+        "anomaly_rate_points_per_day_no_alarm_periods": float(fp_rate_no_alarm),
+        "median_lead_time_minutes_before_alarm": (
+            float(np.median(lead_minutes)) if lead_minutes else None
+        ),
+        "n_predicted_anomaly_episodes": int(n_episodes),
+        "n_matched_anomaly_episodes": int(matched_episodes),
+        "n_false_positive_anomaly_episodes": int(false_positive_episodes),
+        "false_positive_anomaly_points_no_alarm_periods": int(false_positive_points),
+    }
+
+
+def compute_monthly_mae_drift(df_seq_scores: pd.DataFrame, threshold: float) -> pd.DataFrame:
+    if df_seq_scores.empty:
+        return pd.DataFrame()
+
+    df = df_seq_scores.copy()
+    df["seq_start_time"] = pd.to_datetime(df["seq_start_time"], errors="coerce")
+    df["mae_seq"] = pd.to_numeric(df["mae_seq"], errors="coerce")
+    df["is_anom_seq"] = pd.to_numeric(df["is_anom_seq"], errors="coerce").fillna(0).astype(int)
+    df = df.dropna(subset=["seq_start_time", "mae_seq"])
+    if df.empty:
+        return pd.DataFrame()
+
+    df["month"] = df["seq_start_time"].dt.to_period("M").astype(str)
+    rows = []
+    for month, g in df.groupby("month", sort=True):
+        p95 = float(g["mae_seq"].quantile(0.95))
+        p99 = float(g["mae_seq"].quantile(0.99))
+        rows.append(
+            {
+                "month": month,
+                "n_sequences": int(len(g)),
+                "mae_mean": float(g["mae_seq"].mean()),
+                "mae_std": float(g["mae_seq"].std(ddof=0)),
+                "mae_p50": float(g["mae_seq"].quantile(0.50)),
+                "mae_p95": p95,
+                "mae_p99": p99,
+                "mae_max": float(g["mae_seq"].max()),
+                "seq_anomaly_rate": float(g["is_anom_seq"].mean()),
+                "p95_threshold_ratio": float(p95 / threshold) if threshold else np.nan,
+                "p99_threshold_ratio": float(p99 / threshold) if threshold else np.nan,
+                "drift_flag_p99_above_threshold": bool(p99 > threshold),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def build_operational_state(
     index: pd.DatetimeIndex,
     sensor_series: pd.Series,
