@@ -10,6 +10,7 @@ OUTPUT*/
 resultados*/
 artifacts_local/
 task_plots/
+task_zoom_plots/
 
 venv/
 .venv/
