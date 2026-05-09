@@ -2,7 +2,7 @@
 # Enqueue all v5_brutos experiments (raw dataset, RUNNING_COL, EXCLUDE_CONSTANT_RUNS)
 set -euo pipefail
 
-SCRIPT="src/cnn1d_ae/main.py"
+SCRIPT="src/main.py"
 CFGS=(
   configs/calibracao_v5_brutos/v5brutos_T5_AVG_A.json
   configs/calibracao_v5_brutos/v5brutos_TC382_01_A.json
