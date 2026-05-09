@@ -134,6 +134,20 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     time_steps_report = _validate_or_resolve_time_steps(cfg, df_use.index, sensor)
     save_run_config(cfg, out_dirs)
 
+    # Carrega RUNNING_COL do DataFrame-fonte (df_use não inclui essa coluna).
+    _running_col_series: pd.Series | None = None
+    if cfg.RUNNING_COL:
+        _src = df_raw if cfg.TRAIN_SOURCE.lower() == "raw" else df_feat
+        if cfg.RUNNING_COL in _src.columns:
+            _running_col_series = (
+                _src.drop_duplicates(subset=[cfg.TIME_COL])
+                .set_index(cfg.TIME_COL)[cfg.RUNNING_COL]
+            )
+            _running_col_series = pd.to_numeric(_running_col_series, errors="coerce")
+            _running_col_series = _running_col_series.reindex(df_use.index).fillna(0.0)
+        else:
+            print(f"[RUNNING_COL] Coluna '{cfg.RUNNING_COL}' nao encontrada na fonte — ignorando.")
+
     # Filtro de Hampel para spikes isolados (pós-interpolação, pré-divisão normal/all)
     df_use = apply_hampel_filter(df_use, sensor, cfg)
 
@@ -181,9 +195,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     # Modo 1 — RUNNING_COL: usa coluna binária direta do dado (ex: RUNNING_A > 0.5).
     # Modo 2 — ENABLE_OPERATIONAL_MASK: infere estado por limiar do próprio sensor.
     # Modo 1 tem prioridade; é mais preciso quando disponível.
-    if cfg.RUNNING_COL and cfg.RUNNING_COL in df_use.columns:
-        running_series = pd.to_numeric(df_use[cfg.RUNNING_COL], errors="coerce").fillna(0.0)
-        exclude_off_train = running_series <= 0.5
+    if _running_col_series is not None:
+        exclude_off_train = _running_col_series <= 0.5
         n_off = int(exclude_off_train.sum())
         print(
             f"[RUNNING_COL] sensor={sensor}: {n_off} pontos OFF excluidos do treino "
@@ -303,6 +316,17 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
             transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
             transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+        )
+        anomaly_seq = mask_anomaly_seq_by_operational_state(
+            anomaly_seq=anomaly_seq,
+            index=df_all_z.index,
+            time_steps=cfg.TIME_STEPS,
+            state=state,
+        )
+    elif _running_col_series is not None:
+        # Constrói estado operacional direto do RUNNING_COL para plots e avaliação.
+        state = _running_col_series.reindex(df_all_z.index).fillna(0.0).map(
+            lambda x: "on" if x > 0.5 else "off"
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,

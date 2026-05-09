@@ -190,6 +190,8 @@ def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataF
     df_alarm = pd.read_csv(alarm_csv)
     if "Data da Ocorrência" in df_alarm.columns and "Data da Ocorrencia" not in df_alarm.columns:
         df_alarm["Data da Ocorrencia"] = df_alarm["Data da Ocorrência"]
+    if "Tag Alarme" in df_alarm.columns and "Tag" not in df_alarm.columns:
+        df_alarm["Tag"] = df_alarm["Tag Alarme"]
 
     df_feat = pd.read_csv(features_csv)
     df_raw = pd.read_csv(raw_csv)
