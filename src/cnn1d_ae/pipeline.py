@@ -18,6 +18,7 @@ from .preprocess import (
     build_exclusion_mask,
     build_startup_exclusion_mask,
     build_stable_gradient_mask,
+    build_constant_run_mask,
     clip_outliers,
     apply_feature_engineering,
     normalize_train_only,
@@ -176,11 +177,20 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             )
         exclude = exclude | startup_excl
 
-    # Exclusão de períodos não-ON do treino quando máscara operacional está ativa.
-    # O modelo deve aprender apenas padrões do equipamento ligado em regime normal —
-    # dados de OFF e transientes contaminam a distribuição de treino e distorcem o
-    # limiar de reconstrução, gerando falsos positivos no regime ON.
-    if cfg.ENABLE_OPERATIONAL_MASK:
+    # Exclusão de períodos não-ON do treino.
+    # Modo 1 — RUNNING_COL: usa coluna binária direta do dado (ex: RUNNING_A > 0.5).
+    # Modo 2 — ENABLE_OPERATIONAL_MASK: infere estado por limiar do próprio sensor.
+    # Modo 1 tem prioridade; é mais preciso quando disponível.
+    if cfg.RUNNING_COL and cfg.RUNNING_COL in df_use.columns:
+        running_series = pd.to_numeric(df_use[cfg.RUNNING_COL], errors="coerce").fillna(0.0)
+        exclude_off_train = running_series <= 0.5
+        n_off = int(exclude_off_train.sum())
+        print(
+            f"[RUNNING_COL] sensor={sensor}: {n_off} pontos OFF excluidos do treino "
+            f"via coluna '{cfg.RUNNING_COL}' ({100*n_off/max(len(df_use),1):.1f}%)."
+        )
+        exclude = exclude | exclude_off_train
+    elif cfg.ENABLE_OPERATIONAL_MASK:
         train_op_state = build_operational_state(
             index=df_use.index,
             sensor_series=df_use[sensor],
@@ -197,6 +207,22 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             f"excluidos do treino ({100*n_off_excl/max(len(df_use),1):.1f}% do total)."
         )
         exclude = exclude | exclude_off_train
+
+    # Exclusão de runs de forward-fill upstream (dado pré-interpolado).
+    # Runs de ≥ CONSTANT_RUN_MIN_LENGTH valores idênticos durante ON são artefatos:
+    # o sensor não mediu nada novo — o sistema repetiu o último valor.
+    # Incluí-los no treino faz o AE aprender plateaus como "normal" e
+    # flagrar esses mesmos plateaus como anomalias na inferência.
+    if cfg.EXCLUDE_CONSTANT_RUNS:
+        const_mask = build_constant_run_mask(df_use[sensor], min_length=cfg.CONSTANT_RUN_MIN_LENGTH)
+        const_mask = const_mask.reindex(df_use.index).fillna(False)
+        n_const = int(const_mask.sum())
+        if n_const:
+            print(
+                f"[CONST-RUN] sensor={sensor}: {n_const} pontos de forward-fill "
+                f"(runs>={cfg.CONSTANT_RUN_MIN_LENGTH}) excluidos do treino."
+            )
+        exclude = exclude | const_mask
 
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()

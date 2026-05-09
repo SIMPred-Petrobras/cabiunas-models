@@ -115,7 +115,39 @@ def build_stable_gradient_mask(
 
 
 # ---------------------------------------------------------------------------
-# 4. Máscara de exclusão pós-startup
+# 4. Máscara de runs constantes (forward-fill upstream)
+# ---------------------------------------------------------------------------
+
+def build_constant_run_mask(
+    series: pd.Series,
+    min_length: int = 3,
+) -> pd.Series:
+    """
+    Detecta runs de ≥ min_length valores idênticos consecutivos.
+
+    Dado pré-interpolado com last-value-carried-forward cria plateaus artificiais:
+        [570.2, 570.2, 570.2, 570.2]  ← gap de 4 pontos preenchido com o último valor
+
+    Esses segmentos não são dados reais — o sensor simplesmente não mediu nada novo.
+    Excluí-los do treino impede que o AE aprenda a reconstruir plateaus como "normal"
+    e elimina falsos positivos quando esses plateaus aparecem durante a inferência.
+
+    Returns:
+        Máscara booleana True onde o ponto faz parte de um run suspeito.
+    """
+    s = pd.to_numeric(series, errors="coerce")
+    is_equal = (s == s.shift(1)) & s.notna() & s.shift(1).notna()
+    grp = (~is_equal).cumsum()
+    run_len = is_equal.groupby(grp).transform("sum")
+    # run_len conta quantos pontos consecutivos são iguais ao anterior.
+    # Um run de min_length pontos iguais tem run_len >= min_length-1 nos últimos pontos.
+    suspect = run_len >= (min_length - 1)
+    # Propagar para incluir o ponto que iniciou o run (tem is_equal=False mas mesmo valor).
+    return (suspect | suspect.shift(-1).fillna(False))
+
+
+# ---------------------------------------------------------------------------
+# 5. Máscara de exclusão pós-startup
 # ---------------------------------------------------------------------------
 
 def build_startup_exclusion_mask(

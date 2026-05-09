@@ -79,6 +79,19 @@ class PipelineConfig:
     # Cobre a rampa de temperatura que o modelo não deve aprender como "normal"
     EXCLUDE_STARTUP_MINUTES: int = 0
 
+    # Coluna de estado operacional direta (ex: "RUNNING_A").
+    # Quando definida, substitui a detecção por limiar: ON = coluna > 0.5.
+    # Se None, usa OFF_ABS_THRESHOLD / OFF_VALUE_QUANTILE como antes.
+    RUNNING_COL: Optional[str] = None
+
+    # Exclusão de runs de forward-fill upstream do treino.
+    # Quando o dado de entrada é pré-interpolado com last-value-carried-forward,
+    # runs de N pontos idênticos consecutivos durante ON são artefatos, não dados reais.
+    # Excluí-los evita que o AE aprenda plateaus artificiais como padrão normal
+    # e pare de flagrar esses plateaus como anomalias durante a inferência.
+    EXCLUDE_CONSTANT_RUNS: bool = False
+    CONSTANT_RUN_MIN_LENGTH: int = 3  # mínimo de pontos iguais para considerar forward-fill
+
     # Sequencias
     # Exploratorio: TIME_STEPS=48, EPOCHS=10, PATIENCE=2, MAX_TRIALS=10.
     # Calibracao final recomendada: definir CONTEXT_HOURS conforme janela fisica desejada,
