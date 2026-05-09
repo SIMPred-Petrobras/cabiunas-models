@@ -151,11 +151,15 @@ def _resolve_input_paths(cfg: PipelineConfig) -> Tuple[str, str, str]:
     print(f"[CLEARML-DATASET] Local copy: {dataset_root}")
 
     alarm_csv = _resolve_dataset_file(dataset_root, cfg.ALARM_CSV)
-    features_csv = _resolve_dataset_file(dataset_root, cfg.FEATURES_CSV)
     raw_csv = _resolve_dataset_file(dataset_root, cfg.RAW_CSV)
+    # FEATURES_CSV é opcional quando TRAIN_SOURCE=raw; evita exigir arquivo não utilizado.
+    if cfg.TRAIN_SOURCE.lower() == "raw":
+        features_csv = ""
+    else:
+        features_csv = _resolve_dataset_file(dataset_root, cfg.FEATURES_CSV)
 
     print(f"[CLEARML-DATASET] ALARM_CSV -> {alarm_csv}")
-    print(f"[CLEARML-DATASET] FEATURES_CSV -> {features_csv}")
+    print(f"[CLEARML-DATASET] FEATURES_CSV -> {features_csv or '(não utilizado)'}")
     print(f"[CLEARML-DATASET] RAW_CSV -> {raw_csv}")
     return str(alarm_csv), str(features_csv), str(raw_csv)
 
@@ -193,16 +197,20 @@ def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataF
     if "Tag Alarme" in df_alarm.columns and "Tag" not in df_alarm.columns:
         df_alarm["Tag"] = df_alarm["Tag Alarme"]
 
-    df_feat = pd.read_csv(features_csv)
     df_raw = pd.read_csv(raw_csv)
 
+    if features_csv:
+        df_feat = pd.read_csv(features_csv)
+        df_feat = _process_time_column(df_feat, cfg.TIME_COL, cfg, "features")
+    else:
+        df_feat = pd.DataFrame(columns=[cfg.TIME_COL])
+
     df_alarm = _process_time_column(df_alarm, "Data da Ocorrencia", cfg, "alarms")
-    df_feat = _process_time_column(df_feat, cfg.TIME_COL, cfg, "features")
     df_raw = _process_time_column(df_raw, cfg.TIME_COL, cfg, "raw")
 
     report = {
         "alarm": build_time_integrity_report(df_alarm, "Data da Ocorrencia", "alarm"),
-        "feat": build_time_integrity_report(df_feat, cfg.TIME_COL, "feat"),
+        "feat": build_time_integrity_report(df_feat, cfg.TIME_COL, "feat") if not df_feat.empty else {},
         "raw": build_time_integrity_report(df_raw, cfg.TIME_COL, "raw"),
     }
     print("[TIME-INTEGRITY]", json.dumps(report, ensure_ascii=False))
