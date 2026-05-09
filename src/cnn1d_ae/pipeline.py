@@ -176,6 +176,28 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             )
         exclude = exclude | startup_excl
 
+    # Exclusão de períodos não-ON do treino quando máscara operacional está ativa.
+    # O modelo deve aprender apenas padrões do equipamento ligado em regime normal —
+    # dados de OFF e transientes contaminam a distribuição de treino e distorcem o
+    # limiar de reconstrução, gerando falsos positivos no regime ON.
+    if cfg.ENABLE_OPERATIONAL_MASK:
+        train_op_state = build_operational_state(
+            index=df_use.index,
+            sensor_series=df_use[sensor],
+            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
+            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
+            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
+            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+        )
+        exclude_off_train = train_op_state != "on"
+        n_off_excl = int(exclude_off_train.sum())
+        print(
+            f"[OP-MASK-TRAIN] sensor={sensor}: {n_off_excl} pontos OFF/transiente "
+            f"excluidos do treino ({100*n_off_excl/max(len(df_use),1):.1f}% do total)."
+        )
+        exclude = exclude | exclude_off_train
+
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
 
