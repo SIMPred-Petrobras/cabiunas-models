@@ -141,6 +141,15 @@ def evaluate_alarm_detection(
         else pd.Series(dtype="datetime64[ns]")
     )
     alarm_times = pd.Series(alarm_times).dropna().drop_duplicates().sort_values()
+
+    # Filtra alarmes ao range do sensor: alarmes fora do período observado não podem
+    # ser detectados e não devem entrar no denominador da hit_rate.
+    if not df_point.empty and len(alarm_times):
+        t_min = pd.to_datetime(df_point.index.min(), errors="coerce")
+        t_max = pd.to_datetime(df_point.index.max(), errors="coerce")
+        if pd.notna(t_min) and pd.notna(t_max):
+            alarm_times = alarm_times[(alarm_times >= t_min) & (alarm_times <= t_max)]
+
     n_alarms = int(len(alarm_times))
 
     if df_point.empty or "is_anom_point" not in df_point.columns:

@@ -40,11 +40,11 @@
   "BATCH_SIZE": 256,
   "PATIENCE": 7,
   "THRESH_MODE": "target_rate",
-  "TARGET_ANOMALY_RATE": 0.003,
+  "TARGET_ANOMALY_RATE": 0.001,
   "EVAL_WINDOW_MINUTES": 480,
   "POINT_RULE": "k_of_window",
   "POINT_WINDOW": 60,
-  "POINT_MIN_COUNT": 10,
+  "POINT_MIN_COUNT": 20,
   "RANDOM_SEED": 42,
   "OVERWRITE": true,
   "USE_CLEARML_DATASET": true,
@@ -65,5 +65,6 @@
   "SENSOR_LIST": [
     "TC382_05_A"
   ],
-  "OUTPUT_ROOT": "runs_v5brutos_TC382_05_A"
+  "OUTPUT_ROOT": "runs_v5brutos_TC382_05_A",
+  "CLEARML_DOCKER_IMAGE": "tensorflow/tensorflow:2.16.1-gpu"
 }
