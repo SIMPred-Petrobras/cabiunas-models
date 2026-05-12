@@ -25,7 +25,7 @@ CFGS=(
 
 for cfg in "${CFGS[@]}"; do
   echo "Enfileirando: $cfg"
-  python3 "$SCRIPT" --config "$cfg"
+  PYTHONPATH=. python3 "$SCRIPT" --config "$cfg"
 done
 
 echo "Todos os experimentos enfileirados."
