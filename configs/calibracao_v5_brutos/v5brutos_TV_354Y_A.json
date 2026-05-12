@@ -23,7 +23,7 @@
   "NORMALIZE_MODE": "zscore",
   "ENABLE_ROLLING_FEATURES": true,
   "ROLLING_WINDOW": 60,
-  "ENABLE_SPECTRAL_FEATURES": false,
+  "ENABLE_SPECTRAL_FEATURES": true,
   "ENABLE_CONTEXT_FEATURES": false,
   "RUNNING_COL": "RUNNING_A",
   "EXCLUDE_CONSTANT_RUNS": true,
@@ -39,7 +39,7 @@
   "EPOCHS": 25,
   "BATCH_SIZE": 256,
   "PATIENCE": 7,
-  "THRESH_MODE": "target_rate",
+  "THRESH_MODE": "alarm_f2",
   "TARGET_ANOMALY_RATE": 0.001,
   "EVAL_WINDOW_MINUTES": 480,
   "POINT_RULE": "k_of_window",
@@ -65,5 +65,14 @@
     "TV_354Y_A"
   ],
   "OUTPUT_ROOT": "runs_v5brutos_TV_354Y_A",
-  "CLEARML_DOCKER_IMAGE": "tensorflow/tensorflow:2.16.1-gpu"
+  "CLEARML_DOCKER_IMAGE": "tensorflow/tensorflow:2.16.1-gpu",
+  "ALARM_F2_TARGET_RECALL": 0.3,
+  "ALARM_F2_MAX_FP_PER_DAY": 15.0,
+  "ADAPTIVE_THRESHOLD_MODE": "monthly",
+  "ADAPTIVE_THRESHOLD_PERCENTILE": 99.0,
+  "ENABLE_WARN_LEVEL": true,
+  "WARN_POINT_MIN_COUNT": 5,
+  "WARN_TARGET_ANOMALY_RATE": 0.01,
+  "SPECTRAL_WINDOW": null,
+  "SPECTRAL_STRIDE": null
 }

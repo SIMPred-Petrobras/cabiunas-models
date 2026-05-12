@@ -28,7 +28,148 @@ def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float =
     if mode == "target_rate":
         rate = float(np.clip(target_rate, 1e-6, 0.5))
         return float(np.quantile(train_mae_seq, 1.0 - rate))
-    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate.")
+    if mode == "alarm_f2":
+        # Handled externally via compute_threshold_alarm_optimized; fallback to p99.
+        return float(np.percentile(train_mae_seq, 99))
+    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/alarm_f2.")
+
+
+def compute_threshold_alarm_optimized(
+    mae_seq: np.ndarray,
+    index: pd.DatetimeIndex,
+    alarm_times: pd.Series,
+    time_steps: int,
+    eval_window_minutes: int,
+    target_recall: float = 0.30,
+    max_fp_per_day: float = 15.0,
+    fallback_percentile: float = 99.0,
+) -> float:
+    """
+    Calibração semi-supervisionada: encontra o threshold que atinge target_recall
+    nos alarmes históricos dentro de eval_window_minutes, mantendo FP/dia <= max_fp_per_day.
+
+    Estratégia: testa percentis de 99.9 → 70 (do mais estrito ao mais permissivo).
+    Retorna o primeiro que satisfaz ambas as condições. Se nenhum satisfizer,
+    retorna o que melhor equilibra recall e FP. Nunca usa os alarmes no treino do AE —
+    só no ajuste post-hoc do limiar.
+    """
+    alarm_ts = pd.to_datetime(alarm_times, errors="coerce")
+    alarm_ts = pd.Series(alarm_ts).dropna().drop_duplicates().sort_values()
+    if len(alarm_ts) and len(index):
+        alarm_ts = alarm_ts[(alarm_ts >= index.min()) & (alarm_ts <= index.max())]
+
+    n_alarms = len(alarm_ts)
+    if n_alarms == 0:
+        print("[ALARM-F2] Sem alarmes no range — usando fallback p99.")
+        return float(np.percentile(mae_seq, fallback_percentile))
+
+    # Timestamps das sequências (posição final de cada janela)
+    n_seq = len(mae_seq)
+    end_offset = time_steps - 1
+    seq_end_idx = np.arange(end_offset, end_offset + n_seq)
+    valid = seq_end_idx < len(index)
+    seq_end_times = index[seq_end_idx[valid]]
+    mae_valid = mae_seq[valid]
+
+    seq_sec = seq_end_times.values.astype("int64") / 1e9
+    alarm_sec = alarm_ts.values.astype("int64") / 1e9
+    win_sec = float(eval_window_minutes * 60)
+    duration_days = float((index.max() - index.min()).total_seconds() / 86400)
+
+    # Avalia cada candidato: recall + FP/dia
+    candidates_pct = np.linspace(99.9, 70.0, 150)
+    best_thresh = float(np.percentile(mae_valid, fallback_percentile))
+    best_score = -1.0
+
+    for pct in candidates_pct:
+        thresh = float(np.percentile(mae_valid, pct))
+        anom_mask = mae_valid > thresh
+        if not anom_mask.any():
+            continue
+
+        anom_sec = seq_sec[anom_mask]
+
+        # Recall: fração dos alarmes com pelo menos uma anomalia na janela
+        diff = np.abs(alarm_sec[:, None] - anom_sec[None, :])  # (n_alarms, n_anom)
+        hits = int((diff <= win_sec).any(axis=1).sum())
+        recall = hits / n_alarms
+
+        # FP/dia: anomalias fora de qualquer janela de alarme
+        in_window = (diff <= win_sec).any(axis=0)  # (n_anom,)
+        fp_pts = int((~in_window).sum())
+        fp_rate = fp_pts / max(duration_days, 1.0)
+
+        # Score: maximize recall penalizado por excesso de FP
+        fp_penalty = max(0.0, (fp_rate - max_fp_per_day) / max_fp_per_day)
+        score = recall - 0.5 * fp_penalty
+
+        if recall >= target_recall and fp_rate <= max_fp_per_day:
+            print(
+                f"[ALARM-F2] threshold={thresh:.5f} (p{pct:.1f}): "
+                f"recall={recall:.1%}  FP/dia={fp_rate:.1f}"
+            )
+            return thresh
+
+        if score > best_score:
+            best_score = score
+            best_thresh = thresh
+
+    print(
+        f"[ALARM-F2] Nao atingiu target (recall>={target_recall:.0%}, FP<={max_fp_per_day}/dia). "
+        f"Usando melhor compromisso: thresh={best_thresh:.5f}"
+    )
+    return best_thresh
+
+
+def apply_adaptive_monthly_threshold(
+    mae_seq: np.ndarray,
+    index: pd.DatetimeIndex,
+    time_steps: int,
+    alarm_times: pd.Series,
+    eval_window_minutes: int,
+    percentile: float = 99.0,
+) -> tuple[np.ndarray, dict]:
+    """
+    Recalibra o threshold mensalmente usando o percentil do MAE em períodos sem alarme.
+
+    Resolve o drift sazonal: em vez de um limiar fixo calibrado no treino,
+    cada mês tem seu próprio limiar calculado sobre os dados normais daquele mês.
+    Não requer re-treinamento — só recalibra o limiar de decisão.
+
+    Returns:
+        (anomaly_seq recalibrado, dict {month_str -> threshold})
+    """
+    n_seq = len(mae_seq)
+    end_offset = time_steps - 1
+    seq_end_idx = np.arange(end_offset, end_offset + n_seq)
+    valid_mask = seq_end_idx < len(index)
+    seq_end_times = index[seq_end_idx[valid_mask]]
+    mae_valid = mae_seq[valid_mask]
+
+    alarm_win = build_alarm_window_mask(seq_end_times, alarm_times, eval_window_minutes)
+    months = pd.DatetimeIndex(seq_end_times).to_period("M")
+
+    global_non_alarm = mae_valid[~alarm_win.values]
+    global_thresh = float(np.percentile(global_non_alarm, percentile)) if len(global_non_alarm) >= 10 else float(np.percentile(mae_valid, percentile))
+
+    monthly_thresholds: dict = {}
+    thresh_array = np.full(n_seq, global_thresh, dtype=float)
+
+    for month in months.unique():
+        m_mask = (months == month).values
+        non_alarm_m = m_mask & (~alarm_win.values)
+        if non_alarm_m.sum() >= 30:
+            t = float(np.percentile(mae_valid[non_alarm_m], percentile))
+        else:
+            t = global_thresh
+        monthly_thresholds[str(month)] = t
+        # aplica ao array de thresholds (mesmo nos inválidos — serão ignorados)
+        full_idx = seq_end_idx[valid_mask][m_mask]
+        valid_full = full_idx < n_seq
+        thresh_array[full_idx[valid_full]] = t
+
+    new_anomaly_seq = mae_seq > thresh_array
+    return new_anomaly_seq, monthly_thresholds
 
 
 def map_seq_to_point_anomalies(

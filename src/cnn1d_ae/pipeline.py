@@ -28,6 +28,8 @@ from .tuning import run_tuner, refit_best_model
 from .scoring import (
     reconstruction_mae_per_seq,
     compute_threshold,
+    compute_threshold_alarm_optimized,
+    apply_adaptive_monthly_threshold,
     map_seq_to_point_anomalies,
     build_sequence_scores_df,
     compute_anomaly_rate_per_day,
@@ -299,13 +301,47 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
 
     train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
-    threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
+
+    # x_all calculado antes do threshold para suportar calibração alarm_f2
+    x_all = make_sequences(values_all, cfg.TIME_STEPS, cfg.STRIDE)
+    mae_seq_all = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
+
+    _alarm_times_for_thresh = (
+        df_alarm_sensor["Data da Ocorrencia"]
+        if "Data da Ocorrencia" in df_alarm_sensor.columns
+        else pd.Series(dtype="datetime64[ns]")
+    )
+    _eval_win = int(cfg.EVAL_WINDOW_MINUTES) if cfg.EVAL_WINDOW_MINUTES is not None else int(cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+
+    if cfg.THRESH_MODE.lower() == "alarm_f2":
+        threshold = compute_threshold_alarm_optimized(
+            mae_seq=mae_seq_all,
+            index=df_all_z.index,
+            alarm_times=_alarm_times_for_thresh,
+            time_steps=cfg.TIME_STEPS,
+            eval_window_minutes=_eval_win,
+            target_recall=cfg.ALARM_F2_TARGET_RECALL,
+            max_fp_per_day=cfg.ALARM_F2_MAX_FP_PER_DAY,
+        )
+    else:
+        threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
 
     plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
-    x_all = make_sequences(values_all, cfg.TIME_STEPS, cfg.STRIDE)
-    mae_seq_all = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
-    anomaly_seq = mae_seq_all > threshold
+    # Threshold adaptativo mensal: recalibra sem retreinar, resolve drift sazonal
+    monthly_thresholds: dict = {}
+    if cfg.ADAPTIVE_THRESHOLD_MODE.lower() == "monthly":
+        anomaly_seq, monthly_thresholds = apply_adaptive_monthly_threshold(
+            mae_seq=mae_seq_all,
+            index=df_all_z.index,
+            time_steps=cfg.TIME_STEPS,
+            alarm_times=_alarm_times_for_thresh,
+            eval_window_minutes=_eval_win,
+            percentile=cfg.ADAPTIVE_THRESHOLD_PERCENTILE,
+        )
+        print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k, v in monthly_thresholds.items()} }")
+    else:
+        anomaly_seq = mae_seq_all > threshold
     state = None
     if cfg.ENABLE_OPERATIONAL_MASK:
         state = build_operational_state(
@@ -350,6 +386,25 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+
+    # Nível de warning: threshold mais permissivo, min_count menor → detecção antecipada
+    if cfg.ENABLE_WARN_LEVEL:
+        warn_thresh = compute_threshold(train_mae_seq, "target_rate", target_rate=cfg.WARN_TARGET_ANOMALY_RATE)
+        warn_seq = mae_seq_all > warn_thresh
+        if state is not None:
+            warn_seq = mask_anomaly_seq_by_operational_state(
+                anomaly_seq=warn_seq, index=all_index, time_steps=cfg.TIME_STEPS, state=state
+            )
+        df_warn = map_seq_to_point_anomalies(
+            warn_seq, all_index, cfg.TIME_STEPS,
+            cfg.POINT_RULE, cfg.POINT_WINDOW, cfg.WARN_POINT_MIN_COUNT,
+        )
+        if state is not None:
+            df_warn["operational_state"] = state.reindex(df_warn.index).fillna("on")
+            df_warn.loc[df_warn["operational_state"] != "on", "is_anom_point"] = 0
+        df_point["is_warn_point"] = df_warn["is_anom_point"]
+        df_point["is_warn_only"] = ((df_point["is_warn_point"] == 1) & (df_point["is_anom_point"] == 0)).astype(int)
+
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -393,6 +448,13 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         ),
     }
 
+    # Warning-level evaluation (medido separadamente sobre is_warn_point)
+    warn_eval_stats: dict = {}
+    if cfg.ENABLE_WARN_LEVEL and "is_warn_point" in df_point.columns:
+        df_warn_eval = df_point.rename(columns={"is_warn_point": "is_anom_point"})[["is_anom_point"]]
+        warn_eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_warn_eval, eval_window_minutes)
+        warn_eval_stats = {f"warn_{k}": v for k, v in warn_eval_stats.items()}
+
     calibration_report = {
         "sensor": sensor,
         "threshold": float(threshold),
@@ -406,7 +468,9 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "feature_engineering": feature_engineering_report,
         "time_steps_report": time_steps_report,
         "monthly_mae_drift_summary": drift_summary,
+        "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
         **eval_stats,
+        **warn_eval_stats,
     }
     if state is not None:
         counts = state.value_counts().to_dict()

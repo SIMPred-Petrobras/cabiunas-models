@@ -12,10 +12,10 @@ import pandas as pd
 from clearml import Dataset, Task
 
 
-TASK_ID = "5e80e0baeaec447188a4d9d30dc4b998"
+TASK_ID = "56603e6272dd4868abf39db79a1fa505"
 SENSOR = None  # Ex.: "T5_AVG_A"; None usa o sensor salvo na task.
-START_DATE = "2025-04-01 00:00:00"
-END_DATE = "2025-04-30 23:59:59"
+START_DATE = "2025-04-17 00:00:00"
+END_DATE = "2025-04-21 23:59:59"
 OUTPUT_ROOT = "task_zoom_plots"
 
 

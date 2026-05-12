@@ -24,7 +24,7 @@
   "ENABLE_ROLLING_FEATURES": true,
   "ROLLING_WINDOW": 60,
   "ENABLE_SPECTRAL_FEATURES": false,
-  "ENABLE_CONTEXT_FEATURES": false,
+  "ENABLE_CONTEXT_FEATURES": true,
   "RUNNING_COL": "RUNNING_A",
   "EXCLUDE_CONSTANT_RUNS": true,
   "CONSTANT_RUN_MIN_LENGTH": 3,
@@ -39,7 +39,7 @@
   "EPOCHS": 25,
   "BATCH_SIZE": 256,
   "PATIENCE": 7,
-  "THRESH_MODE": "target_rate",
+  "THRESH_MODE": "alarm_f2",
   "TARGET_ANOMALY_RATE": 0.001,
   "EVAL_WINDOW_MINUTES": 480,
   "POINT_RULE": "k_of_window",
@@ -66,5 +66,16 @@
     "TC382_04_A"
   ],
   "OUTPUT_ROOT": "runs_v5brutos_TC382_04_A",
-  "CLEARML_DOCKER_IMAGE": "tensorflow/tensorflow:2.16.1-gpu"
+  "CLEARML_DOCKER_IMAGE": "tensorflow/tensorflow:2.16.1-gpu",
+  "ALARM_F2_TARGET_RECALL": 0.3,
+  "ALARM_F2_MAX_FP_PER_DAY": 15.0,
+  "ADAPTIVE_THRESHOLD_MODE": "monthly",
+  "ADAPTIVE_THRESHOLD_PERCENTILE": 99.0,
+  "ENABLE_WARN_LEVEL": true,
+  "WARN_POINT_MIN_COUNT": 5,
+  "WARN_TARGET_ANOMALY_RATE": 0.01,
+  "CONTEXT_COLS": [
+    "TC382_03_A",
+    "TC382_05_A"
+  ]
 }

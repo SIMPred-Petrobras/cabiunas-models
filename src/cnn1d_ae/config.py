@@ -115,8 +115,21 @@ class PipelineConfig:
     PATIENCE: int = 6
 
     # Threshold
-    THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate"
+    THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate" | "alarm_f2"
     TARGET_ANOMALY_RATE: float = 0.01
+
+    # Threshold semi-supervisionado (THRESH_MODE="alarm_f2")
+    ALARM_F2_TARGET_RECALL: float = 0.30   # meta mínima de recall nos alarmes históricos
+    ALARM_F2_MAX_FP_PER_DAY: float = 15.0  # FP/dia máximo tolerado
+
+    # Threshold adaptativo mensal (recalibra sem retreinar)
+    ADAPTIVE_THRESHOLD_MODE: str = "none"       # "none" | "monthly"
+    ADAPTIVE_THRESHOLD_PERCENTILE: float = 99.0
+
+    # Detecção em dois níveis: warning (sensível) + alarm (confirmado)
+    ENABLE_WARN_LEVEL: bool = False
+    WARN_POINT_MIN_COUNT: int = 5
+    WARN_TARGET_ANOMALY_RATE: float = 0.01
 
     # Avaliacao
     EVAL_WINDOW_MINUTES: Optional[int] = None
