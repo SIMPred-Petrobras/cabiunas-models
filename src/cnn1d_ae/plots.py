@@ -140,6 +140,10 @@ def plot_series_alarm_anomaly_subplots(
     alarm_idx = pd.to_datetime(alarm_times, errors="coerce")
     alarm_idx = pd.Series(alarm_idx).dropna().sort_values().drop_duplicates()
 
+    # Restringe alarmes ao range da série para não expandir o eixo X além de 2025.
+    if len(alarm_idx) and len(s):
+        alarm_idx = alarm_idx[(alarm_idx >= s.index.min()) & (alarm_idx <= s.index.max())]
+
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9), sharex=True)
     plt.subplots_adjust(hspace=0.15)
 
