@@ -82,6 +82,24 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
                     artifact_name = f"{sensor}/csv/{name}"
                     _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
 
+        figs_dir = os.path.join(output_dir, "figs")
+        if os.path.isdir(figs_dir):
+            logger = task.get_logger()
+            for name in sorted(os.listdir(figs_dir)):
+                file_path = os.path.join(figs_dir, name)
+                if os.path.isfile(file_path) and name.lower().endswith(".png"):
+                    artifact_name = f"{sensor}/figs/{name}"
+                    _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
+                    try:
+                        stem = os.path.splitext(name)[0]
+                        logger.report_image(
+                            title=f"{sensor}/{stem}",
+                            series=sensor,
+                            local_path=file_path,
+                        )
+                    except Exception as exc:
+                        print(f"[WARN] report_image falhou para '{name}': {exc}")
+
         hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
         _publish_artifact(task, f"{sensor}/best_hyperparameters_json", hp_path, local_task_dir / sensor)
 
