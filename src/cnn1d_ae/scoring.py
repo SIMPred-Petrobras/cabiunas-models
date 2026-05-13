@@ -183,7 +183,7 @@ def apply_adaptive_monthly_threshold(
     thresh_array = np.full(n_seq, global_thresh, dtype=float)
 
     for month in months.unique():
-        m_mask = (months == month).values
+        m_mask = np.asarray(months == month)
         non_alarm_m = m_mask & (~alarm_win.values)
         if non_alarm_m.sum() >= 30:
             t = float(np.percentile(mae_valid[non_alarm_m], percentile))

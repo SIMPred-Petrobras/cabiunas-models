@@ -263,6 +263,17 @@ def build_sensor_dataframe(
 
     assert not df_use[sensor].isna().any(), "Falha interna: NaN remanescente apos interpolacao."
 
+    # Preenche NaN nas colunas de contexto (não interpoladas acima)
+    for ctx_col in context_cols:
+        if ctx_col in df_use.columns and df_use[ctx_col].isna().any():
+            df_use[ctx_col] = (
+                df_use[ctx_col]
+                .interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
+                .ffill()
+                .bfill()
+                .fillna(0.0)
+            )
+
     return df_use, long_gap_raw
 
 
@@ -303,7 +314,7 @@ def apply_feature_engineering(
     sensor: str,
     cfg: PipelineConfig,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    if not (cfg.ENABLE_ROLLING_FEATURES or cfg.ENABLE_SPECTRAL_FEATURES or cfg.ENABLE_CONTEXT_FEATURES):
+    if not (cfg.ENABLE_ROLLING_FEATURES or cfg.ENABLE_SPECTRAL_FEATURES or cfg.ENABLE_CONTEXT_FEATURES or cfg.ENABLE_TREND_FEATURES):
         return df_normal, df_all
 
     return (
