@@ -105,6 +105,49 @@ def _add_spectral_features(out: pd.DataFrame, sensor: str, cfg: PipelineConfig) 
     return out
 
 
+def _rolling_linear_slope(s: pd.Series, window: int) -> pd.Series:
+    """Slope of linear fit (units/sample) over a sliding window, vectorized via stride tricks."""
+    vals = s.to_numpy(dtype=float)
+    n = len(vals)
+    if window < 2 or n < window:
+        return pd.Series(np.zeros(n), index=s.index)
+
+    from numpy.lib.stride_tricks import sliding_window_view
+    wins = sliding_window_view(vals, window_shape=window)   # (n-window+1, window)
+    x = np.arange(window, dtype=float) - (window - 1) / 2.0  # centred
+    x_sq = float(np.dot(x, x))
+    if x_sq == 0:
+        return pd.Series(np.zeros(n), index=s.index)
+    y_mean = wins.mean(axis=1, keepdims=True)
+    slopes_valid = np.dot(wins - y_mean, x) / x_sq        # (n-window+1,)
+    slopes = np.zeros(n)
+    slopes[window - 1:] = slopes_valid
+    return pd.Series(slopes, index=s.index)
+
+
+def _add_trend_features(out: pd.DataFrame, sensor: str, cfg: PipelineConfig) -> pd.DataFrame:
+    """
+    Adds two drift-detection features:
+      {sensor}_trend_slope     — linear fit slope over TREND_SLOPE_WINDOW (captures direction of change).
+      {sensor}_dev_baseline    — deviation from a long rolling mean (captures slow level shift).
+
+    These are intentionally NOT present in rolling features because:
+    - slope gives the *direction* of change independent of absolute level;
+    - dev_baseline exposes multi-hour drift that a 30-min window cannot see.
+    """
+    s = pd.to_numeric(out[sensor], errors="coerce")
+    slope_window = _window(cfg.TREND_SLOPE_WINDOW, cfg.TIME_STEPS)
+    out[f"{sensor}_trend_slope"] = _rolling_linear_slope(s, slope_window).fillna(0.0)
+
+    # Long-baseline deviation: value minus rolling mean over BASELINE_HOURS
+    sample_dt = _infer_sampling_seconds(out.index)
+    pts_per_hour = max(1, int(round(3600.0 / sample_dt)))
+    baseline_window = max(slope_window, int(cfg.BASELINE_HOURS * pts_per_hour))
+    baseline = s.rolling(window=baseline_window, min_periods=1).mean()
+    out[f"{sensor}_dev_baseline"] = (s - baseline).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    return out
+
+
 def _add_context_features(out: pd.DataFrame, sensor: str, cfg: PipelineConfig) -> pd.DataFrame:
     context_cols = [c for c in (cfg.CONTEXT_COLS or []) if c in out.columns and c != sensor]
     if not context_cols:
@@ -143,6 +186,9 @@ def generate_features(
 
     if cfg.ENABLE_ROLLING_FEATURES:
         out = _add_rolling_features(out, sensor, cfg)
+
+    if cfg.ENABLE_TREND_FEATURES:
+        out = _add_trend_features(out, sensor, cfg)
 
     if cfg.ENABLE_SPECTRAL_FEATURES:
         out = _add_spectral_features(out, sensor, cfg)

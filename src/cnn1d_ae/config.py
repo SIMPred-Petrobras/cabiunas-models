@@ -52,6 +52,12 @@ class PipelineConfig:
     SENSOR_TYPE: str = "temperature"  # "temperature" | "pressure" | "vibration"
     ENABLE_CONTEXT_FEATURES: bool = False
     CONTEXT_COLS: List[str] = field(default_factory=list)
+
+    # Features de tendência: slope + desvio do baseline de longo prazo
+    # Captura deriva direcional que rolling mean/std não vê.
+    ENABLE_TREND_FEATURES: bool = False
+    TREND_SLOPE_WINDOW: Optional[int] = None  # None = usa TIME_STEPS
+    BASELINE_HOURS: float = 24.0              # janela do baseline de longo prazo (horas)
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995
@@ -119,8 +125,9 @@ class PipelineConfig:
     TARGET_ANOMALY_RATE: float = 0.01
 
     # Threshold semi-supervisionado (THRESH_MODE="alarm_f2")
-    ALARM_F2_TARGET_RECALL: float = 0.30   # meta mínima de recall nos alarmes históricos
+    ALARM_F2_TARGET_RECALL: float = 0.65   # meta mínima de recall por incidente (gap > ALARM_F2_INCIDENT_GAP_HOURS)
     ALARM_F2_MAX_FP_PER_DAY: float = 15.0  # FP/dia máximo tolerado
+    ALARM_F2_INCIDENT_GAP_HOURS: float = 4.0  # gap mínimo (h) para definir incidentes distintos
 
     # Threshold adaptativo mensal (recalibra sem retreinar)
     ADAPTIVE_THRESHOLD_MODE: str = "none"       # "none" | "monthly"

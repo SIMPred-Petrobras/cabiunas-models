@@ -253,6 +253,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     feature_engineering_report = {
         "rolling_features_enabled": bool(cfg.ENABLE_ROLLING_FEATURES),
         "rolling_window": int(cfg.ROLLING_WINDOW if cfg.ROLLING_WINDOW is not None else cfg.TIME_STEPS),
+        "trend_features_enabled": bool(cfg.ENABLE_TREND_FEATURES),
         "spectral_features_enabled": bool(cfg.ENABLE_SPECTRAL_FEATURES and cfg.SENSOR_TYPE.lower() == "vibration"),
         "spectral_window": int(cfg.SPECTRAL_WINDOW if cfg.SPECTRAL_WINDOW is not None else cfg.TIME_STEPS),
         "spectral_stride": int(cfg.SPECTRAL_STRIDE if cfg.SPECTRAL_STRIDE is not None else cfg.STRIDE),
@@ -322,6 +323,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             eval_window_minutes=_eval_win,
             target_recall=cfg.ALARM_F2_TARGET_RECALL,
             max_fp_per_day=cfg.ALARM_F2_MAX_FP_PER_DAY,
+            incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
         )
     else:
         threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)

@@ -34,6 +34,19 @@ def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float =
     raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/alarm_f2.")
 
 
+def _deduplicate_alarm_incidents(alarm_ts: pd.Series, incident_gap_hours: float = 4.0) -> pd.Series:
+    """Agrupa alarmes dentro de incident_gap_hours no mesmo incidente; retorna 1 representante por incidente."""
+    if alarm_ts.empty:
+        return alarm_ts
+    sorted_ts = alarm_ts.sort_values().reset_index(drop=True)
+    gap = pd.Timedelta(hours=incident_gap_hours)
+    keep = [sorted_ts.iloc[0]]
+    for t in sorted_ts.iloc[1:]:
+        if t - keep[-1] > gap:
+            keep.append(t)
+    return pd.Series(keep)
+
+
 def compute_threshold_alarm_optimized(
     mae_seq: np.ndarray,
     index: pd.DatetimeIndex,
@@ -43,25 +56,35 @@ def compute_threshold_alarm_optimized(
     target_recall: float = 0.30,
     max_fp_per_day: float = 15.0,
     fallback_percentile: float = 99.0,
+    incident_gap_hours: float = 4.0,
 ) -> float:
     """
     Calibração semi-supervisionada: encontra o threshold que atinge target_recall
     nos alarmes históricos dentro de eval_window_minutes, mantendo FP/dia <= max_fp_per_day.
 
+    Usa deduplicação por incidente: alarmes a menos de incident_gap_hours entre si
+    são tratados como um único evento para o cálculo de recall. Isso evita que
+    muitos alarmes do mesmo incidente distorçam a calibração.
+
     Estratégia: testa percentis de 99.9 → 70 (do mais estrito ao mais permissivo).
     Retorna o primeiro que satisfaz ambas as condições. Se nenhum satisfizer,
-    retorna o que melhor equilibra recall e FP. Nunca usa os alarmes no treino do AE —
-    só no ajuste post-hoc do limiar.
+    retorna o que melhor equilibra recall e FP.
     """
     alarm_ts = pd.to_datetime(alarm_times, errors="coerce")
     alarm_ts = pd.Series(alarm_ts).dropna().drop_duplicates().sort_values()
     if len(alarm_ts) and len(index):
         alarm_ts = alarm_ts[(alarm_ts >= index.min()) & (alarm_ts <= index.max())]
 
-    n_alarms = len(alarm_ts)
-    if n_alarms == 0:
+    if len(alarm_ts) == 0:
         print("[ALARM-F2] Sem alarmes no range — usando fallback p99.")
         return float(np.percentile(mae_seq, fallback_percentile))
+
+    # Deduplica alarmes individuais em incidentes únicos
+    incidents = _deduplicate_alarm_incidents(alarm_ts, incident_gap_hours)
+    n_incidents = len(incidents)
+    n_alarms_raw = len(alarm_ts)
+    if n_alarms_raw != n_incidents:
+        print(f"[ALARM-F2] Deduplicação: {n_alarms_raw} alarmes → {n_incidents} incidentes (gap>{incident_gap_hours}h)")
 
     # Timestamps das sequências (posição final de cada janela)
     n_seq = len(mae_seq)
@@ -72,11 +95,15 @@ def compute_threshold_alarm_optimized(
     mae_valid = mae_seq[valid]
 
     seq_sec = seq_end_times.values.astype("int64") / 1e9
-    alarm_sec = alarm_ts.values.astype("int64") / 1e9
+    # Recall medido sobre incidentes (1 representante por grupo)
+    incident_sec = incidents.values.astype("int64") / 1e9
     win_sec = float(eval_window_minutes * 60)
     duration_days = float((index.max() - index.min()).total_seconds() / 86400)
 
-    # Avalia cada candidato: recall + FP/dia
+    # Para FP: usamos todos os alarmes individuais como "janelas protegidas"
+    alarm_sec_all = alarm_ts.values.astype("int64") / 1e9
+
+    # Avalia cada candidato: recall (por incidente) + FP/dia
     candidates_pct = np.linspace(99.9, 70.0, 150)
     best_thresh = float(np.percentile(mae_valid, fallback_percentile))
     best_score = -1.0
@@ -89,24 +116,24 @@ def compute_threshold_alarm_optimized(
 
         anom_sec = seq_sec[anom_mask]
 
-        # Recall: fração dos alarmes com pelo menos uma anomalia na janela
-        diff = np.abs(alarm_sec[:, None] - anom_sec[None, :])  # (n_alarms, n_anom)
-        hits = int((diff <= win_sec).any(axis=1).sum())
-        recall = hits / n_alarms
+        # Recall por incidente
+        diff_inc = np.abs(incident_sec[:, None] - anom_sec[None, :])
+        hits = int((diff_inc <= win_sec).any(axis=1).sum())
+        recall = hits / n_incidents
 
-        # FP/dia: anomalias fora de qualquer janela de alarme
-        in_window = (diff <= win_sec).any(axis=0)  # (n_anom,)
+        # FP/dia: sequências anômalas fora de qualquer janela de alarme individual
+        diff_all = np.abs(alarm_sec_all[:, None] - anom_sec[None, :])
+        in_window = (diff_all <= win_sec).any(axis=0)
         fp_pts = int((~in_window).sum())
         fp_rate = fp_pts / max(duration_days, 1.0)
 
-        # Score: maximize recall penalizado por excesso de FP
         fp_penalty = max(0.0, (fp_rate - max_fp_per_day) / max_fp_per_day)
         score = recall - 0.5 * fp_penalty
 
         if recall >= target_recall and fp_rate <= max_fp_per_day:
             print(
                 f"[ALARM-F2] threshold={thresh:.5f} (p{pct:.1f}): "
-                f"recall={recall:.1%}  FP/dia={fp_rate:.1f}"
+                f"recall={recall:.1%} ({hits}/{n_incidents} incidentes)  FP/dia={fp_rate:.1f}"
             )
             return thresh
 
@@ -115,7 +142,7 @@ def compute_threshold_alarm_optimized(
             best_thresh = thresh
 
     print(
-        f"[ALARM-F2] Nao atingiu target (recall>={target_recall:.0%}, FP<={max_fp_per_day}/dia). "
+        f"[ALARM-F2] Nao atingiu target (recall>={target_recall:.0%} incidentes, FP<={max_fp_per_day}/dia). "
         f"Usando melhor compromisso: thresh={best_thresh:.5f}"
     )
     return best_thresh
