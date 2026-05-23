@@ -162,6 +162,9 @@ class PipelineConfig:
     SENSOR_EXCLUDE: Optional[List[str]] = None
     SENSOR_REGEX: Optional[str] = None
 
+    # Modelo multivariado conjunto: treina UM AE com todos os SENSOR_LIST como canais
+    MULTIVARIATE_JOINT: bool = False
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

@@ -1,0 +1,363 @@
+"""
+Task 2: Pipeline multivariado — treina UM único CNN-1D AE sobre TODOS os sensores
+empilhados como canais independentes.
+
+Diferença do pipeline univariado:
+  - Input shape: (n_seq, TIME_STEPS, n_sensores)   vs  (n_seq, TIME_STEPS, n_features_1_sensor)
+  - A máscara de exclusão do treino usa alarmes de TODOS os sensores combinados
+  - O threshold é calibrado sobre o MAE geral (média de todos os canais)
+  - O report de avaliação compara as predições contra TODAS as falhas (todos os sensores)
+  - Por-sensor MAE é calculado para identificar qual canal contribuiu mais para cada anomalia
+
+Limitações desta implementação:
+  - Todos os sensores são normalizados independentemente (z-score por coluna)
+  - Apenas sinal bruto entra no modelo (sem feature engineering por sensor)
+  - Timestamps são alinhados por inner-join: só instantes com TODOS os sensores disponíveis
+"""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+from .config import PipelineConfig
+from .io import ensure_sensor_dirs, save_run_config, resolve_output_dir
+from .model import setup_gpu
+from .preprocess import (
+    build_sensor_dataframe,
+    apply_hampel_filter,
+    build_exclusion_mask,
+    build_startup_exclusion_mask,
+)
+from .sequences import make_sequences, train_val_split
+from .tuning import run_tuner, refit_best_model
+from .scoring import (
+    reconstruction_mae_per_seq,
+    compute_threshold,
+    compute_threshold_alarm_optimized,
+    apply_adaptive_monthly_threshold,
+    map_seq_to_point_anomalies,
+    build_sequence_scores_df,
+    compute_anomaly_rate_per_day,
+    evaluate_alarm_detection,
+)
+from .plots import plot_loss, plot_hist_mae, plot_series_with_anomalies
+
+
+# ---------------------------------------------------------------------------
+# Helpers internos
+# ---------------------------------------------------------------------------
+
+def _load_running_col(cfg: PipelineConfig, df_raw: pd.DataFrame, index: pd.DatetimeIndex) -> Optional[pd.Series]:
+    if not cfg.RUNNING_COL:
+        return None
+    src = df_raw if cfg.TRAIN_SOURCE.lower() == "raw" else None
+    if src is None or cfg.RUNNING_COL not in src.columns:
+        return None
+    running = (
+        src.drop_duplicates(subset=[cfg.TIME_COL])
+        .set_index(cfg.TIME_COL)[cfg.RUNNING_COL]
+    )
+    return pd.to_numeric(running, errors="coerce").reindex(index).fillna(0.0)
+
+
+def _per_sensor_mae(x_true: np.ndarray, x_pred: np.ndarray) -> np.ndarray:
+    """MAE por sequência por sensor. Shape: (n_seq, n_sensors)."""
+    return np.mean(np.abs(x_pred - x_true), axis=1)   # axis=1 = eixo tempo
+
+
+def _normalize_multi(
+    df_normal: pd.DataFrame,
+    df_all: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    center = df_normal.mean(axis=0)
+    scale  = df_normal.std(axis=0).replace(0, 1.0)
+    return (df_normal - center) / scale, (df_all - center) / scale, center, scale
+
+
+# ---------------------------------------------------------------------------
+# Pipeline principal
+# ---------------------------------------------------------------------------
+
+def run_pipeline_multivariado(
+    cfg: PipelineConfig,
+    df_alarm: pd.DataFrame,
+    df_feat: pd.DataFrame,
+    df_raw: pd.DataFrame,
+    sensors: List[str],
+) -> Dict:
+    """
+    Treina um único autoencoder com todos os `sensors` como canais simultâneos.
+
+    Retorna dicionário com métricas de avaliação e caminhos dos arquivos gerados.
+    """
+    cfg = PipelineConfig(**asdict(cfg))
+    setup_gpu()
+
+    joint_label = "MULTI_" + "_".join(s[:6] for s in sensors[:5])
+    if len(sensors) > 5:
+        joint_label += f"_+{len(sensors)-5}more"
+
+    out_dirs = {
+        "root":       resolve_output_dir(cfg, joint_label),
+        "tuner":      os.path.join(resolve_output_dir(cfg, joint_label), "tuner"),
+        "best_model": os.path.join(resolve_output_dir(cfg, joint_label), "best_model"),
+        "figs":       os.path.join(resolve_output_dir(cfg, joint_label), "figs"),
+        "csv":        os.path.join(resolve_output_dir(cfg, joint_label), "csv"),
+    }
+    for p in out_dirs.values():
+        os.makedirs(p, exist_ok=True)
+    save_run_config(cfg, out_dirs)
+
+    print("\n" + "=" * 60)
+    print(f"[MULTI] Treinando modelo multivariado com {len(sensors)} sensores")
+    print(f"[MULTI] Sensores: {sensors}")
+    print(f"[MULTI] Output: {out_dirs['root']}")
+    print("=" * 60)
+
+    # ------------------------------------------------------------------
+    # 1. Preprocessar cada sensor individualmente (sentinel + interpolação)
+    # ------------------------------------------------------------------
+    sensor_dfs: Dict[str, pd.DataFrame] = {}
+    for sensor in sensors:
+        print(f"  [PREPROC] {sensor} ...", end=" ", flush=True)
+        try:
+            df_s, _ = build_sensor_dataframe(cfg, df_feat, df_raw, sensor)
+            df_s = apply_hampel_filter(df_s, sensor, cfg)
+            sensor_dfs[sensor] = df_s[[sensor]]
+            print("OK")
+        except Exception as exc:
+            print(f"ERRO ({exc}) — sensor ignorado")
+
+    if len(sensor_dfs) < 2:
+        return {"skipped": True, "reason": "menos de 2 sensores preprocessados com sucesso"}
+
+    sensors_ok = list(sensor_dfs.keys())
+
+    # ------------------------------------------------------------------
+    # 2. Inner-join: só timestamps presentes em TODOS os sensores
+    # ------------------------------------------------------------------
+    print(f"[MULTI] Alinhando {len(sensors_ok)} séries...")
+    common_index = None
+    for df_s in sensor_dfs.values():
+        common_index = df_s.index if common_index is None else common_index.intersection(df_s.index)
+
+    common_index = common_index.sort_values()
+    print(f"[MULTI] Índice comum: {len(common_index)} pontos "
+          f"({common_index.min()} → {common_index.max()})")
+
+    df_all = pd.DataFrame(index=common_index)
+    for sensor, df_s in sensor_dfs.items():
+        df_all[sensor] = df_s.loc[common_index, sensor]
+
+    if df_all.isna().any().any():
+        df_all = df_all.ffill().bfill().fillna(0.0)
+
+    # ------------------------------------------------------------------
+    # 3. Máscara de exclusão combinada (alarmes de TODOS os sensores)
+    # ------------------------------------------------------------------
+    all_alarm_times = pd.to_datetime(
+        df_alarm["Data da Ocorrencia"], errors="coerce"
+    ).dropna().drop_duplicates()
+
+    exclude = build_exclusion_mask(common_index, all_alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+
+    # RUNNING_COL (usa primeiro sensor como referência)
+    running = _load_running_col(cfg, df_raw, common_index)
+    if running is not None:
+        n_off = int((running <= 0.5).sum())
+        print(f"[RUNNING_COL] {n_off} pontos OFF excluídos do treino.")
+        exclude = exclude | (running <= 0.5)
+
+    # Startup exclusion (referencia o primeiro sensor que é de temperatura)
+    temp_sensors = [s for s in sensors_ok if s.startswith("TC") or s.startswith("T5")]
+    ref_sensor = temp_sensors[0] if temp_sensors else sensors_ok[0]
+    if cfg.EXCLUDE_STARTUP_MINUTES > 0:
+        off_thr = float(df_all[ref_sensor].quantile(cfg.OFF_VALUE_QUANTILE))
+        startup_excl = build_startup_exclusion_mask(
+            common_index, df_all[ref_sensor], off_thr, cfg.EXCLUDE_STARTUP_MINUTES
+        )
+        exclude = exclude | startup_excl
+
+    df_normal = df_all.loc[~exclude].copy()
+    print(f"[MULTI] Dados normais (treino): {len(df_normal):,} pts "
+          f"({100*len(df_normal)/max(len(df_all),1):.1f}% do total)")
+
+    if len(df_normal) < cfg.TIME_STEPS + 10:
+        return {"skipped": True, "reason": "poucos dados normais após exclusão"}
+
+    # ------------------------------------------------------------------
+    # 4. Normalização por sensor (z-score do conjunto normal)
+    # ------------------------------------------------------------------
+    df_normal_z, df_all_z, center, scale = _normalize_multi(df_normal, df_all)
+
+    values_normal = df_normal_z.values.astype(np.float32)
+    values_all    = df_all_z.values.astype(np.float32)
+    n_features = len(sensors_ok)   # 1 canal por sensor
+
+    # ------------------------------------------------------------------
+    # 5. Sequências
+    # ------------------------------------------------------------------
+    x_train_full = make_sequences(values_normal, cfg.TIME_STEPS, cfg.STRIDE)
+    x_all        = make_sequences(values_all,    cfg.TIME_STEPS, cfg.STRIDE)
+
+    x_train, x_val = train_val_split(
+        x_train_full, cfg.VAL_FRAC, cfg.SHUFFLE_TRAIN, cfg.RANDOM_SEED,
+        split_mode=cfg.SPLIT_MODE,
+    )
+    print(f"[MULTI] x_train={x_train.shape} | x_val={x_val.shape} | "
+          f"x_all={x_all.shape} | n_features={n_features}")
+
+    # ------------------------------------------------------------------
+    # 6. Treino
+    # ------------------------------------------------------------------
+    best_hp, best_model, df_trials = run_tuner(cfg, out_dirs, x_train, x_val, n_features)
+    df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
+
+    with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w") as f:
+        json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
+
+    history = refit_best_model(cfg, best_model, x_train, x_val)
+    model_path = os.path.join(out_dirs["best_model"], "model.keras")
+    best_model.save(model_path)
+
+    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+
+    # ------------------------------------------------------------------
+    # 7. Scoring: MAE geral + por sensor
+    # ------------------------------------------------------------------
+    train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
+    mae_seq_all   = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
+
+    # MAE por sensor para atribuição (n_seq, n_sensors)
+    x_all_pred = best_model.predict(x_all, batch_size=cfg.BATCH_SIZE, verbose=0)
+    mae_per_sensor_seq = _per_sensor_mae(x_all, x_all_pred)  # (n_seq, n_sensors)
+
+    # ------------------------------------------------------------------
+    # 8. Threshold — usando TODOS os alarmes
+    # ------------------------------------------------------------------
+    _eval_win = int(cfg.EVAL_WINDOW_MINUTES) if cfg.EVAL_WINDOW_MINUTES else cfg.EXCLUDE_MINUTES_AROUND_ALARM
+
+    if cfg.THRESH_MODE.lower() == "alarm_f2":
+        threshold = compute_threshold_alarm_optimized(
+            mae_seq=mae_seq_all,
+            index=df_all_z.index,
+            alarm_times=all_alarm_times,
+            time_steps=cfg.TIME_STEPS,
+            eval_window_minutes=_eval_win,
+            target_recall=cfg.ALARM_F2_TARGET_RECALL,
+            max_fp_per_day=cfg.ALARM_F2_MAX_FP_PER_DAY,
+            incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
+            stride=cfg.STRIDE,
+        )
+    else:
+        threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE)
+
+    plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
+
+    # Threshold adaptativo mensal
+    monthly_thresholds: dict = {}
+    if cfg.ADAPTIVE_THRESHOLD_MODE.lower() == "monthly":
+        anomaly_seq, monthly_thresholds = apply_adaptive_monthly_threshold(
+            mae_seq=mae_seq_all,
+            index=df_all_z.index,
+            time_steps=cfg.TIME_STEPS,
+            alarm_times=all_alarm_times,
+            eval_window_minutes=_eval_win,
+            percentile=cfg.ADAPTIVE_THRESHOLD_PERCENTILE,
+            stride=cfg.STRIDE,
+        )
+        print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k,v in monthly_thresholds.items()} }")
+    else:
+        anomaly_seq = mae_seq_all > threshold
+
+    # ------------------------------------------------------------------
+    # 9. Mapeamento sequência → ponto
+    # ------------------------------------------------------------------
+    df_point = map_seq_to_point_anomalies(
+        anomaly_seq, common_index, cfg.TIME_STEPS,
+        cfg.POINT_RULE, cfg.POINT_WINDOW, cfg.POINT_MIN_COUNT,
+        stride=cfg.STRIDE,
+    )
+
+    # ------------------------------------------------------------------
+    # 10. Salva CSVs
+    # ------------------------------------------------------------------
+    df_seq_scores = build_sequence_scores_df(common_index, mae_seq_all, anomaly_seq, stride=cfg.STRIDE)
+
+    # Adiciona coluna por sensor no CSV de sequências
+    for i, sensor in enumerate(sensors_ok):
+        df_seq_scores[f"mae_{sensor}"] = np.nan
+        n = min(len(mae_per_sensor_seq), len(df_seq_scores))
+        df_seq_scores.iloc[:n, df_seq_scores.columns.get_loc(f"mae_{sensor}")] = mae_per_sensor_seq[:n, i]
+
+    df_seq_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"), index=False)
+    df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
+
+    # ------------------------------------------------------------------
+    # 11. Avaliação contra TODOS os alarmes (todos os sensores)
+    # ------------------------------------------------------------------
+    eval_stats = evaluate_alarm_detection(df_alarm, df_point, _eval_win)
+    fp_per_day = compute_anomaly_rate_per_day(df_point[df_point["is_anom_point"] == 1])
+
+    # Quais sensores mais contribuíram para as anomalias detectadas?
+    anom_seq_idx = np.where(anomaly_seq)[0]
+    if len(anom_seq_idx) > 0:
+        mean_contrib = mae_per_sensor_seq[anom_seq_idx].mean(axis=0)
+        sensor_contrib = dict(zip(sensors_ok, [float(v) for v in mean_contrib]))
+        sensor_contrib_sorted = dict(sorted(sensor_contrib.items(), key=lambda x: -x[1]))
+    else:
+        sensor_contrib_sorted = {}
+
+    # ------------------------------------------------------------------
+    # 12. Plot série (usa o sensor de temperatura de referência)
+    # ------------------------------------------------------------------
+    if ref_sensor in df_raw.columns:
+        ref_series = df_raw.set_index(cfg.TIME_COL)[ref_sensor]
+    else:
+        ref_series = df_all[ref_sensor]
+
+    try:
+        plot_series_with_anomalies(
+            ref_series,
+            df_point,
+            df_alarm,
+            threshold,
+            os.path.join(out_dirs["figs"], f"series_{ref_sensor}_anomalies.png"),
+            sensor=ref_sensor,
+        )
+    except Exception as exc:
+        print(f"[WARN] plot_series falhou: {exc}")
+
+    # ------------------------------------------------------------------
+    # 13. Relatório final
+    # ------------------------------------------------------------------
+    report = {
+        "sensors": sensors_ok,
+        "n_sensors": len(sensors_ok),
+        "n_train_sequences": int(x_train.shape[0]),
+        "n_all_sequences": int(x_all.shape[0]),
+        "threshold": float(threshold),
+        "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
+        "anomaly_rate_per_day": float(fp_per_day),
+        "sensor_contribution_to_anomalies": sensor_contrib_sorted,
+        **eval_stats,
+    }
+
+    report_path = os.path.join(out_dirs["csv"], "multivariado_report.json")
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+
+    print("\n[MULTI] Resultado:")
+    print(f"  hit_rate          : {eval_stats.get('hit_rate')}")
+    print(f"  n_alarms          : {eval_stats.get('n_alarms')}")
+    print(f"  fp_per_day        : {fp_per_day:.2f}")
+    print(f"  threshold         : {threshold:.6f}")
+    print(f"  sensor_contrib    : {list(sensor_contrib_sorted.items())[:5]}")
+    print(f"  report            : {report_path}")
+
+    return report

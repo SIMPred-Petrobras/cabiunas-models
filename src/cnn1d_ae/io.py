@@ -134,7 +134,8 @@ def _resolve_dataset_file(dataset_root: Path, configured_path: str) -> Path:
 def _resolve_input_paths(cfg: PipelineConfig) -> Tuple[str, str, str]:
     dataset_id = (cfg.CLEARML_DATASET_ID or os.getenv("CLEARML_DATASET_ID", "")).strip()
     if not cfg.USE_CLEARML_DATASET:
-        return cfg.ALARM_CSV, cfg.FEATURES_CSV, cfg.RAW_CSV
+        features_csv = "" if cfg.TRAIN_SOURCE.lower() == "raw" else cfg.FEATURES_CSV
+        return cfg.ALARM_CSV, features_csv, cfg.RAW_CSV
 
     from clearml import Dataset
 
