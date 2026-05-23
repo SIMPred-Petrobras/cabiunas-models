@@ -12,6 +12,9 @@ from typing import Dict, List
 from clearml import Task
 from src.cnn1d_ae.config import PipelineConfig, cfg_to_dict, update_cfg_from_dict
 from src.cnn1d_ae.pipeline import run
+from src.cnn1d_ae.pipeline_multi import run_pipeline_multivariado
+from src.cnn1d_ae.io import load_data
+from src.cnn1d_ae.pipeline import discover_sensors
 
 
 def parse_args():
@@ -142,7 +145,13 @@ def main():
         task.execute_remotely(queue_name=cfg.REMOTE_QUEUE, exit_process=True)
 
     try:
-        run_info = run(cfg)
+        if cfg.MULTIVARIATE_JOINT:
+            df_alarm, df_feat, df_raw, _ = load_data(cfg)
+            sensors = discover_sensors(cfg, df_feat, df_raw)
+            print(f"[MULTI] Sensores para treino conjunto: {sensors}")
+            run_info = run_pipeline_multivariado(cfg, df_alarm, df_feat, df_raw, sensors)
+        else:
+            run_info = run(cfg)
         _upload_run_artifacts(task, run_info)
         task.mark_completed(status_message="Pipeline concluida com sucesso.")
     except Exception as exc:

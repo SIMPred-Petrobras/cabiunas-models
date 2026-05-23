@@ -57,6 +57,7 @@ def compute_threshold_alarm_optimized(
     max_fp_per_day: float = 15.0,
     fallback_percentile: float = 99.0,
     incident_gap_hours: float = 4.0,
+    stride: int = 1,
 ) -> float:
     """
     Calibração semi-supervisionada: encontra o threshold que atinge target_recall
@@ -89,7 +90,7 @@ def compute_threshold_alarm_optimized(
     # Timestamps das sequências (posição final de cada janela)
     n_seq = len(mae_seq)
     end_offset = time_steps - 1
-    seq_end_idx = np.arange(end_offset, end_offset + n_seq)
+    seq_end_idx = end_offset + np.arange(n_seq) * max(1, int(stride))
     valid = seq_end_idx < len(index)
     seq_end_times = index[seq_end_idx[valid]]
     mae_valid = mae_seq[valid]
@@ -155,6 +156,7 @@ def apply_adaptive_monthly_threshold(
     alarm_times: pd.Series,
     eval_window_minutes: int,
     percentile: float = 99.0,
+    stride: int = 1,
 ) -> tuple[np.ndarray, dict]:
     """
     Recalibra o threshold mensalmente usando o percentil do MAE em períodos sem alarme.
@@ -168,7 +170,7 @@ def apply_adaptive_monthly_threshold(
     """
     n_seq = len(mae_seq)
     end_offset = time_steps - 1
-    seq_end_idx = np.arange(end_offset, end_offset + n_seq)
+    seq_end_idx = end_offset + np.arange(n_seq) * max(1, int(stride))
     valid_mask = seq_end_idx < len(index)
     seq_end_times = index[seq_end_idx[valid_mask]]
     mae_valid = mae_seq[valid_mask]
@@ -206,6 +208,7 @@ def map_seq_to_point_anomalies(
     point_rule: str,
     point_window: int,
     point_min_count: int,
+    stride: int = 1,
 ) -> pd.DataFrame:
     seq_series = pd.Series(anomaly_seq.astype(int))
     w = max(1, int(point_window))
@@ -222,7 +225,7 @@ def map_seq_to_point_anomalies(
     df_point = pd.DataFrame(index=index)
     df_point["is_anom_point"] = 0
 
-    end_pos = np.arange(time_steps - 1, time_steps - 1 + len(point_flags))
+    end_pos = (time_steps - 1) + np.arange(len(point_flags)) * max(1, int(stride))
     valid = end_pos < len(index)
     valid_positions = end_pos[valid]
     valid_flags = point_flags.values[valid]
@@ -236,12 +239,14 @@ def map_seq_to_point_anomalies(
     return df_point
 
 
-def build_sequence_scores_df(index: pd.DatetimeIndex, mae_seq: np.ndarray, anomaly_seq: np.ndarray) -> pd.DataFrame:
+def build_sequence_scores_df(index: pd.DatetimeIndex, mae_seq: np.ndarray, anomaly_seq: np.ndarray, stride: int = 1) -> pd.DataFrame:
+    start_pos = np.arange(len(mae_seq)) * max(1, int(stride))
+    valid = start_pos < len(index)
     return pd.DataFrame(
         {
-            "seq_start_time": index[: len(mae_seq)],
-            "mae_seq": mae_seq,
-            "is_anom_seq": anomaly_seq.astype(int),
+            "seq_start_time": index[start_pos[valid]],
+            "mae_seq": mae_seq[valid],
+            "is_anom_seq": anomaly_seq.astype(int)[valid],
         }
     )
 
@@ -481,8 +486,9 @@ def mask_anomaly_seq_by_operational_state(
     index: pd.DatetimeIndex,
     time_steps: int,
     state: pd.Series,
+    stride: int = 1,
 ) -> np.ndarray:
-    seq_end_pos = np.arange(time_steps - 1, time_steps - 1 + len(anomaly_seq))
+    seq_end_pos = (time_steps - 1) + np.arange(len(anomaly_seq)) * max(1, int(stride))
     valid = seq_end_pos < len(index)
     out = anomaly_seq.astype(bool).copy()
     if not valid.any():

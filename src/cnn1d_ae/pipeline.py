@@ -324,6 +324,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             target_recall=cfg.ALARM_F2_TARGET_RECALL,
             max_fp_per_day=cfg.ALARM_F2_MAX_FP_PER_DAY,
             incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
+            stride=cfg.STRIDE,
         )
     else:
         threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
@@ -340,6 +341,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             alarm_times=_alarm_times_for_thresh,
             eval_window_minutes=_eval_win,
             percentile=cfg.ADAPTIVE_THRESHOLD_PERCENTILE,
+            stride=cfg.STRIDE,
         )
         print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k, v in monthly_thresholds.items()} }")
     else:
@@ -360,6 +362,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             index=df_all_z.index,
             time_steps=cfg.TIME_STEPS,
             state=state,
+            stride=cfg.STRIDE,
         )
     elif _running_col_series is not None:
         # Constrói estado operacional direto do RUNNING_COL para plots e avaliação.
@@ -371,10 +374,11 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             index=df_all_z.index,
             time_steps=cfg.TIME_STEPS,
             state=state,
+            stride=cfg.STRIDE,
         )
 
     all_index = df_all_z.index
-    df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq)
+    df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq, stride=cfg.STRIDE)
     df_seq_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"), index=False)
 
     df_point = map_seq_to_point_anomalies(
@@ -384,6 +388,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         cfg.POINT_RULE,
         cfg.POINT_WINDOW,
         cfg.POINT_MIN_COUNT,
+        stride=cfg.STRIDE,
     )
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
@@ -395,11 +400,12 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         warn_seq = mae_seq_all > warn_thresh
         if state is not None:
             warn_seq = mask_anomaly_seq_by_operational_state(
-                anomaly_seq=warn_seq, index=all_index, time_steps=cfg.TIME_STEPS, state=state
+                anomaly_seq=warn_seq, index=all_index, time_steps=cfg.TIME_STEPS, state=state, stride=cfg.STRIDE
             )
         df_warn = map_seq_to_point_anomalies(
             warn_seq, all_index, cfg.TIME_STEPS,
             cfg.POINT_RULE, cfg.POINT_WINDOW, cfg.WARN_POINT_MIN_COUNT,
+            stride=cfg.STRIDE,
         )
         if state is not None:
             df_warn["operational_state"] = state.reindex(df_warn.index).fillna("on")
