@@ -67,8 +67,12 @@ def _publish_artifact(
 
 def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
     local_task_dir = Path("artifacts_local") / task.id
-    _publish_artifact(task, "summary_all_sensors_csv", run_info.get("summary_path", ""), local_task_dir)
-    _publish_artifact(task, "time_integrity_report_json", run_info.get("time_report_path", ""), local_task_dir)
+    summary_path = run_info.get("summary_path", "")
+    if summary_path:
+        _publish_artifact(task, "summary_all_sensors_csv", summary_path, local_task_dir)
+    time_report_path = run_info.get("time_report_path", "")
+    if time_report_path:
+        _publish_artifact(task, "time_integrity_report_json", time_report_path, local_task_dir)
 
     sensor_outputs: List[Dict] = run_info.get("sensor_outputs", [])
     for out in sensor_outputs:
