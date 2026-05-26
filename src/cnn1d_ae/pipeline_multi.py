@@ -46,7 +46,12 @@ from .scoring import (
     compute_anomaly_rate_per_day,
     evaluate_alarm_detection,
 )
-from .plots import plot_loss, plot_hist_mae, plot_series_with_anomalies
+from .plots import (
+    plot_loss,
+    plot_hist_mae,
+    plot_series_with_anomalies,
+    plot_series_alarm_anomaly_subplots,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -322,14 +327,25 @@ def run_pipeline_multivariado(
     else:
         ref_series = df_all[ref_sensor]
 
+    anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
+    alarm_times = (
+        df_alarm["Data da Ocorrencia"]
+        if "Data da Ocorrencia" in df_alarm.columns
+        else pd.Series(dtype="datetime64[ns]")
+    )
     try:
         plot_series_with_anomalies(
             ref_series,
-            df_point,
-            df_alarm,
-            threshold,
+            anomalous_times,
             os.path.join(out_dirs["figs"], f"series_{ref_sensor}_anomalies.png"),
-            sensor=ref_sensor,
+            title=f"Serie + anomalias (multivariado) | sensor={ref_sensor}",
+        )
+        plot_series_alarm_anomaly_subplots(
+            ref_series,
+            anomalous_times,
+            alarm_times,
+            os.path.join(out_dirs["figs"], f"series_{ref_sensor}_alarm_anomaly_subplots.png"),
+            title=f"{ref_sensor}",
         )
     except Exception as exc:
         print(f"[WARN] plot_series falhou: {exc}")
