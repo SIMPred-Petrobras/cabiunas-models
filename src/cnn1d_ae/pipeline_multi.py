@@ -377,4 +377,9 @@ def run_pipeline_multivariado(
     print(f"  sensor_contrib    : {list(sensor_contrib_sorted.items())[:5]}")
     print(f"  report            : {report_path}")
 
-    return report
+    # Retorno compativel com _upload_run_artifacts (main.py): expoe o output_dir
+    # para que csv/ (inclui multivariado_report.json) e figs/ subam como artefatos.
+    return {
+        "report": report,
+        "sensor_outputs": [{"sensor": joint_label, "output_dir": out_dirs["root"]}],
+    }
