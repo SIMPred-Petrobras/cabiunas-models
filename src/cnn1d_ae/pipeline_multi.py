@@ -37,6 +37,7 @@ from .sequences import make_sequences, train_val_split
 from .tuning import run_tuner, refit_best_model
 from .scoring import (
     reconstruction_mae_per_seq,
+    reconstruction_mae_and_per_sensor,
     compute_threshold,
     compute_threshold_alarm_optimized,
     apply_adaptive_monthly_threshold,
@@ -231,11 +232,11 @@ def run_pipeline_multivariado(
     # 7. Scoring: MAE geral + por sensor
     # ------------------------------------------------------------------
     train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
-    mae_seq_all   = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
 
-    # MAE por sensor para atribuição (n_seq, n_sensors)
-    x_all_pred = best_model.predict(x_all, batch_size=cfg.BATCH_SIZE, verbose=0)
-    mae_per_sensor_seq = _per_sensor_mae(x_all, x_all_pred)  # (n_seq, n_sensors)
+    # MAE geral + por sensor numa unica passada em batches (evita OOM na GPU com x_all longo)
+    mae_seq_all, mae_per_sensor_seq = reconstruction_mae_and_per_sensor(
+        best_model, x_all, cfg.BATCH_SIZE
+    )  # (n_seq,), (n_seq, n_sensors)
 
     # ------------------------------------------------------------------
     # 8. Threshold — usando TODOS os alarmes

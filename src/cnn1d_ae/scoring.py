@@ -9,8 +9,37 @@ if TYPE_CHECKING:
 
 
 def reconstruction_mae_per_seq(model: "keras.Model", x: np.ndarray, batch_size: int) -> np.ndarray:
-    x_pred = model.predict(x, batch_size=batch_size, verbose=0)
-    return np.mean(np.abs(x_pred - x), axis=(1, 2))
+    """MAE por sequência, calculado em batches para nunca materializar a predição
+    inteira na GPU (evita OOM em séries longas)."""
+    n = len(x)
+    bs = max(1, int(batch_size))
+    out = np.empty(n, dtype=np.float32)
+    for start in range(0, n, bs):
+        xb = x[start:start + bs]
+        pb = np.asarray(model.predict_on_batch(xb))
+        out[start:start + len(xb)] = np.mean(np.abs(pb - xb), axis=(1, 2))
+    return out
+
+
+def reconstruction_mae_and_per_sensor(
+    model: "keras.Model", x: np.ndarray, batch_size: int
+):
+    """Passada única em batches: retorna (mae_seq (n,), mae_per_sensor (n, n_sensors)).
+    Substitui o par predict()+_per_sensor_mae para não segurar a predição completa
+    na GPU nem rodar o predict duas vezes."""
+    n = len(x)
+    n_sensors = x.shape[2]
+    bs = max(1, int(batch_size))
+    mae_seq = np.empty(n, dtype=np.float32)
+    mae_sensor = np.empty((n, n_sensors), dtype=np.float32)
+    for start in range(0, n, bs):
+        xb = x[start:start + bs]
+        pb = np.asarray(model.predict_on_batch(xb))
+        adiff = np.abs(pb - xb)
+        end = start + len(xb)
+        mae_seq[start:end] = np.mean(adiff, axis=(1, 2))
+        mae_sensor[start:end] = np.mean(adiff, axis=1)
+    return mae_seq, mae_sensor
 
 
 def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float = 0.01) -> float:
