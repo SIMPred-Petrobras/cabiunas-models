@@ -39,13 +39,34 @@ def setup_gpu() -> None:
         print(f"[GPU] Aviso: não foi possível configurar GPU: {e}")
 
 
-def build_callbacks(patience: int) -> List[keras.callbacks.Callback]:
-    return [
+class AnomalyValLoss(keras.callbacks.Callback):
+    """Mede o MSE de reconstrucao num conjunto de sequencias anomalas (janelas de
+    alarme) ao fim de cada epoca e registra em logs['val_loss_anomaly'].
+    Para um AE de anomalia saudavel, essa curva deve ficar ACIMA da val_loss normal."""
+
+    def __init__(self, x_anom, batch_size: int):
+        super().__init__()
+        self.x_anom = x_anom
+        self.batch_size = batch_size
+
+    def on_epoch_end(self, epoch, logs=None):
+        if logs is None or self.x_anom is None or len(self.x_anom) == 0:
+            return
+        res = self.model.evaluate(self.x_anom, self.x_anom,
+                                  batch_size=self.batch_size, verbose=0, return_dict=True)
+        logs["val_loss_anomaly"] = float(res.get("loss", res.get("mse", 0.0)))
+
+
+def build_callbacks(patience: int, x_anom=None, batch_size: int = 256) -> List[keras.callbacks.Callback]:
+    cbs = [
         keras.callbacks.EarlyStopping(monitor="val_loss", patience=patience, mode="min", restore_best_weights=True),
         keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", factor=0.5, patience=max(2, patience // 2), min_lr=1e-6
         ),
     ]
+    if x_anom is not None and len(x_anom) > 0:
+        cbs.append(AnomalyValLoss(x_anom, batch_size))
+    return cbs
 
 
 def build_cnn1d_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: int) -> keras.Model:
@@ -57,22 +78,40 @@ def build_cnn1d_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features:
     dropout = hp.Float("dropout", 0.0, 0.4, step=0.1)
     lr = hp.Choice("lr", [1e-4, 3e-4, 1e-3, 3e-3])
 
+    # Forca downsampling (s1>=1, s2>=2) para garantir um bottleneck real: sem
+    # compressao temporal o AE fica overcomplete, memoriza e nao separa anomalia.
     s1 = hp.Choice("stride_1", [1, 2])
-    s2 = hp.Choice("stride_2", [1, 2])
+    s2 = hp.Choice("stride_2", [2, 4])
+
+    # L2 weight decay leve para regularizar.
+    reg = keras.regularizers.l2(1e-4)
 
     inputs = keras.Input(shape=(time_steps, n_features))
 
-    x = layers.Conv1D(filters=f1, kernel_size=k1, padding="same", strides=s1, activation="relu")(inputs)
+    x = layers.Conv1D(filters=f1, kernel_size=k1, padding="same", strides=s1,
+                      activation="relu", kernel_regularizer=reg)(inputs)
     if dropout > 0:
         x = layers.Dropout(dropout)(x)
 
-    x = layers.Conv1D(filters=f2, kernel_size=k2, padding="same", strides=s2, activation="relu")(x)
+    x = layers.Conv1D(filters=f2, kernel_size=k2, padding="same", strides=s2,
+                      activation="relu", kernel_regularizer=reg)(x)
 
-    x = layers.Conv1DTranspose(filters=f2, kernel_size=k2, padding="same", strides=s2, activation="relu")(x)
+    # Tamanho do espaco latente vs entrada (visibilidade do bottleneck).
+    import math
+    latent_dim = math.ceil(time_steps / (s1 * s2)) * f2
+    input_dim = time_steps * n_features
+    ratio = latent_dim / max(input_dim, 1)
+    print(f"[AE] latente={latent_dim} vs entrada={input_dim} "
+          f"(ratio={ratio:.2f} | {'OVERCOMPLETE!' if ratio >= 1 else 'comprimido'}) "
+          f"| f1={f1} f2={f2} s1={s1} s2={s2}")
+
+    x = layers.Conv1DTranspose(filters=f2, kernel_size=k2, padding="same", strides=s2,
+                               activation="relu", kernel_regularizer=reg)(x)
     if dropout > 0:
         x = layers.Dropout(dropout)(x)
 
-    x = layers.Conv1DTranspose(filters=f1, kernel_size=k1, padding="same", strides=s1, activation="relu")(x)
+    x = layers.Conv1DTranspose(filters=f1, kernel_size=k1, padding="same", strides=s1,
+                               activation="relu", kernel_regularizer=reg)(x)
     outputs = layers.Conv1DTranspose(filters=n_features, kernel_size=3, padding="same")(x)
 
     model = keras.Model(inputs, outputs, name="cnn1d_autoencoder")

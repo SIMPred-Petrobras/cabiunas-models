@@ -57,8 +57,8 @@ def run_tuner(
     return best_hp, best_model, df_trials
 
 
-def refit_best_model(cfg: PipelineConfig, best_model: keras.Model, x_train, x_val) -> keras.callbacks.History:
-    callbacks = build_callbacks(cfg.PATIENCE)
+def refit_best_model(cfg: PipelineConfig, best_model: keras.Model, x_train, x_val, x_anom=None) -> keras.callbacks.History:
+    callbacks = build_callbacks(cfg.PATIENCE, x_anom=x_anom, batch_size=cfg.BATCH_SIZE)
     history = best_model.fit(
         x_train, x_train,
         validation_data=(x_val, x_val),

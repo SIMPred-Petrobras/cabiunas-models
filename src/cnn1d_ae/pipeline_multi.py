@@ -49,6 +49,7 @@ from .scoring import (
 from .plots import (
     plot_loss,
     plot_hist_mae,
+    plot_hist_normal_vs_anomaly,
     plot_series_with_anomalies,
     plot_series_alarm_anomaly_subplots,
 )
@@ -74,6 +75,21 @@ def _load_running_col(cfg: PipelineConfig, df_raw: pd.DataFrame, index: pd.Datet
 def _per_sensor_mae(x_true: np.ndarray, x_pred: np.ndarray) -> np.ndarray:
     """MAE por sequência por sensor. Shape: (n_seq, n_sensors)."""
     return np.mean(np.abs(x_pred - x_true), axis=1)   # axis=1 = eixo tempo
+
+
+def _mse_per_seq(model, x: np.ndarray, batch_size: int) -> np.ndarray:
+    """MSE puro por sequência (média sobre tempo×features), em batches.
+    Não inclui o termo L2 (ao contrário do model.evaluate 'loss')."""
+    n = len(x)
+    if n == 0:
+        return np.array([], dtype=np.float32)
+    bs = max(1, int(batch_size))
+    out = np.empty(n, dtype=np.float32)
+    for s in range(0, n, bs):
+        xb = x[s:s + bs]
+        pb = np.asarray(model.predict_on_batch(xb))
+        out[s:s + len(xb)] = np.mean((pb - xb) ** 2, axis=(1, 2))
+    return out
 
 
 def _normalize_multi(
@@ -171,7 +187,8 @@ def run_pipeline_multivariado(
         df_alarm["Data da Ocorrencia"], errors="coerce"
     ).dropna().drop_duplicates()
 
-    exclude = build_exclusion_mask(common_index, all_alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    alarm_exclude = build_exclusion_mask(common_index, all_alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    exclude = alarm_exclude.copy() if hasattr(alarm_exclude, "copy") else np.array(alarm_exclude)
 
     # RUNNING_COL (usa primeiro sensor como referência)
     running = _load_running_col(cfg, df_raw, common_index)
@@ -198,9 +215,16 @@ def run_pipeline_multivariado(
         return {"skipped": True, "reason": "poucos dados normais após exclusão"}
 
     # ------------------------------------------------------------------
-    # 4. Normalização por sensor (z-score do conjunto normal)
+    # 4. Normalização por sensor (z-score) — fit APENAS na porção de treino
+    #    (cronológica) para não vazar a validação na média/desvio.
     # ------------------------------------------------------------------
-    df_normal_z, df_all_z, center, scale = _normalize_multi(df_normal, df_all)
+    n_norm = len(df_normal)
+    n_val_rows = int(np.floor(cfg.VAL_FRAC * n_norm))
+    df_fit = df_normal.iloc[: n_norm - n_val_rows] if n_val_rows > 0 else df_normal
+    center = df_fit.mean(axis=0)
+    scale = df_fit.std(axis=0).replace(0, 1.0)
+    df_normal_z = (df_normal - center) / scale
+    df_all_z = (df_all - center) / scale
 
     values_normal = df_normal_z.values.astype(np.float32)
     values_all    = df_all_z.values.astype(np.float32)
@@ -216,8 +240,15 @@ def run_pipeline_multivariado(
         x_train_full, cfg.VAL_FRAC, cfg.SHUFFLE_TRAIN, cfg.RANDOM_SEED,
         split_mode=cfg.SPLIT_MODE,
     )
+
+    # Conjunto ANÔMALO p/ diagnóstico do AE: sequências cujo centro cai numa
+    # janela de alarme (o AE deve reconstruí-las PIOR que as normais).
+    alarm_pts = np.asarray(alarm_exclude).astype(bool)
+    seq_centers = np.arange(x_all.shape[0]) * max(1, int(cfg.STRIDE)) + cfg.TIME_STEPS // 2
+    seq_centers = np.clip(seq_centers, 0, len(alarm_pts) - 1)
+    x_anom = x_all[alarm_pts[seq_centers]]
     print(f"[MULTI] x_train={x_train.shape} | x_val={x_val.shape} | "
-          f"x_all={x_all.shape} | n_features={n_features}")
+          f"x_all={x_all.shape} | x_anom={x_anom.shape} | n_features={n_features}")
 
     # ------------------------------------------------------------------
     # 6. Treino
@@ -228,11 +259,25 @@ def run_pipeline_multivariado(
     with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w") as f:
         json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
 
-    history = refit_best_model(cfg, best_model, x_train, x_val)
+    history = refit_best_model(cfg, best_model, x_train, x_val, x_anom=x_anom)
     model_path = os.path.join(out_dirs["best_model"], "model.keras")
     best_model.save(model_path)
 
     plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+
+    # ------------------------------------------------------------------
+    # 6b. Diagnóstico do AE: MSE de reconstrução normal (val) vs anomalia
+    # ------------------------------------------------------------------
+    mse_val_normal = _mse_per_seq(best_model, x_val, cfg.BATCH_SIZE)
+    mse_anom = _mse_per_seq(best_model, x_anom, cfg.BATCH_SIZE)
+    val_mse_normal = float(np.mean(mse_val_normal)) if len(mse_val_normal) else None
+    val_mse_anomaly = float(np.mean(mse_anom)) if len(mse_anom) else None
+    separation_ratio = (
+        float(val_mse_anomaly / val_mse_normal)
+        if (val_mse_normal and val_mse_anomaly) else None
+    )
+    print(f"[AE-DIAG] val_mse_normal={val_mse_normal} | val_mse_anomalia={val_mse_anomaly} "
+          f"| separacao(anom/normal)={separation_ratio}")
 
     # ------------------------------------------------------------------
     # 7. Scoring: MAE geral + por sensor
@@ -265,6 +310,15 @@ def run_pipeline_multivariado(
         threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE)
 
     plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
+
+    # Histograma normal (val) vs anomalia (janelas de alarme), em MAE (mesma
+    # unidade do threshold) — mostra a separação que de fato importa num AE.
+    mae_val_normal = reconstruction_mae_per_seq(best_model, x_val, cfg.BATCH_SIZE)
+    mae_anom_seq = reconstruction_mae_per_seq(best_model, x_anom, cfg.BATCH_SIZE)
+    plot_hist_normal_vs_anomaly(
+        mae_val_normal, mae_anom_seq, threshold,
+        os.path.join(out_dirs["figs"], "hist_normal_vs_anomaly.png"),
+    )
 
     # Threshold adaptativo mensal
     monthly_thresholds: dict = {}
@@ -358,7 +412,12 @@ def run_pipeline_multivariado(
         "sensors": sensors_ok,
         "n_sensors": len(sensors_ok),
         "n_train_sequences": int(x_train.shape[0]),
+        "n_val_sequences": int(x_val.shape[0]),
+        "n_anomaly_sequences": int(x_anom.shape[0]),
         "n_all_sequences": int(x_all.shape[0]),
+        "val_mse_normal": val_mse_normal,
+        "val_mse_anomaly": val_mse_anomaly,
+        "anomaly_normal_separation_ratio": separation_ratio,
         "threshold": float(threshold),
         "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
         "anomaly_rate_per_day": float(fp_per_day),
