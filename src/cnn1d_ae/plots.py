@@ -56,11 +56,36 @@ def _shade_machine_states(ax: plt.Axes, idx: pd.DatetimeIndex, operational_state
 def plot_loss(history: keras.callbacks.History, out_path: str) -> None:
     fig = plt.figure()
     plt.plot(history.history.get("loss", []), label="train_loss")
-    plt.plot(history.history.get("val_loss", []), label="val_loss")
+    plt.plot(history.history.get("val_loss", []), label="val_loss (normal)")
+    anom = history.history.get("val_loss_anomaly", [])
+    if len(anom) > 0:
+        plt.plot(anom, label="val_loss (anomalia)", linestyle="--")
     plt.legend()
     plt.title("Training / Validation Loss")
     plt.xlabel("epoch")
-    plt.ylabel("mse")
+    plt.ylabel("loss (mse + l2)")
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_hist_normal_vs_anomaly(
+    mse_normal: np.ndarray,
+    mse_anomaly: np.ndarray,
+    threshold: float,
+    out_path: str,
+) -> None:
+    """Histograma do erro de reconstrucao: normal vs anomalia, com o threshold marcado.
+    A separacao entre as duas distribuicoes e o que realmente importa num AE de anomalia."""
+    fig = plt.figure(figsize=(9, 4))
+    if mse_normal is not None and len(mse_normal) > 0:
+        plt.hist(mse_normal, bins=80, alpha=0.6, density=True, label="normal (val)")
+    if mse_anomaly is not None and len(mse_anomaly) > 0:
+        plt.hist(mse_anomaly, bins=80, alpha=0.6, density=True, label="anomalia (janelas de alarme)")
+    plt.axvline(threshold, color="red", linestyle="--", label=f"threshold={threshold:.4g}")
+    plt.legend()
+    plt.title("Erro de reconstrucao: normal vs anomalia")
+    plt.xlabel("erro por sequencia")
+    plt.ylabel("densidade")
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
