@@ -86,7 +86,7 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
             for name in sorted(os.listdir(csv_dir)):
                 file_path = os.path.join(csv_dir, name)
                 if os.path.isfile(file_path):
-                    artifact_name = f"{sensor}/csv/{name}"
+                    artifact_name = f"{sensor}_csv_{name}"
                     _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
 
         figs_dir = os.path.join(output_dir, "figs")
@@ -95,7 +95,7 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
             for name in sorted(os.listdir(figs_dir)):
                 file_path = os.path.join(figs_dir, name)
                 if os.path.isfile(file_path) and name.lower().endswith(".png"):
-                    artifact_name = f"{sensor}/figs/{name}"
+                    artifact_name = f"{sensor}_figs_{name}"
                     _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
                     try:
                         stem = os.path.splitext(name)[0]
@@ -108,7 +108,7 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
                         print(f"[WARN] report_image falhou para '{name}': {exc}")
 
         hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
-        _publish_artifact(task, f"{sensor}/best_hyperparameters_json", hp_path, local_task_dir / sensor)
+        _publish_artifact(task, f"{sensor}_best_hyperparameters_json", hp_path, local_task_dir / sensor)
 
 
 def main():
@@ -128,7 +128,8 @@ def main():
         d["CLEARML_DATASET_ID"] = dataset_id
 
     project_name = cfg.CLEARML_PROJECT_NAME
-    task_name = f"cnn1d-ae::{path.stem}"
+    # '::' gera path duplo-encoded (%253A) e quebra o download de artefatos no fileserver.
+    task_name = f"cnn1d-ae-{path.stem}"
     task = Task.init(
         project_name=project_name,
         task_name=task_name,
