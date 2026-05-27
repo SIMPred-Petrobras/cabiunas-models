@@ -106,7 +106,8 @@ def run_pipeline_multivariado(
 
     joint_label = "MULTI_" + "_".join(s[:6] for s in sensors[:5])
     if len(sensors) > 5:
-        joint_label += f"_+{len(sensors)-5}more"
+        # Evita '+' no nome (quebra URL de artefato no ClearML / 404 no download).
+        joint_label += f"_{len(sensors)-5}more"
 
     out_dirs = {
         "root":       resolve_output_dir(cfg, joint_label),
