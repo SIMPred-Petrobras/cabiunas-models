@@ -154,6 +154,11 @@ class PipelineConfig:
     TRANSIENT_PADDING_MINUTES: int = 20
     TRANSIENT_DIFF_QUANTILE: float = 0.99
 
+    # Buffer assimétrico da máscara operacional: só mascara o ramp-up pós-partida
+    # (off->on), preservando a janela pré-desligamento (on->off, possível trip por falha).
+    # Recupera recall sem reintroduzir FP de partida.
+    OPERATIONAL_MASK_ASYMMETRIC: bool = True
+
     # Plot: mostrar só os alarmes da própria variável plotada (Tag == sensor),
     # em vez de todos os alarmes. Avaliação (hit_rate) segue usando todos.
     PLOT_ALARMS_PER_VARIABLE: bool = True
