@@ -42,6 +42,8 @@ from .scoring import (
     compute_threshold_alarm_optimized,
     apply_adaptive_monthly_threshold,
     map_seq_to_point_anomalies,
+    build_operational_state_from_running,
+    mask_anomaly_seq_by_operational_state,
     build_sequence_scores_df,
     compute_anomaly_rate_per_day,
     evaluate_alarm_detection,
@@ -335,6 +337,24 @@ def run_pipeline_multivariado(
         print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k,v in monthly_thresholds.items()} }")
     else:
         anomaly_seq = mae_seq_all > threshold
+
+    # ------------------------------------------------------------------
+    # 8b. Máscara de operação (running_a, proxy de NGP_A)
+    #     Zera anomalias fora de operação e no buffer de transição liga/desliga,
+    #     eliminando os falsos positivos de desligamento normal da turbina.
+    # ------------------------------------------------------------------
+    if cfg.ENABLE_OPERATIONAL_MASK and running is not None:
+        op_state = build_operational_state_from_running(
+            common_index, running, buffer_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+        )
+        n_before = int(np.asarray(anomaly_seq).sum())
+        anomaly_seq = mask_anomaly_seq_by_operational_state(
+            anomaly_seq=anomaly_seq, index=common_index, time_steps=cfg.TIME_STEPS,
+            state=op_state, stride=cfg.STRIDE,
+        )
+        n_after = int(np.asarray(anomaly_seq).sum())
+        print(f"[OP-MASK] {cfg.RUNNING_COL} (proxy NGP_A) buffer={cfg.TRANSIENT_PADDING_MINUTES}min: "
+              f"anomalias {n_before} -> {n_after} (removidas {n_before - n_after})")
 
     # ------------------------------------------------------------------
     # 9. Mapeamento sequência → ponto
