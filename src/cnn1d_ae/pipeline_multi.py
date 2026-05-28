@@ -403,11 +403,18 @@ def run_pipeline_multivariado(
         ref_series = df_all[ref_sensor]
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
-    alarm_times = (
-        df_alarm["Data da Ocorrencia"]
-        if "Data da Ocorrencia" in df_alarm.columns
-        else pd.Series(dtype="datetime64[ns]")
-    )
+    # Alarmes do plot: por padrão só os da própria variável (Tag == ref_sensor),
+    # evitando poluir a curva com alarmes de outros sensores/instrumentos.
+    if "Data da Ocorrencia" in df_alarm.columns:
+        if cfg.PLOT_ALARMS_PER_VARIABLE and "Tag" in df_alarm.columns:
+            sel = df_alarm[df_alarm["Tag"].astype(str) == ref_sensor]
+            alarm_times = sel["Data da Ocorrencia"]
+            print(f"[PLOT] alarmes da variável {ref_sensor}: {len(alarm_times)} "
+                  f"(de {len(df_alarm)} totais)")
+        else:
+            alarm_times = df_alarm["Data da Ocorrencia"]
+    else:
+        alarm_times = pd.Series(dtype="datetime64[ns]")
     try:
         plot_series_with_anomalies(
             ref_series,
