@@ -261,43 +261,72 @@ def run_pipeline_multivariado(
           f"x_all={x_all.shape} | x_anom={x_anom.shape} | n_features={n_features}")
 
     # ------------------------------------------------------------------
-    # 6. Treino
+    # 6. Treino — backend depende de cfg.MODEL_MODE
     # ------------------------------------------------------------------
-    best_hp, best_model, df_trials = run_tuner(cfg, out_dirs, x_train, x_val, n_features)
-    df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
+    val_mse_normal = None
+    val_mse_anomaly = None
+    separation_ratio = None
+    if cfg.MODEL_MODE == "per_sensor":
+        from .per_sensor import train_per_sensor
+        print(f"[MULTI] MODEL_MODE=per_sensor → treinando {n_features} AEs univariados "
+              f"(combinacao MAX entre sensores)")
+        psr = train_per_sensor(cfg, x_train, x_val, x_train_full, x_all, sensors_ok)
+        # signals que substituem os do backend multivariado
+        train_mae_seq = psr["train_combined_mae_seq"]
+        mae_seq_all = psr["combined_mae_seq"]
+        mae_per_sensor_seq = psr["mae_per_sensor_seq"]
+        # placeholders para artefatos que so existem no caminho multivariado
+        best_model = None
+        history = None
+        # salva cada modelo univariado em best_model/
+        for sensor, model in psr["models"].items():
+            mp = os.path.join(out_dirs["best_model"], f"model_{sensor}.keras")
+            try:
+                model.save(mp)
+            except Exception as exc:
+                print(f"[WARN] save per_sensor model {sensor}: {exc}")
+        with open(os.path.join(out_dirs["best_model"], "per_sensor_config.json"), "w") as f:
+            json.dump({
+                "f1": cfg.PER_SENSOR_F1, "f2": cfg.PER_SENSOR_F2,
+                "s1": cfg.PER_SENSOR_S1, "s2": cfg.PER_SENSOR_S2,
+                "epochs": cfg.PER_SENSOR_EPOCHS, "sensors": sensors_ok,
+                "aggregation": "MAX",
+            }, f, indent=2, ensure_ascii=False)
+    else:
+        # backend multivariado (default): 1 AE com N canais
+        best_hp, best_model, df_trials = run_tuner(cfg, out_dirs, x_train, x_val, n_features)
+        df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
 
-    with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w") as f:
-        json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
+        with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w") as f:
+            json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
 
-    history = refit_best_model(cfg, best_model, x_train, x_val, x_anom=x_anom)
-    model_path = os.path.join(out_dirs["best_model"], "model.keras")
-    best_model.save(model_path)
+        history = refit_best_model(cfg, best_model, x_train, x_val, x_anom=x_anom)
+        model_path = os.path.join(out_dirs["best_model"], "model.keras")
+        best_model.save(model_path)
 
-    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+        plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
 
-    # ------------------------------------------------------------------
-    # 6b. Diagnóstico do AE: MSE de reconstrução normal (val) vs anomalia
-    # ------------------------------------------------------------------
-    mse_val_normal = _mse_per_seq(best_model, x_val, cfg.BATCH_SIZE)
-    mse_anom = _mse_per_seq(best_model, x_anom, cfg.BATCH_SIZE)
-    val_mse_normal = float(np.mean(mse_val_normal)) if len(mse_val_normal) else None
-    val_mse_anomaly = float(np.mean(mse_anom)) if len(mse_anom) else None
-    separation_ratio = (
-        float(val_mse_anomaly / val_mse_normal)
-        if (val_mse_normal and val_mse_anomaly) else None
-    )
-    print(f"[AE-DIAG] val_mse_normal={val_mse_normal} | val_mse_anomalia={val_mse_anomaly} "
-          f"| separacao(anom/normal)={separation_ratio}")
+        # ------------------------------------------------------------------
+        # 6b. Diagnóstico do AE: MSE de reconstrução normal (val) vs anomalia
+        # ------------------------------------------------------------------
+        mse_val_normal = _mse_per_seq(best_model, x_val, cfg.BATCH_SIZE)
+        mse_anom = _mse_per_seq(best_model, x_anom, cfg.BATCH_SIZE)
+        val_mse_normal = float(np.mean(mse_val_normal)) if len(mse_val_normal) else None
+        val_mse_anomaly = float(np.mean(mse_anom)) if len(mse_anom) else None
+        separation_ratio = (
+            float(val_mse_anomaly / val_mse_normal)
+            if (val_mse_normal and val_mse_anomaly) else None
+        )
+        print(f"[AE-DIAG] val_mse_normal={val_mse_normal} | val_mse_anomalia={val_mse_anomaly} "
+              f"| separacao(anom/normal)={separation_ratio}")
 
-    # ------------------------------------------------------------------
-    # 7. Scoring: MAE geral + por sensor
-    # ------------------------------------------------------------------
-    train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
-
-    # MAE geral + por sensor numa unica passada em batches (evita OOM na GPU com x_all longo)
-    mae_seq_all, mae_per_sensor_seq = reconstruction_mae_and_per_sensor(
-        best_model, x_all, cfg.BATCH_SIZE
-    )  # (n_seq,), (n_seq, n_sensors)
+        # ------------------------------------------------------------------
+        # 7. Scoring: MAE geral + por sensor (backend multivariado)
+        # ------------------------------------------------------------------
+        train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
+        mae_seq_all, mae_per_sensor_seq = reconstruction_mae_and_per_sensor(
+            best_model, x_all, cfg.BATCH_SIZE
+        )  # (n_seq,), (n_seq, n_sensors)
 
     # ------------------------------------------------------------------
     # 8. Threshold — usando TODOS os alarmes
@@ -323,12 +352,14 @@ def run_pipeline_multivariado(
 
     # Histograma normal (val) vs anomalia (janelas de alarme), em MAE (mesma
     # unidade do threshold) — mostra a separação que de fato importa num AE.
-    mae_val_normal = reconstruction_mae_per_seq(best_model, x_val, cfg.BATCH_SIZE)
-    mae_anom_seq = reconstruction_mae_per_seq(best_model, x_anom, cfg.BATCH_SIZE)
-    plot_hist_normal_vs_anomaly(
-        mae_val_normal, mae_anom_seq, threshold,
-        os.path.join(out_dirs["figs"], "hist_normal_vs_anomaly.png"),
-    )
+    # Em per_sensor mode best_model é None; pula esse diagnostico (legado do multi).
+    if best_model is not None:
+        mae_val_normal = reconstruction_mae_per_seq(best_model, x_val, cfg.BATCH_SIZE)
+        mae_anom_seq = reconstruction_mae_per_seq(best_model, x_anom, cfg.BATCH_SIZE)
+        plot_hist_normal_vs_anomaly(
+            mae_val_normal, mae_anom_seq, threshold,
+            os.path.join(out_dirs["figs"], "hist_normal_vs_anomaly.png"),
+        )
 
     # Threshold adaptativo mensal
     monthly_thresholds: dict = {}
