@@ -163,6 +163,17 @@ class PipelineConfig:
     # em vez de todos os alarmes. Avaliação (hit_rate) segue usando todos.
     PLOT_ALARMS_PER_VARIABLE: bool = True
 
+    # Arquitetura do modelo: 'multivariate' (1 AE com N canais) ou 'per_sensor'
+    # (N AEs univariados combinados por MAX). Validado out-of-sample:
+    # per_sensor entrega +7pp recall e 5x menos FA que multivariate.
+    MODEL_MODE: str = "multivariate"
+    # Hiperparâmetros do backend per_sensor (cada AE é mínimo: 1 canal, latente ~15)
+    PER_SENSOR_F1: int = 4
+    PER_SENSOR_F2: int = 1
+    PER_SENSOR_S1: int = 2
+    PER_SENSOR_S2: int = 2
+    PER_SENSOR_EPOCHS: int = 15
+
     # Camada preditiva (Fase 2): EWMA sobre o health-index + curva lead-time x falso-alarme.
     # Substitui "hit_rate@threshold_único" como métrica oficial — robusta à variância de tuning.
     ENABLE_PREDICTIVE_LAYER: bool = True
