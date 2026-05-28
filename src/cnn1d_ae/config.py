@@ -154,6 +154,10 @@ class PipelineConfig:
     TRANSIENT_PADDING_MINUTES: int = 20
     TRANSIENT_DIFF_QUANTILE: float = 0.99
 
+    # Plot: mostrar só os alarmes da própria variável plotada (Tag == sensor),
+    # em vez de todos os alarmes. Avaliação (hit_rate) segue usando todos.
+    PLOT_ALARMS_PER_VARIABLE: bool = True
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 
