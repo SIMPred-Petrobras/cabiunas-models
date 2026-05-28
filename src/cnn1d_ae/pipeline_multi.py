@@ -54,6 +54,14 @@ from .plots import (
     plot_hist_normal_vs_anomaly,
     plot_series_with_anomalies,
     plot_series_alarm_anomaly_subplots,
+    plot_predictive_curve,
+    plot_health_index_over_time,
+)
+from .predictive import (
+    extract_incidents,
+    compute_health_index_ewma,
+    compute_predictive_curve,
+    pick_operating_point,
 )
 
 
@@ -359,6 +367,78 @@ def run_pipeline_multivariado(
               f"anomalias {n_before} -> {n_after} (removidas {n_before - n_after})")
 
     # ------------------------------------------------------------------
+    # 8c. Camada preditiva: health-index EWMA + curva lead-time × FA/dia
+    #     Saída oficial robusta a variância de tuning (substitui hit_rate@thr_único).
+    # ------------------------------------------------------------------
+    predictive_summary: dict = {}
+    op_24 = None
+    if cfg.ENABLE_PREDICTIVE_LAYER:
+        incidents = extract_incidents(
+            df_alarm,
+            priorities=cfg.PREDICTIVE_INCIDENT_PRIORITY,
+            incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
+        )
+        # timestamps do fim de cada sequência + fração de operação na janela
+        seq_starts = np.arange(len(mae_seq_all)) * max(1, int(cfg.STRIDE))
+        seq_ends_pos = np.clip(seq_starts + cfg.TIME_STEPS - 1, 0, len(common_index) - 1)
+        seq_end_times = common_index[seq_ends_pos]
+        seq_end_seconds = pd.DatetimeIndex(seq_end_times).values.astype("datetime64[s]").astype("int64")
+        if running is not None:
+            rv = np.asarray(running, dtype=float)
+            seq_run_frac = np.array([rv[s:s + cfg.TIME_STEPS].mean() for s in seq_starts])
+        else:
+            seq_run_frac = np.ones(len(mae_seq_all))
+        seq_run_full = seq_run_frac >= 0.999
+        dt_seconds = max(1, int(cfg.STRIDE)) * 30.0  # amostragem 30s/pt
+        health_ewma = compute_health_index_ewma(
+            mae_seq_all, seq_run_frac,
+            half_life_hours=cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS,
+            dt_seconds=dt_seconds,
+        )
+        inc_seconds = (
+            pd.DatetimeIndex(incidents).values.astype("datetime64[s]").astype("int64")
+            if len(incidents) else np.array([], dtype="int64")
+        )
+        curves: dict = {}
+        op_points: dict = {}
+        for h in cfg.PREDICTIVE_HORIZONS_HOURS:
+            curve = compute_predictive_curve(
+                health_ewma=health_ewma,
+                seq_running_full=seq_run_full,
+                t_end_seconds=seq_end_seconds.astype(float),
+                incident_seconds=inc_seconds.astype(float),
+                horizon_hours=float(h),
+                debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
+            )
+            curves[float(h)] = curve
+            op = pick_operating_point(curve, cfg.PREDICTIVE_FA_BUDGET_PER_DAY)
+            op_points[float(h)] = op
+            if curve is not None and len(curve):
+                curve.to_csv(
+                    os.path.join(out_dirs["csv"], f"predictive_curve_H{int(h)}h.csv"),
+                    index=False,
+                )
+            if op:
+                print(f"[PRED] H={int(h)}h | recall={op['recall']:.2f} "
+                      f"fa/dia={op['fa_per_day']:.2f} lead={op['median_lead_hours']:.1f}h "
+                      f"thr={op['threshold']:.4f} eps={int(op['n_episodes'])}")
+                predictive_summary[f"H{int(h)}h"] = op
+        op_24 = op_points.get(24.0)
+        try:
+            plot_predictive_curve(curves, op_points,
+                                  os.path.join(out_dirs["figs"], "predictive_curve.png"))
+            plot_health_index_over_time(
+                seq_end_times, health_ewma,
+                op_threshold=(op_24["threshold"] if op_24 else None),
+                incident_times=incidents,
+                out_path=os.path.join(out_dirs["figs"], "health_index_ewma.png"),
+            )
+        except Exception as exc:
+            print(f"[WARN] plot preditivo falhou: {exc}")
+        print(f"[PRED] incidentes genuinos usados: {len(incidents)} "
+              f"(prioridade={cfg.PREDICTIVE_INCIDENT_PRIORITY})")
+
+    # ------------------------------------------------------------------
     # 9. Mapeamento sequência → ponto
     # ------------------------------------------------------------------
     df_point = map_seq_to_point_anomalies(
@@ -451,6 +531,7 @@ def run_pipeline_multivariado(
         "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
         "anomaly_rate_per_day": float(fp_per_day),
         "sensor_contribution_to_anomalies": sensor_contrib_sorted,
+        "predictive_operating_points": predictive_summary,
         **eval_stats,
     }
 

@@ -163,6 +163,19 @@ class PipelineConfig:
     # em vez de todos os alarmes. Avaliação (hit_rate) segue usando todos.
     PLOT_ALARMS_PER_VARIABLE: bool = True
 
+    # Camada preditiva (Fase 2): EWMA sobre o health-index + curva lead-time x falso-alarme.
+    # Substitui "hit_rate@threshold_único" como métrica oficial — robusta à variância de tuning.
+    ENABLE_PREDICTIVE_LAYER: bool = True
+    PREDICTIVE_INCIDENT_PRIORITY: List[str] = field(
+        default_factory=lambda: ["HIGH", "MEDIUM", "LOLO"]
+    )
+    PREDICTIVE_HORIZONS_HOURS: List[float] = field(
+        default_factory=lambda: [8.0, 24.0, 72.0]
+    )
+    PREDICTIVE_EWMA_HALF_LIFE_HOURS: float = 4.0
+    PREDICTIVE_ALERT_DEBOUNCE_HOURS: float = 8.0
+    PREDICTIVE_FA_BUDGET_PER_DAY: float = 1.0
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 
