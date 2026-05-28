@@ -514,23 +514,36 @@ def build_operational_state_from_running(
     index: pd.DatetimeIndex,
     running: pd.Series,
     buffer_minutes: float = 5.0,
+    asymmetric: bool = True,
 ) -> pd.Series:
     """Estado operacional a partir do flag de operacao (running_a, proxy de NGP_A).
 
-    'on' quando ligado; 'off' quando desligado; 'transiente' num buffer +/- buffer_minutes
-    ao redor de cada transicao liga/desliga (cobre o lag de queda dos sensores apos o
-    desligamento). Use mask_anomaly_seq_by_operational_state para zerar anomalias fora de 'on'.
+    'on' quando ligado; 'off' quando desligado; 'transiente' nas bordas das transicoes.
+
+    asymmetric=True (recomendado): só mascara o RAMP-UP pos-partida (off->on),
+    preservando a janela PRE-desligamento (on->off) — onde pode estar a assinatura
+    de uma falha que trippa a maquina. Recupera recall sem reintroduzir FP de partida.
+
+    asymmetric=False: mascara +/- buffer_minutes em TODAS as transicoes (legado).
     """
     run = pd.to_numeric(pd.Series(running).reindex(index), errors="coerce").fillna(0.0)
     state = pd.Series("on", index=index, dtype=object)
     is_off = run <= 0.5
     state.loc[is_off] = "off"
     if bool(is_off.any()):
-        edge = is_off != is_off.shift(fill_value=bool(is_off.iloc[0]))
         pad = pd.Timedelta(minutes=max(0.0, float(buffer_minutes)))
-        for t in index[edge.values]:
-            w = (index >= (t - pad)) & (index <= (t + pad))
-            state.loc[w & (state == "on")] = "transiente"
+        prev_off = is_off.shift(fill_value=bool(is_off.iloc[0]))
+        startup_edge = (~is_off) & prev_off    # off->on (partida)
+        if asymmetric:
+            # so mascara o ramp-up depois da partida; pre-desligamento fica intacto.
+            for t in index[startup_edge.values]:
+                w = (index >= t) & (index <= t + pad)
+                state.loc[w & (state == "on")] = "transiente"
+        else:
+            edge = is_off != prev_off
+            for t in index[edge.values]:
+                w = (index >= (t - pad)) & (index <= (t + pad))
+                state.loc[w & (state == "on")] = "transiente"
     return state
 
 

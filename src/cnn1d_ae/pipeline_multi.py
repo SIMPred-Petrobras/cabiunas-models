@@ -345,7 +345,9 @@ def run_pipeline_multivariado(
     # ------------------------------------------------------------------
     if cfg.ENABLE_OPERATIONAL_MASK and running is not None:
         op_state = build_operational_state_from_running(
-            common_index, running, buffer_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            common_index, running,
+            buffer_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            asymmetric=cfg.OPERATIONAL_MASK_ASYMMETRIC,
         )
         n_before = int(np.asarray(anomaly_seq).sum())
         anomaly_seq = mask_anomaly_seq_by_operational_state(
