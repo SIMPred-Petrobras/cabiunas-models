@@ -378,6 +378,13 @@ def run_pipeline_multivariado(
             priorities=cfg.PREDICTIVE_INCIDENT_PRIORITY,
             incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
         )
+        # Filtra ao range dos dados dos sensores: incidentes fora dessa janela
+        # nao podem ser detectados (sem dados), entao nao devem contar como "perdidos".
+        if len(incidents):
+            t_min, t_max = common_index.min(), common_index.max()
+            n_total = len(incidents)
+            incidents = incidents[(incidents >= t_min) & (incidents <= t_max)]
+            print(f"[PRED] incidentes no range dos dados: {len(incidents)} (de {n_total} totais)")
         # timestamps do fim de cada sequência + fração de operação na janela
         seq_starts = np.arange(len(mae_seq_all)) * max(1, int(cfg.STRIDE))
         seq_ends_pos = np.clip(seq_starts + cfg.TIME_STEPS - 1, 0, len(common_index) - 1)
