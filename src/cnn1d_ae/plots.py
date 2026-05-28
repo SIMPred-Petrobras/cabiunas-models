@@ -68,6 +68,51 @@ def plot_loss(history: keras.callbacks.History, out_path: str) -> None:
     plt.close(fig)
 
 
+def plot_predictive_curve(curves: dict, op_points: dict, out_path: str) -> None:
+    """Curva preditiva oficial: recall vs FA/dia + lead time vs FA/dia, por horizonte."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 4.5))
+    for h, curve in sorted(curves.items()):
+        if curve is None or len(curve) == 0:
+            continue
+        axes[0].plot(curve["fa_per_day"], curve["recall"], marker=".", label=f"H={h}h")
+        axes[1].plot(curve["fa_per_day"], curve["median_lead_hours"], marker=".", label=f"H={h}h")
+        op = op_points.get(h)
+        if op:
+            axes[0].scatter([op["fa_per_day"]], [op["recall"]], s=60, edgecolor="black", zorder=3)
+    axes[0].axvline(1.0, color="gray", ls=":", label="orçamento 1 FA/dia")
+    axes[0].set_xlabel("falso-alarmes / dia")
+    axes[0].set_ylabel("recall (incidentes genuínos)")
+    axes[0].set_title("Curva preditiva: recall vs FA")
+    axes[0].set_xlim(0, 10); axes[0].set_ylim(0, 1.02); axes[0].legend()
+    axes[1].set_xlabel("falso-alarmes / dia")
+    axes[1].set_ylabel("lead time mediano (h)")
+    axes[1].set_title("Antecipação vs FA")
+    axes[1].set_xlim(0, 10); axes[1].legend()
+    fig.tight_layout()
+    plt.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_health_index_over_time(
+    t_end, health_ewma, op_threshold, incident_times, out_path: str
+) -> None:
+    """Health-index EWMA ao longo do tempo, com threshold operacional e incidentes."""
+    fig, ax = plt.subplots(figsize=(15, 4))
+    ax.plot(t_end, health_ewma, lw=0.6, color="steelblue", label="health-index EWMA")
+    if op_threshold is not None:
+        ax.axhline(op_threshold, color="r", ls="--", label=f"alerta (thr={op_threshold:.3f})")
+    if incident_times is not None and len(incident_times):
+        for ti in pd.DatetimeIndex(incident_times):
+            ax.axvline(ti, color="green", alpha=0.3, lw=0.8)
+    ax.set_title("Health-index EWMA | verde = incidente genuíno")
+    ax.set_ylabel("EWMA(MAE)")
+    ax.set_xlabel("tempo")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    plt.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_hist_normal_vs_anomaly(
     mse_normal: np.ndarray,
     mse_anomaly: np.ndarray,
