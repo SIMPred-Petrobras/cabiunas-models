@@ -510,6 +510,30 @@ def build_operational_state(
     return state
 
 
+def build_operational_state_from_running(
+    index: pd.DatetimeIndex,
+    running: pd.Series,
+    buffer_minutes: float = 5.0,
+) -> pd.Series:
+    """Estado operacional a partir do flag de operacao (running_a, proxy de NGP_A).
+
+    'on' quando ligado; 'off' quando desligado; 'transiente' num buffer +/- buffer_minutes
+    ao redor de cada transicao liga/desliga (cobre o lag de queda dos sensores apos o
+    desligamento). Use mask_anomaly_seq_by_operational_state para zerar anomalias fora de 'on'.
+    """
+    run = pd.to_numeric(pd.Series(running).reindex(index), errors="coerce").fillna(0.0)
+    state = pd.Series("on", index=index, dtype=object)
+    is_off = run <= 0.5
+    state.loc[is_off] = "off"
+    if bool(is_off.any()):
+        edge = is_off != is_off.shift(fill_value=bool(is_off.iloc[0]))
+        pad = pd.Timedelta(minutes=max(0.0, float(buffer_minutes)))
+        for t in index[edge.values]:
+            w = (index >= (t - pad)) & (index <= (t + pad))
+            state.loc[w & (state == "on")] = "transiente"
+    return state
+
+
 def mask_anomaly_seq_by_operational_state(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,
