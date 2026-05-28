@@ -166,9 +166,9 @@ class PipelineConfig:
     # Camada preditiva (Fase 2): EWMA sobre o health-index + curva lead-time x falso-alarme.
     # Substitui "hit_rate@threshold_único" como métrica oficial — robusta à variância de tuning.
     ENABLE_PREDICTIVE_LAYER: bool = True
-    PREDICTIVE_INCIDENT_PRIORITY: List[str] = field(
-        default_factory=lambda: ["HIGH", "MEDIUM", "LOLO"]
-    )
+    # Lista vazia = todas as prioridades (todos os alarmes sao considerados reais
+    # pela operacao). Filtre por prioridade so se houver uma curadoria explicita.
+    PREDICTIVE_INCIDENT_PRIORITY: List[str] = field(default_factory=list)
     PREDICTIVE_HORIZONS_HOURS: List[float] = field(
         default_factory=lambda: [8.0, 24.0, 72.0]
     )
