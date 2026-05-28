@@ -6,13 +6,6 @@ import os
 import pickle
 import re
 import shutil
-
-# Silencia o dump do BFC allocator do TF (~37 MB de "Chunks of size X totalling Y")
-# emitido quando ha pressao de memoria GPU. Esse dump enchia o buffer de eventos
-# do ClearML > 15 MB → loop infinito de retry → worker wedged. Set ANTES de qualquer
-# import que toque TF. Nao muda o modelo; so silencia log de runtime do TF (nivel C++).
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-
 from pathlib import Path
 from typing import Dict, List
 
