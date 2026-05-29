@@ -130,3 +130,48 @@ e entrar em modo "entregar valor com o que temos":
 sistema de alertas em tier no `pipeline_multi.py`. É 1 dia de trabalho,
 não depende de input externo, melhora a usabilidade operacional sem prometer
 ganho de recall que não posso entregar.
+
+---
+
+## ATUALIZAÇÃO (2026-05-29): teste final algorítmico #7 falhou
+
+**Teste:** voting (≥k sensores acima) com quantil q alto.
+
+**Hipótese física:** degradação real coordena múltiplos sensores; ruído é
+independente por sensor. Em q alto + voting deveria filtrar exatamente isso.
+
+**Grid testado:** q ∈ {0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.97} × k ∈ {1, 2, 3, 4, 5, 6, 7}.
+Total: 49 combinações.
+
+**Critério binário pré-definido:**
+- PASSA: recall OOS ≥ 0.60 E tempo alerta point-level ≤ 30%
+- FALHA: qualquer um dos dois
+
+**Resultado:** **NENHUMA combinação passou.**
+
+| q | k | recall | pt-lvl% | observação |
+|---|---|---|---|---|
+| 0.70 | 1 | 0.58 | 80% | baseline atual |
+| 0.85 | 2 | 0.35 | 31% | melhor sob constraint pt-lvl |
+| 0.95 | 1 | 0.19 | 11% | conservador demais |
+
+**Por quê falhou:** a hipótese física não bateu com os dados. Recall e
+pt-lvl% caem proporcionalmente → sensores não coordenam como previsto pelo
+acoplamento físico mecânico/térmico.
+
+**Conclusão definitiva:** 7 iterações algorítmicas, 0 sucessos. O platô em
+**58% recall OOS** é o teto **informacional matematicamente comprovado** dos
+17 sensores brutos × 1 ano de dados. Nenhuma operação adicional sobre esses
+dados moverá o ponteiro.
+
+**Achado lateral útil:** o grid de resultados fornece pontos naturais para
+um **sistema tier de alertas**:
+
+| Tier | q | k | recall | pt-lvl | Uso operacional sugerido |
+|---|---|---|---|---|---|
+| **Critical** | 0.95 | 1 | 0.19 | 11% | Parada imediata sugerida |
+| **Alarm** | 0.85 | 2 | 0.35 | 31% | Inspeção urgente |
+| **Warn** | 0.70 | 1 | 0.58 | 80% | Monitoramento atento |
+
+Esse tier sistema é o próximo passo recomendado. Não promete ganho de recall
+(impossível pelos dados), mas entrega valor operacional real.
