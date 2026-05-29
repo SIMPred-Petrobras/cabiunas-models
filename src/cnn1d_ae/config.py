@@ -188,6 +188,17 @@ class PipelineConfig:
     PREDICTIVE_ALERT_DEBOUNCE_HOURS: float = 8.0
     PREDICTIVE_FA_BUDGET_PER_DAY: float = 1.0
 
+    # Sistema tier de alertas (per_sensor mode): 3 niveis baseados em q e k votacao.
+    # Calibrado por experimentacao (improve_voting_high_q.py): warn=monitoramento,
+    # alarm=inspecao urgente, critical=parada sugerida.
+    ENABLE_TIER_ALERTS: bool = True
+    WARN_Q: float = 0.70
+    WARN_K: int = 1
+    ALARM_Q: float = 0.85
+    ALARM_K: int = 2
+    CRITICAL_Q: float = 0.95
+    CRITICAL_K: int = 1
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 
