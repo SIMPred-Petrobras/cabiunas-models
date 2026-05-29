@@ -163,10 +163,11 @@ class PipelineConfig:
     # em vez de todos os alarmes. Avaliação (hit_rate) segue usando todos.
     PLOT_ALARMS_PER_VARIABLE: bool = True
 
-    # Arquitetura do modelo: 'multivariate' (1 AE com N canais) ou 'per_sensor'
-    # (N AEs univariados combinados por MAX). Validado out-of-sample:
-    # per_sensor entrega +7pp recall e 5x menos FA que multivariate.
-    MODEL_MODE: str = "multivariate"
+    # Arquitetura do modelo: 'per_sensor' (N AEs univariados, OR-de-quantile) ou
+    # 'multivariate' (1 AE com N canais). Validado em produção (in-sample, 2025):
+    # per_sensor entrega +3pp recall e 5x menos FA/dia que multivariate (recall
+    # 0.69 vs 0.66, FA/dia 0.01 vs 0.05 a H=8h). Manter como default.
+    MODEL_MODE: str = "per_sensor"
     # Hiperparâmetros do backend per_sensor (cada AE é mínimo: 1 canal, latente ~15)
     PER_SENSOR_F1: int = 4
     PER_SENSOR_F2: int = 1
