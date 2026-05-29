@@ -61,6 +61,7 @@ from .predictive import (
     extract_incidents,
     compute_health_index_ewma,
     compute_predictive_curve,
+    compute_predictive_curve_per_sensor,
     pick_operating_point,
 )
 
@@ -433,6 +434,20 @@ def run_pipeline_multivariado(
             half_life_hours=cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS,
             dt_seconds=dt_seconds,
         )
+        # No MODE per_sensor, computa EWMA por sensor pra ter o sinal multi-canal
+        # necessario pro aggregator OR-de-quantile (vs MAX que so usa 1-2 sensores dominantes).
+        per_sensor_health_matrix = None
+        if cfg.MODEL_MODE == "per_sensor":
+            n_seq_ps, n_sens_ps = mae_per_sensor_seq.shape
+            per_sensor_health_matrix = np.empty_like(mae_per_sensor_seq, dtype=np.float32)
+            for j in range(n_sens_ps):
+                per_sensor_health_matrix[:, j] = compute_health_index_ewma(
+                    mae_per_sensor_seq[:, j], seq_run_frac,
+                    half_life_hours=cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS,
+                    dt_seconds=dt_seconds,
+                )
+            print(f"[PRED] per_sensor EWMA matrix={per_sensor_health_matrix.shape} "
+                  f"(curva via OR-de-quantile)")
         inc_seconds = (
             pd.DatetimeIndex(incidents).values.astype("datetime64[s]").astype("int64")
             if len(incidents) else np.array([], dtype="int64")
@@ -440,14 +455,24 @@ def run_pipeline_multivariado(
         curves: dict = {}
         op_points: dict = {}
         for h in cfg.PREDICTIVE_HORIZONS_HOURS:
-            curve = compute_predictive_curve(
-                health_ewma=health_ewma,
-                seq_running_full=seq_run_full,
-                t_end_seconds=seq_end_seconds.astype(float),
-                incident_seconds=inc_seconds.astype(float),
-                horizon_hours=float(h),
-                debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
-            )
+            if cfg.MODEL_MODE == "per_sensor" and per_sensor_health_matrix is not None:
+                curve = compute_predictive_curve_per_sensor(
+                    per_sensor_health=per_sensor_health_matrix,
+                    seq_running_full=seq_run_full,
+                    t_end_seconds=seq_end_seconds.astype(float),
+                    incident_seconds=inc_seconds.astype(float),
+                    horizon_hours=float(h),
+                    debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
+                )
+            else:
+                curve = compute_predictive_curve(
+                    health_ewma=health_ewma,
+                    seq_running_full=seq_run_full,
+                    t_end_seconds=seq_end_seconds.astype(float),
+                    incident_seconds=inc_seconds.astype(float),
+                    horizon_hours=float(h),
+                    debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
+                )
             curves[float(h)] = curve
             op = pick_operating_point(curve, cfg.PREDICTIVE_FA_BUDGET_PER_DAY)
             op_points[float(h)] = op
