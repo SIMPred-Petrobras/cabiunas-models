@@ -404,6 +404,9 @@ def run_pipeline_multivariado(
     # ------------------------------------------------------------------
     predictive_summary: dict = {}
     op_24 = None
+    # tier_anomaly_seqs precisa estar acessivel apos o bloco predictive
+    # (para mapeamento sequencia->ponto e inclusao no df_point)
+    tier_anomaly_seqs: dict = {}
     if cfg.ENABLE_PREDICTIVE_LAYER:
         incidents = extract_incidents(
             df_alarm,
@@ -448,6 +451,37 @@ def run_pipeline_multivariado(
                 )
             print(f"[PRED] per_sensor EWMA matrix={per_sensor_health_matrix.shape} "
                   f"(curva via OR-de-quantile)")
+
+        # === Sistema tier de alertas (warn / alarm / critical) ===
+        # Reutiliza per_sensor_health_matrix. Para cada tier: threshold por sensor
+        # no quantile q e alerta se >= k sensores acima do seu proprio threshold.
+        # Aplica a MESMA mascara operacional do anomaly_seq principal.
+        if cfg.ENABLE_TIER_ALERTS and per_sensor_health_matrix is not None:
+            n_sens_t = per_sensor_health_matrix.shape[1]
+            tiers_cfg = [
+                ("warn", float(cfg.WARN_Q), int(cfg.WARN_K)),
+                ("alarm", float(cfg.ALARM_Q), int(cfg.ALARM_K)),
+                ("critical", float(cfg.CRITICAL_Q), int(cfg.CRITICAL_K)),
+            ]
+            for tier_name, q, k in tiers_cfg:
+                thr_q = np.empty(n_sens_t, dtype=float)
+                for j in range(n_sens_t):
+                    valid_health = per_sensor_health_matrix[seq_run_full, j]
+                    thr_q[j] = (float(np.quantile(valid_health, q))
+                                if valid_health.size else float("inf"))
+                above_tier = (per_sensor_health_matrix >= thr_q[None, :])
+                n_above_tier = above_tier.sum(axis=1)
+                seq_tier = (n_above_tier >= k)
+                # mascara operacional (se ativa): reusa op_state ja construido na etapa 8b
+                if cfg.ENABLE_OPERATIONAL_MASK and running is not None:
+                    seq_tier = mask_anomaly_seq_by_operational_state(
+                        anomaly_seq=seq_tier, index=common_index,
+                        time_steps=cfg.TIME_STEPS, state=op_state, stride=cfg.STRIDE,
+                    )
+                tier_anomaly_seqs[tier_name] = seq_tier
+                n_alerts = int(np.asarray(seq_tier).sum())
+                print(f"[TIER] {tier_name.upper():<8} q={q:.2f} k={k} -> {n_alerts} alertas seq")
+
         inc_seconds = (
             pd.DatetimeIndex(incidents).values.astype("datetime64[s]").astype("int64")
             if len(incidents) else np.array([], dtype="int64")
@@ -509,6 +543,25 @@ def run_pipeline_multivariado(
         cfg.POINT_RULE, cfg.POINT_WINDOW, cfg.POINT_MIN_COUNT,
         stride=cfg.STRIDE,
     )
+
+    # 9b. Tiers de alerta como colunas adicionais no df_point
+    # is_anom_point_warn / is_anom_point_alarm / is_anom_point_critical
+    tier_summary: dict = {}
+    if tier_anomaly_seqs:
+        for tier_name, seq_tier in tier_anomaly_seqs.items():
+            df_tier_point = map_seq_to_point_anomalies(
+                seq_tier, common_index, cfg.TIME_STEPS,
+                cfg.POINT_RULE, cfg.POINT_WINDOW, cfg.POINT_MIN_COUNT,
+                stride=cfg.STRIDE,
+            )
+            col = f"is_anom_point_{tier_name}"
+            df_point[col] = df_tier_point["is_anom_point"].reindex(df_point.index).fillna(0).astype(int)
+            n_pts_tier = int(df_point[col].sum())
+            tier_summary[tier_name] = {
+                "n_seq_alerts": int(np.asarray(seq_tier).sum()),
+                "n_point_alerts": n_pts_tier,
+            }
+            print(f"[TIER] {tier_name.upper():<8} → {n_pts_tier} pontos marcados em df_point")
 
     # ------------------------------------------------------------------
     # 10. Salva CSVs
@@ -595,6 +648,7 @@ def run_pipeline_multivariado(
         "anomaly_rate_per_day": float(fp_per_day),
         "sensor_contribution_to_anomalies": sensor_contrib_sorted,
         "predictive_operating_points": predictive_summary,
+        "tier_alerts": tier_summary,
         **eval_stats,
     }
 
