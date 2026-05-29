@@ -9,9 +9,16 @@
 
 ## 1. Estado validado (o que pode ir pra apresentação)
 
-### Headline operacional honesto
+### Headline operacional honesto (corrigido 2026-05-28)
 
-> **Per-sensor + OR-de-quantile (default):** 58% de recall a 8h de antecedência fora-da-amostra (validação temporal local), ou **69% em produção in-sample**.
+> **Per-sensor + OR-de-quantile no ponto operacional real (q=0.715):**
+> **67% de recall a 8h, ~1 falso-alarme a cada 35 dias** em produção in-sample.
+> Vence o multivariate em ponto operacional matched: +4pp recall, FA/d 2.6× menor.
+
+> ⚠️ **Armadilha metodológica descoberta:** os 69% recall a q=0.50 reportados antes
+> eram **artefato de saturação** (sistema em alerta contínuo, só 24 mega-episódios/ano).
+> Pico fica em q≈0.715 onde n_episódios/ano (44-55) é próximo de n_incidentes (254/H)
+> — relação 1-pra-1 é a faixa operacional real. **Não usar q<0.7 como ponto operacional.**
 
 | Métrica | Multivariate | **Per-sensor (default)** |
 |---|---|---|
