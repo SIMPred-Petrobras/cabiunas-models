@@ -92,6 +92,27 @@ Caveat: per-sensor não captura anomalias por decorrelação cruzada entre senso
 
 ## 4. Próximos passos por ordem de prioridade
 
+### Iterações esgotadas (2026-05-28)
+
+Testei 4 alternativas de aggregation/tuning. **Nenhuma sobrevive validação temporal**:
+
+| Tentativa | In-sample | Temporal (set-dez) | Veredito |
+|---|---|---|---|
+| Baseline (OR uniforme q=0.715, half-life 4h) | recall 0.64 / FA 0.038 | recall 0.58 / FA 0.016 | referência |
+| A: F1-best per-sensor threshold | recall 0.69 / FA 0.008 | recall 0.58 / FA 0.016 | overfitting |
+| D: Group-based AE (T + V) | recall 0.58 | — | pior in-sample |
+| E: Union A + D | = A | — | D não agrega |
+| Half-life=0.5h | recall 0.67 / FA 0.014 | recall 0.58 / FA 0.016 | sem ganho temporal |
+
+**Conclusão honesta:** o sistema está em platô. **Próximos ganhos exigirão fontes novas de informação:**
+- Dados multi-ano (2022-2024)
+- Multi-turbina
+- Lista de tags curada pela operação
+- Features espectrais/gradiente (não usados)
+- Modelos qualitativamente diferentes
+
+Itens abaixo não dependem disso (são de qualidade operacional e MLOps).
+
 ### ALTA — desbloqueia valor sem desenvolvimento adicional
 
 1. **Documentar o ponto operacional para a operação:**
