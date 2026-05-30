@@ -19,6 +19,7 @@ from .preprocess import (
     build_startup_exclusion_mask,
     build_stable_gradient_mask,
     build_constant_run_mask,
+    build_gradient_spike_mask,
     clip_outliers,
     apply_feature_engineering,
     normalize_train_only,
@@ -238,6 +239,24 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
                 f"(runs>={cfg.CONSTANT_RUN_MIN_LENGTH}) excluidos do treino."
             )
         exclude = exclude | const_mask
+
+    # Exclusão de ±GRADIENT_SPIKE_SUPPRESS_MINUTES ao redor de spikes de gradiente local.
+    # Calibrado sobre estado ON para não confundir rampas de startup com spikes.
+    if cfg.ENABLE_GRADIENT_SPIKE_MASK:
+        spike_mask = build_gradient_spike_mask(
+            df_use, sensor, _running_col_series,
+            cfg.GRADIENT_SPIKE_STD_MULT,
+            cfg.GRADIENT_SPIKE_SUPPRESS_MINUTES,
+        )
+        spike_mask = spike_mask.reindex(df_use.index).fillna(False)
+        n_spike = int(spike_mask.sum())
+        if n_spike:
+            print(
+                f"[GRAD-SPIKE] sensor={sensor}: {n_spike} pontos excluidos do treino "
+                f"ao redor de spikes de gradiente "
+                f"(std_mult={cfg.GRADIENT_SPIKE_STD_MULT}, suppress={cfg.GRADIENT_SPIKE_SUPPRESS_MINUTES} min)."
+            )
+        exclude = exclude | spike_mask
 
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()

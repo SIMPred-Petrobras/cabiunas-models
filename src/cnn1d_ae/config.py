@@ -85,6 +85,15 @@ class PipelineConfig:
     # Cobre a rampa de temperatura que o modelo não deve aprender como "normal"
     EXCLUDE_STARTUP_MINUTES: int = 0
 
+    # Máscara de spike de gradiente no treino (ideia do pipeline v4 externo).
+    # Exclui do treino ±GRADIENT_SPIKE_SUPPRESS_MINUTES ao redor de cada spike
+    # de gradiente por sensor (spike = grad > μ + GRADIENT_SPIKE_STD_MULT × σ,
+    # calibrado em steady state). Limpa a distribuição "normal" aprendida pelo AE
+    # removendo transições abruptas locais que contaminariam as sequências de treino.
+    ENABLE_GRADIENT_SPIKE_MASK: bool = False
+    GRADIENT_SPIKE_STD_MULT: float = 8.0
+    GRADIENT_SPIKE_SUPPRESS_MINUTES: int = 60
+
     # Coluna de estado operacional direta (ex: "RUNNING_A").
     # Quando definida, substitui a detecção por limiar: ON = coluna > 0.5.
     # Se None, usa OFF_ABS_THRESHOLD / OFF_VALUE_QUANTILE como antes.
@@ -192,9 +201,12 @@ class PipelineConfig:
     # Calibrado por experimentacao (improve_voting_high_q.py): warn=monitoramento,
     # alarm=inspecao urgente, critical=parada sugerida.
     ENABLE_TIER_ALERTS: bool = True
-    WARN_Q: float = 0.70
-    WARN_K: int = 1
-    ALARM_Q: float = 0.85
+    # Calibracao revisada (2026-05-29): WARN exigia 1 sensor em q=0.70 e fazia
+    # 80% do tempo → operacao acostuma e ignora. Nova regra exige coordenacao
+    # multi-sensor (que e o sinal fisico real de degradacao).
+    WARN_Q: float = 0.80
+    WARN_K: int = 2
+    ALARM_Q: float = 0.90
     ALARM_K: int = 2
     CRITICAL_Q: float = 0.95
     CRITICAL_K: int = 1

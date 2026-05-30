@@ -182,7 +182,59 @@ def build_startup_exclusion_mask(
 
 
 # ---------------------------------------------------------------------------
-# 5. Construção do DataFrame do sensor (com sentinel + interpolação)
+# 5b. Máscara de spike de gradiente para limpeza do treino
+# ---------------------------------------------------------------------------
+
+def build_gradient_spike_mask(
+    df: pd.DataFrame,
+    sensor: str,
+    running_series: Optional[pd.Series],
+    std_mult: float = 8.0,
+    suppress_minutes: int = 60,
+) -> pd.Series:
+    """
+    Exclui do treino ±suppress_minutes ao redor de spikes de gradiente local.
+
+    Spikes detectados como: |diff| > μ_on + std_mult × σ_on
+    onde μ/σ são calibrados sobre pontos ON (running_series > 0.5) para evitar
+    que rampas de startup contaminem o limiar de detecção.
+
+    Garante que transições abruptas locais (sensor falhando momentaneamente,
+    variações bruscas de carga) não sejam apresentadas ao AE como padrão normal.
+    """
+    s = pd.to_numeric(df[sensor], errors="coerce").ffill().bfill()
+    grad = s.diff().abs().fillna(0.0)
+
+    if running_series is not None:
+        run = running_series.reindex(df.index).fillna(0.0)
+        on_mask = run > 0.5
+    else:
+        on_mask = pd.Series(True, index=df.index)
+
+    grad_on = grad[on_mask]
+    if len(grad_on) < 10:
+        return pd.Series(False, index=df.index)
+
+    mu = float(grad_on.mean())
+    sigma = float(grad_on.std())
+    if sigma == 0.0:
+        return pd.Series(False, index=df.index)
+
+    spike_locs = grad > (mu + float(std_mult) * sigma)
+    spike_times = df.index[spike_locs]
+
+    out = pd.Series(False, index=df.index)
+    if len(spike_times) == 0:
+        return out
+
+    delta = pd.Timedelta(minutes=int(suppress_minutes))
+    for t in spike_times:
+        out.loc[(out.index >= t - delta) & (out.index <= t + delta)] = True
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 5c. Construção do DataFrame do sensor (com sentinel + interpolação)
 # ---------------------------------------------------------------------------
 
 def build_sensor_dataframe(
