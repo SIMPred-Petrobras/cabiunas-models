@@ -112,7 +112,17 @@ def build_cnn1d_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features:
 
     x = layers.Conv1DTranspose(filters=f1, kernel_size=k1, padding="same", strides=s1,
                                activation="relu", kernel_regularizer=reg)(x)
-    outputs = layers.Conv1DTranspose(filters=n_features, kernel_size=3, padding="same")(x)
+    outputs_raw = layers.Conv1DTranspose(filters=n_features, kernel_size=3, padding="same")(x)
+
+    # Garante que o decoder reconstrua exatamente time_steps passos.
+    # Quando s1*s2 não divide time_steps (ex: s1=2,s2=4 com TS=60 → saída 64),
+    # o crop remove o excesso sem afetar o gradiente.
+    out_len = int(outputs_raw.shape[1])
+    if out_len is not None and out_len != time_steps:
+        excess = out_len - time_steps
+        outputs = layers.Cropping1D((0, excess))(outputs_raw)
+    else:
+        outputs = outputs_raw
 
     model = keras.Model(inputs, outputs, name="cnn1d_autoencoder")
     model.compile(
