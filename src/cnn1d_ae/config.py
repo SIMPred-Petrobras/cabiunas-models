@@ -94,6 +94,11 @@ class PipelineConfig:
     GRADIENT_SPIKE_STD_MULT: float = 8.0
     GRADIENT_SPIKE_SUPPRESS_MINUTES: int = 60
 
+    # Corte temporal para treino (OOS evaluation).
+    # Quando definido (ex: "2025-12-31"), df_normal é filtrado até essa data,
+    # garantindo que dados posteriores só entrem no scoring, nunca no treino.
+    TRAIN_END_DATE: Optional[str] = None
+
     # Coluna de estado operacional direta (ex: "RUNNING_A").
     # Quando definida, substitui a detecção por limiar: ON = coluna > 0.5.
     # Se None, usa OFF_ABS_THRESHOLD / OFF_VALUE_QUANTILE como antes.
