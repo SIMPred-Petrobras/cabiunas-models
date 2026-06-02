@@ -261,6 +261,13 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
 
+    if cfg.TRAIN_END_DATE:
+        cutoff = pd.Timestamp(cfg.TRAIN_END_DATE, tz=df_normal.index.tz)
+        n_before = len(df_normal)
+        df_normal = df_normal[df_normal.index <= cutoff]
+        print(f"[TRAIN_END_DATE] {sensor}: treino restrito a ≤{cfg.TRAIN_END_DATE} "
+              f"({len(df_normal)}/{n_before} pontos normais mantidos)")
+
     if len(df_normal) < cfg.TIME_STEPS + 10:
         print(f"[SKIP] {sensor} (poucos dados normais apos exclusao)")
         return {"sensor": sensor, "skipped": True, "reason": "few_normal_points"}
