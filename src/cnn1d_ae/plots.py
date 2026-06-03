@@ -231,10 +231,13 @@ def plot_series_alarm_anomaly_subplots(
     ax2.plot(s.index, s.values, color="blue", linewidth=1, alpha=0.85, label="Série do sensor")
     if len(s_anom) > 0:
         ax2.scatter(s_anom.index, s_anom.values, color="red", s=16, alpha=0.85, label="Anomalias (ponto)")
-    for t in alarm_idx:
-        ax2.axvline(t, color="green", linestyle="--", linewidth=1.1, alpha=0.55)
     if len(alarm_idx) > 0:
-        ax2.scatter(alarm_idx.values, [np.nanmedian(s.values)] * len(alarm_idx), marker="x", color="green", s=55, label="Eventos de alarme")
+        ymin, ymax = float(np.nanmin(s.values)), float(np.nanmax(s.values))
+        for t in alarm_idx:
+            # ax.plot em coordenadas de dados (sem blended transform) — compatível com ClearML
+            ax2.plot([t, t], [ymin, ymax], color="green", linestyle="--", linewidth=1.1, alpha=0.7)
+        ax2.scatter(alarm_idx.values, [np.nanmedian(s.values)] * len(alarm_idx),
+                    marker="x", color="green", s=55, label=f"Alarmes ({len(alarm_idx)})")
 
     ax2.set_title("Série + Eventos de Alarme + Anomalias")
     ax2.set_xlabel("time")
@@ -300,9 +303,10 @@ def plot_series_with_mae_reconstruction(
     ax1.plot(s.index, s.values, color="#1565c0", linewidth=0.8, alpha=0.9, label="Sensor")
     if len(s_anom) > 0:
         ax1.scatter(s_anom.index, s_anom.values, color="red", s=12, alpha=0.7, zorder=4, label="Anomalia")
-    for t in alarm_idx:
-        ax1.axvline(t, color="#2e7d32", linestyle="--", linewidth=1.0, alpha=0.6)
     if len(alarm_idx) > 0:
+        ymin1, ymax1 = float(np.nanmin(s.values)), float(np.nanmax(s.values))
+        for t in alarm_idx:
+            ax1.plot([t, t], [ymin1, ymax1], color="#2e7d32", linestyle="--", linewidth=1.0, alpha=0.7)
         ax1.scatter([], [], color="#2e7d32", marker="|", s=80, label=f"Alarme ({len(alarm_idx)})")
     ax1.set_ylabel("Valor (unidade bruta)")
     ax1.set_title(title)
@@ -325,8 +329,11 @@ def plot_series_with_mae_reconstruction(
         ax2.fill_between(mae_s.index, 0, mae_s.values,
                          where=anom_mae.values, color="red", alpha=0.25, label="MAE > threshold")
 
-    for t in alarm_idx:
-        ax2.axvline(t, color="#2e7d32", linestyle="--", linewidth=1.0, alpha=0.6)
+    if len(alarm_idx) > 0:
+        ymin2 = float(max(0, np.nanmin(mae_s.values)))
+        ymax2 = float(np.nanmax(mae_s.values))
+        for t in alarm_idx:
+            ax2.plot([t, t], [ymin2, ymax2], color="#2e7d32", linestyle="--", linewidth=1.0, alpha=0.7)
 
     ax2.set_ylabel("MAE por sequência")
     ax2.set_xlabel("Tempo")
