@@ -94,6 +94,10 @@ class PipelineConfig:
     GRADIENT_SPIKE_STD_MULT: float = 8.0
     GRADIENT_SPIKE_SUPPRESS_MINUTES: int = 60
 
+    # Filtra SENSOR_LIST automaticamente para sensores com eventos de alarme no CSV.
+    # Evita treinar sensores sem ground truth de anomalia.
+    SENSOR_FILTER_HAS_ALARMS: bool = False
+
     # Corte temporal para treino (OOS evaluation).
     # Quando definido (ex: "2025-12-31"), df_normal é filtrado até essa data,
     # garantindo que dados posteriores só entrem no scoring, nunca no treino.

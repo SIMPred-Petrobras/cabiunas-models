@@ -44,6 +44,7 @@ from .plots import (
     plot_hist_mae,
     plot_series_with_anomalies,
     plot_series_alarm_anomaly_subplots,
+    plot_series_with_mae_reconstruction,
 )
 
 
@@ -457,6 +458,16 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         title=f"{sensor}",
         operational_state=state,
     )
+    plot_series_with_mae_reconstruction(
+        df_all[sensor],
+        df_seq_scores.set_index("seq_start_time") if "seq_start_time" in df_seq_scores.columns else df_seq_scores,
+        threshold,
+        anomalous_times,
+        df_alarm_sensor["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_sensor.columns else pd.Series(dtype="datetime64[ns]"),
+        os.path.join(out_dirs["figs"], "series_mae_reconstruction.png"),
+        title=f"{sensor} | Série + Erro de Reconstrução MAE",
+        operational_state=state,
+    )
 
     eval_window_minutes = (
         int(cfg.EVAL_WINDOW_MINUTES)
@@ -541,6 +552,15 @@ def run(cfg: PipelineConfig) -> Dict[str, Any]:
     sensors = discover_sensors(cfg, df_feat, df_raw)
     if not sensors:
         raise ValueError("Nenhum sensor encontrado apos filtros do config.")
+
+    if cfg.SENSOR_FILTER_HAS_ALARMS and df_alarm is not None and not df_alarm.empty:
+        tag_col = next((c for c in df_alarm.columns if "tag" in c.lower() and "alarm" in c.lower()), None)
+        if tag_col:
+            alarm_tags = set(df_alarm[tag_col].dropna().unique())
+            before = len(sensors)
+            sensors = [s for s in sensors if s in alarm_tags]
+            print(f"[SENSOR_FILTER_HAS_ALARMS] {before} → {len(sensors)} sensores "
+                  f"(mantidos: {sensors})")
 
     print(f"[MODE] {cfg.MODE} | sensors={len(sensors)} | N_WORKERS={cfg.N_WORKERS}")
     print(f"[SENSORS] primeiros 20: {sensors[:20]}")
