@@ -26,6 +26,7 @@ from .preprocess import (
 )
 from .sequences import make_sequences, train_val_split
 from .tuning import run_tuner, refit_best_model
+from .model_if import fit_and_score as if_fit_and_score
 from .scoring import (
     reconstruction_mae_per_seq,
     compute_threshold,
@@ -125,7 +126,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     save_run_config(cfg, out_dirs)
 
     model_path = os.path.join(out_dirs["best_model"], "model.keras")
-    if (not cfg.OVERWRITE) and os.path.exists(model_path):
+    _arch = getattr(cfg, "MODEL_ARCH", "cnn1d")
+    if _arch != "isolation_forest" and (not cfg.OVERWRITE) and os.path.exists(model_path):
         print(f"[SKIP] {sensor} (modelo ja existe: {model_path})")
         return {"sensor": sensor, "skipped": True, "reason": "model_exists", "model_path": model_path}
 
@@ -317,22 +319,28 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     )
     n_features = x_train.shape[-1]
 
-    best_hp, best_model, df_trials = run_tuner(cfg, out_dirs, x_train, x_val, n_features)
-    df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
-
-    with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w", encoding="utf-8") as f:
-        json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
-
-    history = refit_best_model(cfg, best_model, x_train, x_val)
-    best_model.save(model_path)
-
-    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
-
-    train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
-
-    # x_all calculado antes do threshold para suportar calibração alarm_f2
+    # x_all necessário para ambas as arquiteturas
     x_all = make_sequences(values_all, cfg.TIME_STEPS, cfg.STRIDE)
-    mae_seq_all = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
+
+    arch = getattr(cfg, "MODEL_ARCH", "cnn1d")
+    if arch == "isolation_forest":
+        train_mae_seq, mae_seq_all = if_fit_and_score(x_train_full, x_all, cfg)
+        best_model = None
+        best_hp    = None
+    else:
+        best_hp, best_model, df_trials = run_tuner(cfg, out_dirs, x_train, x_val, n_features)
+        df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
+
+        with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w", encoding="utf-8") as f:
+            json.dump(best_hp.values, f, indent=2, ensure_ascii=False)
+
+        history = refit_best_model(cfg, best_model, x_train, x_val)
+        best_model.save(model_path)
+
+        plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+
+        train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
+        mae_seq_all   = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
 
     _alarm_times_for_thresh = (
         df_alarm_sensor["Data da Ocorrencia"]
@@ -443,11 +451,12 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
+    _arch_label = getattr(cfg, "MODEL_ARCH", "cnn1d").upper()
     plot_series_with_anomalies(
         df_all[sensor],
         anomalous_times,
         os.path.join(out_dirs["figs"], "series_with_anomalies.png"),
-        title=f"Serie + anomalias (CNN1D-AE) | sensor={sensor}",
+        title=f"Serie + anomalias ({_arch_label}) | sensor={sensor}",
         operational_state=state,
     )
     plot_series_alarm_anomaly_subplots(
@@ -526,7 +535,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     report = {
         "sensor": sensor,
         "output_dir": out_dirs["root"],
-        "model_path": model_path,
+        "model_arch": getattr(cfg, "MODEL_ARCH", "cnn1d"),
+        "model_path": model_path if arch != "isolation_forest" else None,
         "threshold": float(threshold),
         "THRESH_MODE": cfg.THRESH_MODE,
         **eval_stats,
