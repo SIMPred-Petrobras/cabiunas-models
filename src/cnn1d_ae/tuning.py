@@ -10,7 +10,12 @@ import keras_tuner as kt
 from tensorflow import keras
 
 from .config import PipelineConfig
-from .model import build_cnn1d_autoencoder, build_callbacks
+from .model import build_cnn1d_autoencoder, build_gru_autoencoder, build_callbacks
+
+_BUILDERS = {
+    "cnn1d": build_cnn1d_autoencoder,
+    "gru":   build_gru_autoencoder,
+}
 
 
 def run_tuner(
@@ -20,8 +25,14 @@ def run_tuner(
     x_val,
     n_features: int,
 ) -> Tuple[kt.HyperParameters, keras.Model, pd.DataFrame]:
+    arch = getattr(cfg, "MODEL_ARCH", "cnn1d")
+    builder = _BUILDERS.get(arch)
+    if builder is None:
+        raise ValueError(f"MODEL_ARCH '{arch}' não reconhecido. Opções: {list(_BUILDERS)}")
+    print(f"[TUNER] Arquitetura: {arch}")
+
     def hypermodel(hp: kt.HyperParameters):
-        return build_cnn1d_autoencoder(hp, cfg.TIME_STEPS, n_features)
+        return builder(hp, cfg.TIME_STEPS, n_features)
 
     tuner = kt.RandomSearch(
         hypermodel=hypermodel,
