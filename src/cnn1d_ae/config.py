@@ -186,6 +186,8 @@ class PipelineConfig:
     # per_sensor entrega +3pp recall e 5x menos FA/dia que multivariate (recall
     # 0.69 vs 0.66, FA/dia 0.01 vs 0.05 a H=8h). Manter como default.
     MODEL_MODE: str = "per_sensor"
+    # Arquitetura do autoencoder: "cnn1d" (padrão) ou "gru"
+    MODEL_ARCH: str = "cnn1d"
     # Hiperparâmetros do backend per_sensor (cada AE é mínimo: 1 canal, latente ~15)
     PER_SENSOR_F1: int = 4
     PER_SENSOR_F2: int = 1
