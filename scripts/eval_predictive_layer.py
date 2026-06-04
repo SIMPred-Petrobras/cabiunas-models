@@ -223,9 +223,10 @@ def main() -> None:
     parser.add_argument("--half_life", type=float, default=4.0,  help="Half-life EWMA em horas")
     parser.add_argument("--horizons",  type=float, nargs="+", default=[8.0, 24.0, 72.0])
     parser.add_argument("--fa_budget",  type=float, default=1.0,  help="FA/dia máximo para ponto de operação")
-    parser.add_argument("--eval_start", default=None, help="Filtro de data início para avaliação OOS (ex: 2026-01-01)")
-    parser.add_argument("--eval_end",   default=None, help="Filtro de data fim para avaliação OOS (ex: 2026-04-30)")
-    parser.add_argument("--out_dir",    default="eval_predictive_out")
+    parser.add_argument("--eval_start",      default=None, help="Filtro de data início para avaliação OOS (ex: 2026-01-01)")
+    parser.add_argument("--eval_end",        default=None, help="Filtro de data fim para avaliação OOS (ex: 2026-04-30)")
+    parser.add_argument("--exclude_sensors", nargs="*",   default=[], help="Sensores a excluir do OR (ex: TV_355Y_A)")
+    parser.add_argument("--out_dir",         default="eval_predictive_out")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -236,8 +237,11 @@ def main() -> None:
     print(f"      {task.name}  |  status={task.get_status()}")
 
     # --- Sequence scores ---
-    print(f"\n[2/5] Baixando sequence_scores de {len(SENSORS)} sensores...")
-    mae_dict = load_mae_series(task, SENSORS)
+    sensors_to_load = [s for s in SENSORS if s not in args.exclude_sensors]
+    if args.exclude_sensors:
+        print(f"      Excluindo sensores: {args.exclude_sensors}")
+    print(f"\n[2/5] Baixando sequence_scores de {len(sensors_to_load)} sensores...")
+    mae_dict = load_mae_series(task, sensors_to_load)
     if not mae_dict:
         raise RuntimeError("Nenhum sensor carregado — verifique o task_id.")
 
