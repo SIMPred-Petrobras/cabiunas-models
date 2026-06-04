@@ -226,6 +226,7 @@ def main() -> None:
     parser.add_argument("--eval_start",      default=None, help="Filtro de data início para avaliação OOS (ex: 2026-01-01)")
     parser.add_argument("--eval_end",        default=None, help="Filtro de data fim para avaliação OOS (ex: 2026-04-30)")
     parser.add_argument("--exclude_sensors", nargs="*",   default=[], help="Sensores a excluir do OR (ex: TV_355Y_A)")
+    parser.add_argument("--sticky_hours",    type=float,  default=0.0, help="Sticky alert: horas que o alerta permanece ativo após disparo")
     parser.add_argument("--out_dir",         default="eval_predictive_out")
     args = parser.parse_args()
 
@@ -258,6 +259,24 @@ def main() -> None:
         t1 = pd.Timestamp(args.eval_end,   tz="UTC") if args.eval_end   else combined.index[-1]
         combined = combined[(combined.index >= t0) & (combined.index <= t1)]
         print(f"      [OOS] Avaliação restrita a {t0.date()} → {t1.date()}")
+
+    if args.sticky_hours > 0:
+        print(f"      Aplicando sticky alert ({args.sticky_hours}h)...")
+        # Aplica sticky: para cada threshold, o evaluate_horizon já cuida do alert;
+        # aqui pré-processamos o combined com sticky no threshold final de avaliação.
+        # Como o sweep é feito em evaluate_horizon, injetamos o sticky no combined diretamente
+        # via forward-fill: quaisquer picos são sustentados por sticky_hours.
+        sticky_td = pd.Timedelta(hours=args.sticky_hours)
+        idx = combined.index
+        vals = combined.values.copy()
+        # Marca todos os pontos dentro de sticky_hours após cada pico como pico
+        peak_pos = np.where(vals > 0)[0]
+        if len(peak_pos):
+            for pos in peak_pos:
+                end_t   = idx[pos] + sticky_td
+                end_pos = idx.searchsorted(end_t, side="right")
+                vals[pos:end_pos] = np.maximum(vals[pos:end_pos], vals[pos])
+        combined = pd.Series(vals, index=idx)
 
     print(f"      Período: {combined.index[0]} → {combined.index[-1]}")
     print(f"      Pontos: {len(combined):,}")
