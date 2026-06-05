@@ -177,6 +177,8 @@ def main() -> None:
     parser.add_argument("--fa_budget",  type=float, default=1.0)
     parser.add_argument("--eval_start", default=None)
     parser.add_argument("--eval_end",   default=None)
+    parser.add_argument("--exclude_conditions", nargs="*", default=[],
+                        help="Condições a excluir da avaliação (ex: LOLO)")
     parser.add_argument("--out_dir",    default="eval_predictive_out/by_condition")
     args = parser.parse_args()
 
@@ -195,6 +197,10 @@ def main() -> None:
     print(f"EWMA (hl={args.half_life}h) + quantile...")
     health_dict = {s: ewma_quantile(mae, args.half_life) for s, mae in mae_dict.items()}
 
+    excl_conds = {c.upper() for c in (args.exclude_conditions or [])}
+    if excl_conds:
+        print(f"      Excluindo condições: {sorted(excl_conds)}")
+
     print("Carregando alarmes por condição...")
     alarms_by_cond = load_alarms_by_condition(args.alarm_csv, t0, t1)
 
@@ -208,6 +214,8 @@ def main() -> None:
 
         cond_map = alarms_by_cond.get(sensor, {})
         for cond, alarm_times in cond_map.items():
+            if cond.upper() in excl_conds:
+                continue
             incidents = cluster_incidents(alarm_times)
             if not incidents:
                 continue

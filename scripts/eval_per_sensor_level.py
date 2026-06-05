@@ -114,11 +114,15 @@ def _parse_alarm_df(alarm_csv: str) -> Tuple[pd.DataFrame, str, str, str]:
     return df, date_col, cond_col, tag_col
 
 
-def load_alarms_gap(alarm_csv: str) -> Dict[str, List[pd.Timestamp]]:
+def load_alarms_gap(alarm_csv: str,
+                    exclude_conditions: List[str] | None = None) -> Dict[str, List[pd.Timestamp]]:
     """Onset alarms por sensor (exclui OK). Clustering feito depois por gap."""
     df, _, cond_col, tag_col = _parse_alarm_df(alarm_csv)
     if cond_col:
         df = df[df[cond_col].str.upper().fillna("").ne("OK")]
+        if exclude_conditions:
+            excl = [c.upper() for c in exclude_conditions]
+            df = df[~df[cond_col].str.upper().isin(excl)]
     result: Dict[str, List[pd.Timestamp]] = {}
     for sensor in SENSORS:
         rows = df[df[tag_col] == sensor]
@@ -126,10 +130,12 @@ def load_alarms_gap(alarm_csv: str) -> Dict[str, List[pd.Timestamp]]:
     return result
 
 
-def load_alarms_ok_aware(alarm_csv: str) -> Dict[str, List[pd.Timestamp]]:
+def load_alarms_ok_aware(alarm_csv: str,
+                         exclude_conditions: List[str] | None = None) -> Dict[str, List[pd.Timestamp]]:
     """OK-aware: qualquer onset após um OK = novo incidente (reset pelo OK).
     Não usa gap — o próprio OK define o fim do evento."""
     df, _, cond_col, tag_col = _parse_alarm_df(alarm_csv)
+    excl = {c.upper() for c in (exclude_conditions or [])}
     result: Dict[str, List[pd.Timestamp]] = {}
     for sensor in SENSORS:
         sensor_df = df[df[tag_col] == sensor].sort_values("_time")
@@ -139,7 +145,7 @@ def load_alarms_ok_aware(alarm_csv: str) -> Dict[str, List[pd.Timestamp]]:
             cond = str(row[cond_col]).upper() if cond_col else "CFN"
             if cond == "OK":
                 in_incident = False
-            else:
+            elif cond not in excl:
                 if not in_incident:
                     incidents.append(row["_time"])
                     in_incident = True
@@ -255,6 +261,8 @@ def main() -> None:
                         help="Usa OK como reset de incidente (HIHI→OK→HIHI = 2 inc)")
     parser.add_argument("--sticky_hours", type=float, default=0.0,
                         help="Horas que o alerta fica ativo após o último disparo")
+    parser.add_argument("--exclude_conditions", nargs="*", default=[],
+                        help="Condições a excluir da avaliação (ex: LOLO)")
     parser.add_argument("--out_dir",      default="eval_predictive_out/per_sensor_level")
     args = parser.parse_args()
 
@@ -281,13 +289,16 @@ def main() -> None:
         print(f"      Período: {t0.date() if t0 else 'início'} → {t1.date() if t1 else 'fim'}")
 
     print(f"\n[4/4] Avaliando sensor a sensor (H={args.horizon}h)...")
+    excl_conds = args.exclude_conditions or []
+    if excl_conds:
+        print(f"      Excluindo condições: {excl_conds}")
+
     if args.ok_aware:
-        raw_alarms = load_alarms_ok_aware(args.alarm_csv)
-        # OK-aware já retorna incidentes diretamente
+        raw_alarms = load_alarms_ok_aware(args.alarm_csv, excl_conds)
         def get_incidents(sensor, alarms_s):
-            return alarms_s  # já clusterizado por OK
+            return alarms_s
     else:
-        raw_alarms = load_alarms_gap(args.alarm_csv)
+        raw_alarms = load_alarms_gap(args.alarm_csv, excl_conds)
         def get_incidents(sensor, alarms_s):
             return cluster_incidents(alarms_s)
 
