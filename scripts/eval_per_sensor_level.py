@@ -62,6 +62,24 @@ def load_mae_series(task: Task, sensors: List[str]) -> Dict[str, pd.Series]:
     return series
 
 
+def load_running_masks(task: Task, sensors: List[str]) -> Dict[str, pd.Series]:
+    """Carrega máscara 'on' de point_anomalies_all por sensor (resampleada para 5min)."""
+    arts = task.artifacts
+    masks: Dict[str, pd.Series] = {}
+    for sensor in sensors:
+        key = next((k for k in arts if "point_anomalies_all" in k and sensor in k), None)
+        if key is None:
+            continue
+        path = arts[key].get_local_copy()
+        df = pd.read_csv(path, usecols=["data_datetime", "operational_state"])
+        df["data_datetime"] = pd.to_datetime(df["data_datetime"], utc=True, errors="coerce")
+        df = df.dropna(subset=["data_datetime"]).set_index("data_datetime")
+        # resampla para 5min: True se maioria dos sub-pontos é "on"
+        is_on = (df["operational_state"] == "on")
+        masks[sensor] = is_on.resample(SAMPLING_INTERVAL).mean() >= 0.5
+    return masks
+
+
 # ---------------------------------------------------------------------------
 # EWMA + quantile normalization
 # ---------------------------------------------------------------------------
@@ -263,6 +281,8 @@ def main() -> None:
                         help="Horas que o alerta fica ativo após o último disparo")
     parser.add_argument("--exclude_conditions", nargs="*", default=[],
                         help="Condições a excluir da avaliação (ex: LOLO)")
+    parser.add_argument("--mask_off",     action="store_true",
+                        help="Zera health score durante operational_state != 'on'")
     parser.add_argument("--out_dir",      default="eval_predictive_out/per_sensor_level")
     args = parser.parse_args()
 
@@ -281,6 +301,11 @@ def main() -> None:
 
     print(f"\n[2/4] Baixando sequence_scores...")
     mae_dict = load_mae_series(task, SENSORS)
+
+    running_masks: Dict[str, pd.Series] = {}
+    if args.mask_off:
+        print(f"      Carregando operational_state (mask_off=True)...")
+        running_masks = load_running_masks(task, SENSORS)
 
     print(f"\n[3/4] EWMA (hl={args.half_life}h) + quantile normalization...")
     health_dict = {s: ewma_quantile(mae, args.half_life) for s, mae in mae_dict.items()}
@@ -310,6 +335,11 @@ def main() -> None:
         if h.empty:
             continue
 
+        # Zera health score fora de operational_state == 'on'
+        if args.mask_off and sensor in running_masks:
+            mask = running_masks[sensor].reindex(h.index, method="nearest", tolerance=pd.Timedelta("6min")).fillna(False)
+            h = h.where(mask, other=0.0)
+
         alarms_s = raw_alarms.get(sensor, [])
         alarms_s = [a for a in alarms_s
                     if (t0 is None or a >= t0) and (t1 is None or a <= t1)]
@@ -334,7 +364,8 @@ def main() -> None:
     df_out = df_out[[c for c in col_order if c in df_out.columns]]
 
     mode_tag = ("_ok_aware" if args.ok_aware else "") + \
-               (f"_sticky{int(args.sticky_hours)}h" if args.sticky_hours > 0 else "")
+               (f"_sticky{int(args.sticky_hours)}h" if args.sticky_hours > 0 else "") + \
+               ("_maskoff" if args.mask_off else "")
     out_label = f"{args.label}{mode_tag}"
 
     print(f"\n=== RESULTADO POR SENSOR (H={args.horizon}h, {out_label}) ===")
