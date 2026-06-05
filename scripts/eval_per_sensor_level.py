@@ -206,6 +206,27 @@ def detect_episodes_gap(alert: pd.Series) -> List[Tuple[pd.Timestamp, pd.Timesta
 
 
 # ---------------------------------------------------------------------------
+# Duração mínima: remove episódios mais curtos que min_duration_hours
+# ---------------------------------------------------------------------------
+
+def apply_min_duration(
+    alert: pd.Series,
+    episodes: List[Tuple[pd.Timestamp, pd.Timestamp]],
+    min_duration_hours: float,
+) -> Tuple[pd.Series, List[Tuple[pd.Timestamp, pd.Timestamp]]]:
+    if min_duration_hours <= 0:
+        return alert, episodes
+    min_td = pd.Timedelta(hours=min_duration_hours)
+    long_eps = [(s0, s1) for s0, s1 in episodes if (s1 - s0) >= min_td]
+    if len(long_eps) == len(episodes):
+        return alert, episodes
+    new_alert = pd.Series(False, index=alert.index)
+    for s0, s1 in long_eps:
+        new_alert[(alert.index >= s0) & (alert.index <= s1)] = True
+    return new_alert, long_eps
+
+
+# ---------------------------------------------------------------------------
 # Avaliação: recall × FA com sweep de threshold
 # ---------------------------------------------------------------------------
 
@@ -214,6 +235,7 @@ def best_point_for_sensor(
     incidents: List[pd.Timestamp],
     horizon_hours: float,
     sticky_hours: float = 0.0,
+    min_duration_hours: float = 0.0,
     n_thresholds: int = 100,
     fa_budget: float = 1.0,
 ) -> dict:
@@ -227,8 +249,9 @@ def best_point_for_sensor(
 
     for q in np.linspace(0.50, 0.999, n_thresholds):
         alert    = apply_sticky(health, q, sticky_hours)
-        alert_s  = np.array([t.timestamp() for t in health.index[alert]])
         episodes = detect_episodes_gap(alert)
+        alert, episodes = apply_min_duration(alert, episodes, min_duration_hours)
+        alert_s  = np.array([t.timestamp() for t in health.index[alert]])
 
         n_hit = sum(
             1 for ti in inc_s
@@ -277,8 +300,10 @@ def main() -> None:
     parser.add_argument("--eval_end",     default=None)
     parser.add_argument("--ok_aware",     action="store_true",
                         help="Usa OK como reset de incidente (HIHI→OK→HIHI = 2 inc)")
-    parser.add_argument("--sticky_hours", type=float, default=0.0,
+    parser.add_argument("--sticky_hours",       type=float, default=0.0,
                         help="Horas que o alerta fica ativo após o último disparo")
+    parser.add_argument("--min_duration_hours", type=float, default=0.0,
+                        help="Duração mínima (horas) de um episódio de alerta para contar")
     parser.add_argument("--exclude_conditions", nargs="*", default=[],
                         help="Condições a excluir da avaliação (ex: LOLO)")
     parser.add_argument("--mask_off",     action="store_true",
@@ -348,10 +373,12 @@ def main() -> None:
         if not incidents:
             print(f"  {sensor}: 0 incidentes — FA/dia medido, recall=N/A")
             result = best_point_for_sensor(h, [], args.horizon,
-                                           args.sticky_hours, fa_budget=args.fa_budget)
+                                           args.sticky_hours, args.min_duration_hours,
+                                           fa_budget=args.fa_budget)
         else:
             result = best_point_for_sensor(h, incidents, args.horizon,
-                                           args.sticky_hours, fa_budget=args.fa_budget)
+                                           args.sticky_hours, args.min_duration_hours,
+                                           fa_budget=args.fa_budget)
             print(f"  {sensor}: {len(incidents)} inc | "
                   f"rec={result['recall']:.2f} FA={result['fa_per_day']:.3f}")
 
@@ -365,6 +392,7 @@ def main() -> None:
 
     mode_tag = ("_ok_aware" if args.ok_aware else "") + \
                (f"_sticky{int(args.sticky_hours)}h" if args.sticky_hours > 0 else "") + \
+               (f"_mindur{args.min_duration_hours:.1f}h" if args.min_duration_hours > 0 else "") + \
                ("_maskoff" if args.mask_off else "")
     out_label = f"{args.label}{mode_tag}"
 
