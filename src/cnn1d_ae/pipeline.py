@@ -164,6 +164,19 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     if "Data da Ocorrencia" in df_alarm_sensor.columns:
         df_alarm_sensor = df_alarm_sensor.dropna(subset=["Data da Ocorrencia"]).sort_values("Data da Ocorrencia")
 
+    # Remove condições que não devem gerar janela de exclusão de treino (ex: LOLO = parada planejada)
+    if cfg.TRAIN_SKIP_CONDITIONS:
+        _cond_col = next((c for c in df_alarm_sensor.columns if "condi" in c.lower()
+                          and "não" not in c.lower()), None)
+        if _cond_col:
+            _skip = {c.upper() for c in cfg.TRAIN_SKIP_CONDITIONS}
+            _before = len(df_alarm_sensor)
+            df_alarm_sensor = df_alarm_sensor[
+                ~df_alarm_sensor[_cond_col].str.upper().fillna("").isin(_skip)
+            ]
+            print(f"  [TRAIN_SKIP] Removidas {_before - len(df_alarm_sensor)} linhas de alarme "
+                  f"({cfg.TRAIN_SKIP_CONDITIONS}) da janela de exclusão de treino")
+
     if float(df_use[sensor].std()) < cfg.MIN_STD:
         print(f"[SKIP] {sensor} (std muito baixo, sensor provavelmente travado)")
         return {"sensor": sensor, "skipped": True, "reason": "low_std"}

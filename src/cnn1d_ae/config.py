@@ -39,6 +39,7 @@ class PipelineConfig:
     # PREPROCESSAMENTO
     # =========================
     EXCLUDE_MINUTES_AROUND_ALARM: int = 1440
+    TRAIN_SKIP_CONDITIONS: list = field(default_factory=list)
     INTERPOLATE_LIMIT: int = 3
     EXCLUDE_LONG_GAPS_FROM_TRAIN: bool = True
     # Deprecated: substituido por ENABLE_ROLLING_FEATURES / ENABLE_SPECTRAL_FEATURES / ENABLE_CONTEXT_FEATURES.
