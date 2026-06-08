@@ -191,32 +191,44 @@ def build_gradient_spike_mask(
     running_series: Optional[pd.Series],
     std_mult: float = 8.0,
     suppress_minutes: int = 60,
+    transition_minutes: int = 0,
 ) -> pd.Series:
     """
-    Exclui do treino ±suppress_minutes ao redor de spikes de gradiente local.
+    Exclui ±suppress_minutes ao redor de spikes de gradiente local.
 
-    Spikes detectados como: |diff| > μ_on + std_mult × σ_on
-    onde μ/σ são calibrados sobre pontos ON (running_series > 0.5) para evitar
-    que rampas de startup contaminem o limiar de detecção.
+    Calibração: μ/σ calculados sobre steady state (ON + fora de janelas de transição).
+    - running_series > 0.5 → pontos ON
+    - transition_minutes > 0 → exclui adicionalmente ±N min ao redor de cada
+      mudança de estado (ON↔OFF), refinando o steady state de calibração.
 
-    Garante que transições abruptas locais (sensor falhando momentaneamente,
-    variações bruscas de carga) não sejam apresentadas ao AE como padrão normal.
+    Pode ser usado tanto para exclusão de treino quanto para supressão no scoring.
     """
     s = pd.to_numeric(df[sensor], errors="coerce").ffill().bfill()
     grad = s.diff().abs().fillna(0.0)
 
     if running_series is not None:
         run = running_series.reindex(df.index).fillna(0.0)
-        on_mask = run > 0.5
+        steady_mask = run > 0.5
     else:
-        on_mask = pd.Series(True, index=df.index)
+        steady_mask = pd.Series(True, index=df.index)
 
-    grad_on = grad[on_mask]
-    if len(grad_on) < 10:
+    if transition_minutes > 0 and running_series is not None:
+        run_aligned = running_series.reindex(df.index).fillna(0.0)
+        state_changes = (run_aligned > 0.5).astype(int).diff().abs().fillna(0) > 0
+        change_times = df.index[state_changes].tolist()
+        delta_trans = pd.Timedelta(minutes=int(transition_minutes))
+        trans_mask = pd.Series(False, index=df.index)
+        for t in change_times:
+            trans_mask.loc[(trans_mask.index >= t - delta_trans) &
+                           (trans_mask.index <= t + delta_trans)] = True
+        steady_mask = steady_mask & ~trans_mask
+
+    grad_steady = grad[steady_mask]
+    if len(grad_steady) < 10:
         return pd.Series(False, index=df.index)
 
-    mu = float(grad_on.mean())
-    sigma = float(grad_on.std())
+    mu = float(grad_steady.mean())
+    sigma = float(grad_steady.std())
     if sigma == 0.0:
         return pd.Series(False, index=df.index)
 

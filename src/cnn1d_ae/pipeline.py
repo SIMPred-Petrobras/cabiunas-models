@@ -263,14 +263,17 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             df_use, sensor, _running_col_series,
             cfg.GRADIENT_SPIKE_STD_MULT,
             cfg.GRADIENT_SPIKE_SUPPRESS_MINUTES,
+            getattr(cfg, "GRADIENT_SPIKE_TRANSITION_MINUTES", 0),
         )
         spike_mask = spike_mask.reindex(df_use.index).fillna(False)
         n_spike = int(spike_mask.sum())
         if n_spike:
+            trans_min = getattr(cfg, "GRADIENT_SPIKE_TRANSITION_MINUTES", 0)
+            steady_label = f", steady_trans={trans_min}min" if trans_min > 0 else ""
             print(
                 f"[GRAD-SPIKE] sensor={sensor}: {n_spike} pontos excluidos do treino "
-                f"ao redor de spikes de gradiente "
-                f"(std_mult={cfg.GRADIENT_SPIKE_STD_MULT}, suppress={cfg.GRADIENT_SPIKE_SUPPRESS_MINUTES} min)."
+                f"(std_mult={cfg.GRADIENT_SPIKE_STD_MULT}, suppress={cfg.GRADIENT_SPIKE_SUPPRESS_MINUTES}min"
+                f"{steady_label})."
             )
         exclude = exclude | spike_mask
 
@@ -424,6 +427,26 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             state=state,
             stride=cfg.STRIDE,
         )
+
+    # Supressão de scoring durante spikes de gradiente.
+    # Reduz FP causados por transientes abruptos sem comprometer recall
+    # (anomalias reais têm MAE elevado por horas, não por instantes).
+    if cfg.ENABLE_GRADIENT_SPIKE_MASK and getattr(cfg, "GRADIENT_SPIKE_SUPPRESS_SCORING", False):
+        spike_mask_full = build_gradient_spike_mask(
+            df_all, sensor, _running_col_series,
+            cfg.GRADIENT_SPIKE_STD_MULT,
+            cfg.GRADIENT_SPIKE_SUPPRESS_MINUTES,
+            getattr(cfg, "GRADIENT_SPIKE_TRANSITION_MINUTES", 0),
+        ).reindex(df_all_z.index).fillna(False)
+        stride_int = max(1, int(cfg.STRIDE))
+        seq_positions = np.arange(len(anomaly_seq)) * stride_int
+        valid_pos = seq_positions[seq_positions < len(df_all_z.index)]
+        seq_spike = np.zeros(len(anomaly_seq), dtype=bool)
+        seq_spike[:len(valid_pos)] = spike_mask_full.iloc[valid_pos].values
+        n_suppressed = int((anomaly_seq & seq_spike).sum())
+        if n_suppressed:
+            print(f"[GRAD-SPIKE-SCORE] {sensor}: {n_suppressed} sequências suprimidas no scoring.")
+        anomaly_seq = anomaly_seq & ~seq_spike
 
     all_index = df_all_z.index
     df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq, stride=cfg.STRIDE)
