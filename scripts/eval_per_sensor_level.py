@@ -148,25 +148,40 @@ def load_alarms_gap(alarm_csv: str,
     return result
 
 
-def load_alarms_ok_aware(alarm_csv: str,
-                         exclude_conditions: List[str] | None = None) -> Dict[str, List[pd.Timestamp]]:
+def load_alarms_ok_aware(
+    alarm_csv: str,
+    exclude_conditions: List[str] | None = None,
+    min_alarm_duration_minutes: float = 0.0,
+) -> Dict[str, List[pd.Timestamp]]:
     """OK-aware: qualquer onset após um OK = novo incidente (reset pelo OK).
-    Não usa gap — o próprio OK define o fim do evento."""
+    Não usa gap — o próprio OK define o fim do evento.
+
+    min_alarm_duration_minutes: filtra alarmes cujo tempo onset→OK < limite.
+    Remove fleeting alarms (ISA-18.2) que ativam e limpam em < N minutos.
+    """
     df, _, cond_col, tag_col = _parse_alarm_df(alarm_csv)
     excl = {c.upper() for c in (exclude_conditions or [])}
     result: Dict[str, List[pd.Timestamp]] = {}
     for sensor in SENSORS:
         sensor_df = df[df[tag_col] == sensor].sort_values("_time")
         incidents: List[pd.Timestamp] = []
-        in_incident = False
+        onset_time: pd.Timestamp | None = None
         for _, row in sensor_df.iterrows():
             cond = str(row[cond_col]).upper() if cond_col else "CFN"
             if cond == "OK":
-                in_incident = False
+                if onset_time is not None and min_alarm_duration_minutes > 0:
+                    dur = (row["_time"] - onset_time).total_seconds() / 60.0
+                    if dur >= min_alarm_duration_minutes:
+                        incidents.append(onset_time)
+                elif onset_time is not None:
+                    incidents.append(onset_time)
+                onset_time = None
             elif cond not in excl:
-                if not in_incident:
-                    incidents.append(row["_time"])
-                    in_incident = True
+                if onset_time is None:
+                    onset_time = row["_time"]
+        # Alerta ainda aberto ao fim do período (sem OK) — não conta como fleeting
+        if onset_time is not None:
+            incidents.append(onset_time)
         result[sensor] = incidents
     return result
 
@@ -306,6 +321,8 @@ def main() -> None:
                         help="Duração mínima (horas) de um episódio de alerta para contar")
     parser.add_argument("--exclude_conditions", nargs="*", default=[],
                         help="Condições a excluir da avaliação (ex: LOLO)")
+    parser.add_argument("--min_alarm_duration_minutes", type=float, default=0.0,
+                        help="Filtra alarmes ground-truth com duração < N min (remove fleeting alarms ISA-18.2)")
     parser.add_argument("--mask_off",     action="store_true",
                         help="Zera health score durante operational_state != 'on'")
     parser.add_argument("--out_dir",      default="eval_predictive_out/per_sensor_level")
@@ -343,8 +360,12 @@ def main() -> None:
     if excl_conds:
         print(f"      Excluindo condições: {excl_conds}")
 
+    min_alarm_dur = getattr(args, "min_alarm_duration_minutes", 0.0)
+    if min_alarm_dur > 0:
+        print(f"      Filtro fleeting: alarmes < {min_alarm_dur:.0f}min excluídos do ground-truth")
+
     if args.ok_aware:
-        raw_alarms = load_alarms_ok_aware(args.alarm_csv, excl_conds)
+        raw_alarms = load_alarms_ok_aware(args.alarm_csv, excl_conds, min_alarm_dur)
         def get_incidents(sensor, alarms_s):
             return alarms_s
     else:

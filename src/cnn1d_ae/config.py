@@ -101,6 +101,10 @@ class PipelineConfig:
     # Suprime anomaly_seq durante janelas de spike de gradiente no scoring.
     # Reduz FP causados por transientes abruptos sem afetar recall (spikes são curtos).
     GRADIENT_SPIKE_SUPPRESS_SCORING: bool = False
+    # Lista de sensores onde scoring suppression é aplicada. None = todos os sensores.
+    # Permite restringir a supressão a sensores de vibração/pressão (TV_*, PI_*)
+    # sem penalizar termopares (TC_*, T5_*) onde spikes são a assinatura de falha.
+    GRADIENT_SPIKE_SUPPRESS_SENSORS: Optional[List[str]] = None
 
     # Filtra SENSOR_LIST automaticamente para sensores com eventos de alarme no CSV.
     # Evita treinar sensores sem ground truth de anomalia.

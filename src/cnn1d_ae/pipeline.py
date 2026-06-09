@@ -431,7 +431,13 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     # Supressão de scoring durante spikes de gradiente.
     # Reduz FP causados por transientes abruptos sem comprometer recall
     # (anomalias reais têm MAE elevado por horas, não por instantes).
-    if cfg.ENABLE_GRADIENT_SPIKE_MASK and getattr(cfg, "GRADIENT_SPIKE_SUPPRESS_SCORING", False):
+    _suppress_sensors = getattr(cfg, "GRADIENT_SPIKE_SUPPRESS_SENSORS", None)
+    _scoring_suppress = (
+        cfg.ENABLE_GRADIENT_SPIKE_MASK
+        and getattr(cfg, "GRADIENT_SPIKE_SUPPRESS_SCORING", False)
+        and (_suppress_sensors is None or sensor in _suppress_sensors)
+    )
+    if _scoring_suppress:
         spike_mask_full = build_gradient_spike_mask(
             df_all, sensor, _running_col_series,
             cfg.GRADIENT_SPIKE_STD_MULT,
