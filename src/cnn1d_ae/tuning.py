@@ -10,11 +10,12 @@ import keras_tuner as kt
 from tensorflow import keras
 
 from .config import PipelineConfig
-from .model import build_cnn1d_autoencoder, build_gru_autoencoder, build_callbacks
+from .model import build_cnn1d_autoencoder, build_gru_autoencoder, build_lstm_autoencoder, build_callbacks
 
 _BUILDERS = {
     "cnn1d": build_cnn1d_autoencoder,
     "gru":   build_gru_autoencoder,
+    "lstm":  build_lstm_autoencoder,
 }
 
 

@@ -112,6 +112,47 @@ def build_gru_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: i
     return model
 
 
+def build_lstm_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: int) -> keras.Model:
+    """LSTM Seq2Seq autoencoder.
+
+    Encoder: LSTM(u1, return_sequences=True) → LSTM(u2, return_sequences=False) → bottleneck
+    Decoder: RepeatVector(T) → LSTM(u2) → LSTM(u1) → TimeDistributed(Dense)
+    """
+    u1      = hp.Choice("units_1", [16, 32, 64])
+    u2      = hp.Choice("units_2", [8, 16, 32])
+    dropout = hp.Float("dropout", 0.0, 0.4, step=0.1)
+    lr      = hp.Choice("lr", [1e-4, 3e-4, 1e-3, 3e-3])
+    reg     = keras.regularizers.l2(1e-4)
+
+    latent_dim = u2
+    input_dim  = time_steps * n_features
+    ratio      = latent_dim / max(input_dim, 1)
+    print(f"[LSTM-AE] bottleneck={latent_dim} vs entrada={input_dim} "
+          f"(ratio={ratio:.3f}) | u1={u1} u2={u2}")
+
+    inputs = keras.Input(shape=(time_steps, n_features))
+
+    x       = layers.LSTM(u1, return_sequences=True,  kernel_regularizer=reg)(inputs)
+    if dropout > 0:
+        x = layers.Dropout(dropout)(x)
+    encoded = layers.LSTM(u2, return_sequences=False, kernel_regularizer=reg)(x)
+
+    x = layers.RepeatVector(time_steps)(encoded)
+    x = layers.LSTM(u2, return_sequences=True,  kernel_regularizer=reg)(x)
+    if dropout > 0:
+        x = layers.Dropout(dropout)(x)
+    x       = layers.LSTM(u1, return_sequences=True,  kernel_regularizer=reg)(x)
+    outputs = layers.TimeDistributed(layers.Dense(n_features))(x)
+
+    model = keras.Model(inputs, outputs, name="lstm_autoencoder")
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=lr),
+        loss="mse",
+        metrics=[keras.metrics.MeanAbsoluteError(name="mae")],
+    )
+    return model
+
+
 def build_cnn1d_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: int) -> keras.Model:
     f1 = hp.Choice("filters_1", [8, 16, 32, 64])
     f2 = hp.Choice("filters_2", [8, 16, 32, 64])
