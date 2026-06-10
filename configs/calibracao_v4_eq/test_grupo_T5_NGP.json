@@ -8,10 +8,10 @@
   "EXTRA_RAW_CSV": null,
 
   "TIME_COL": "data_datetime",
-  "SOURCE_TZ": "America/Sao_Paulo",
+  "SOURCE_TZ": "UTC",
   "TARGET_TZ": "UTC",
-  "APPLY_HOUR_SHIFT": true,
-  "SHIFT_HOURS": -3,
+  "APPLY_HOUR_SHIFT": false,
+  "SHIFT_HOURS": 0,
   "LOG_TIME_AUDIT_SAMPLES": 3,
 
   "OUTPUT_ROOT": "runs_test_grupo_T5_NGP",

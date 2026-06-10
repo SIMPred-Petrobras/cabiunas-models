@@ -50,10 +50,12 @@ Este documento explica cada parâmetro do arquivo de configuração JSON usado p
 | Campo | O que faz |
 |---|---|
 | `TIME_COL` | Nome da coluna de data/hora no CSV |
-| `SOURCE_TZ` | Fuso horário em que os dados foram gravados (Brasília = `"America/Sao_Paulo"`) |
-| `TARGET_TZ` | Fuso horário de destino interno. Usar `"UTC"` evita ambiguidades de horário de verão |
-| `APPLY_HOUR_SHIFT` | `true` aplica uma correção manual de horas **após** a conversão de fuso. Necessário para arquivos com offset incorreto na gravação |
-| `SHIFT_HOURS` | Horas a adicionar (negativo = subtrair). `-3` corrige arquivos gravados em UTC mas rotulados como horário local |
+| `SOURCE_TZ` | Fuso horário em que os dados foram gravados. Use `"UTC"` para arquivos cujos timestamps já estão em UTC (ex: arquivo antigo após correção). Use `"America/Sao_Paulo"` para dados originalmente em horário de Brasília |
+| `TARGET_TZ` | Fuso horário de destino interno. Sempre `"UTC"` |
+| `APPLY_HOUR_SHIFT` | `true` aplica uma correção manual de horas após a conversão de fuso. Necessário apenas para arquivos com offset incorreto na gravação e `SOURCE_TZ != "UTC"` |
+| `SHIFT_HOURS` | Horas a adicionar (negativo = subtrair). Usar `0` quando `SOURCE_TZ: "UTC"`. Usar `-3` para arquivos `tzm3` onde os timestamps estão em UTC mas foram gravados como se fossem horário local |
+
+> **Regra prática:** se o arquivo já tem timestamps em UTC (caso do `serie_consolidada_2025_interpolated_antigo.csv` após correção), use `SOURCE_TZ: "UTC"`, `APPLY_HOUR_SHIFT: false`, `SHIFT_HOURS: 0` — o pipeline lê os valores diretamente sem ajuste.
 | `LOG_TIME_AUDIT_SAMPLES` | Quantas linhas imprimir no log para conferência visual da conversão. `0` desativa |
 
 ---
