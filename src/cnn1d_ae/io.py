@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import json
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
@@ -131,10 +131,10 @@ def _resolve_dataset_file(dataset_root: Path, configured_path: str) -> Path:
     )
 
 
-def _resolve_input_paths(cfg: PipelineConfig) -> Tuple[str, str, str]:
+def _resolve_input_paths(cfg: PipelineConfig) -> Tuple[str, str, str, Optional[str]]:
     dataset_id = (cfg.CLEARML_DATASET_ID or os.getenv("CLEARML_DATASET_ID", "")).strip()
     if not cfg.USE_CLEARML_DATASET:
-        return cfg.ALARM_CSV, cfg.FEATURES_CSV, cfg.RAW_CSV
+        return cfg.ALARM_CSV, cfg.FEATURES_CSV, cfg.RAW_CSV, cfg.EXTRA_RAW_CSV or None
 
     from clearml import Dataset
 
@@ -157,7 +157,13 @@ def _resolve_input_paths(cfg: PipelineConfig) -> Tuple[str, str, str]:
     print(f"[CLEARML-DATASET] ALARM_CSV -> {alarm_csv}")
     print(f"[CLEARML-DATASET] FEATURES_CSV -> {features_csv}")
     print(f"[CLEARML-DATASET] RAW_CSV -> {raw_csv}")
-    return str(alarm_csv), str(features_csv), str(raw_csv)
+
+    extra_raw_csv: Optional[str] = None
+    if cfg.EXTRA_RAW_CSV:
+        extra_raw_csv = str(_resolve_dataset_file(dataset_root, cfg.EXTRA_RAW_CSV))
+        print(f"[CLEARML-DATASET] EXTRA_RAW_CSV -> {extra_raw_csv}")
+
+    return str(alarm_csv), str(features_csv), str(raw_csv), extra_raw_csv
 
 
 def _process_time_column(df: pd.DataFrame, col: str, cfg: PipelineConfig, name: str) -> pd.DataFrame:
@@ -185,7 +191,7 @@ def _process_time_column(df: pd.DataFrame, col: str, cfg: PipelineConfig, name: 
 
 
 def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, Dict[str, object]]]:
-    alarm_csv, features_csv, raw_csv = _resolve_input_paths(cfg)
+    alarm_csv, features_csv, raw_csv, extra_raw_csv = _resolve_input_paths(cfg)
 
     df_alarm = pd.read_csv(alarm_csv)
     if "Data da Ocorrência" in df_alarm.columns and "Data da Ocorrencia" not in df_alarm.columns:
@@ -203,6 +209,22 @@ def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataF
         "feat": build_time_integrity_report(df_feat, cfg.TIME_COL, "feat"),
         "raw": build_time_integrity_report(df_raw, cfg.TIME_COL, "raw"),
     }
+
+    # Mescla colunas do arquivo extra (ex: NGP_A do arquivo antigo).
+    # Apenas colunas ausentes no df_raw principal são adicionadas —
+    # o arquivo principal tem precedência em caso de conflito.
+    if extra_raw_csv:
+        df_extra = pd.read_csv(extra_raw_csv)
+        df_extra = _process_time_column(df_extra, cfg.TIME_COL, cfg, "extra_raw")
+        new_cols = [c for c in df_extra.columns if c != cfg.TIME_COL and c not in df_raw.columns]
+        if new_cols:
+            print(f"[EXTRA_RAW_CSV] Mesclando {len(new_cols)} coluna(s) nova(s): {new_cols[:8]}")
+            df_raw = df_raw.merge(df_extra[[cfg.TIME_COL] + new_cols], on=cfg.TIME_COL, how="outer")
+            df_raw = df_raw.sort_values(cfg.TIME_COL).reset_index(drop=True)
+            report["extra_raw"] = build_time_integrity_report(df_extra, cfg.TIME_COL, "extra_raw")
+        else:
+            print("[EXTRA_RAW_CSV] Nenhuma coluna nova encontrada; arquivo ignorado.")
+
     print("[TIME-INTEGRITY]", json.dumps(report, ensure_ascii=False))
 
     return df_alarm, df_feat, df_raw, report

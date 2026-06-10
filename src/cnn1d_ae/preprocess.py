@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Tuple
+from typing import List, Tuple
 
 from .config import PipelineConfig
 
@@ -54,6 +54,43 @@ def build_sensor_dataframe(
         df_use = _build_derived_features(df_use, sensor=sensor, window=cfg.DERIVED_ROLLING_WINDOW)
 
     return df_use, long_gap_raw
+
+
+def build_group_dataframe(
+    cfg: PipelineConfig,
+    df_feat: pd.DataFrame,
+    df_raw: pd.DataFrame,
+    sensors: List[str],
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """
+    Carrega múltiplos sensores de uma só vez, alinhados no mesmo índice temporal.
+    A máscara de gaps longos é a união (OR) de todos os canais — conservadora,
+    exclui o ponto se QUALQUER sensor estava ausente por muito tempo.
+    """
+    source = cfg.TRAIN_SOURCE.lower()
+    source_df = df_raw if source == "raw" else df_feat
+
+    missing = [s for s in sensors if s not in source_df.columns]
+    if missing:
+        raise ValueError(f"Sensores nao encontrados na fonte '{source}': {missing}")
+
+    df_use = source_df[[cfg.TIME_COL] + list(sensors)].copy()
+
+    long_gap_union: pd.Series | None = None
+    for s in sensors:
+        df_use[s] = pd.to_numeric(df_use[s], errors="coerce")
+        lgm = _long_gap_mask(df_use[s], cfg.INTERPOLATE_LIMIT)
+        long_gap_union = lgm if long_gap_union is None else (long_gap_union | lgm)
+
+    df_use = df_use.set_index(cfg.TIME_COL).sort_index()
+    assert long_gap_union is not None
+    long_gap_union.index = df_use.index
+
+    for s in sensors:
+        df_use[s] = df_use[s].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
+        df_use[s] = df_use[s].ffill().bfill()
+
+    return df_use, long_gap_union
 
 
 def build_exclusion_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minutes: int) -> pd.Series:

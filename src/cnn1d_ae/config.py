@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass
@@ -89,6 +89,28 @@ class PipelineConfig:
     SENSOR_LIST: Optional[List[str]] = None
     SENSOR_EXCLUDE: Optional[List[str]] = None
     SENSOR_REGEX: Optional[str] = None
+
+    # Grupos de sensores fisicamente conectados.
+    # Cada grupo pode ter overrides: time_steps, stride, thresh_mode,
+    # target_anomaly_rate, point_window, point_min_count.
+    # Exemplo:
+    #   [{"name": "bomba_01",
+    #     "sensors": ["P_ent_B01", "P_sai_B01", "T_oleo_B01"],
+    #     "time_steps": 360}]
+    SENSOR_GROUPS: Optional[List[Dict[str, Any]]] = None
+
+    # =========================
+    # FONTE DE DADOS EXTRA
+    # =========================
+    # CSV adicional no dataset ClearML (ou caminho local) cujas colunas novas
+    # são mescladas no df_raw principal.  Útil quando sensores de interesse
+    # (ex: NGP_A) estão num arquivo separado do RAW_CSV principal.
+    EXTRA_RAW_CSV: Optional[str] = None
+
+    # Sensor de referência para detectar estado operacional (liga/desliga).
+    # Quando definido, substitui o próprio sensor-alvo em build_operational_state.
+    # Exemplos: "RUNNING_A" (arquivo novo) ou "NGP_A" (arquivo antigo via EXTRA_RAW_CSV).
+    OPERATIONAL_REF_SENSOR: Optional[str] = None
 
     # Execucao em lote
     OVERWRITE: bool = False
