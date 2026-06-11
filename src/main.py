@@ -69,7 +69,7 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
 
     sensor_outputs: List[Dict] = run_info.get("sensor_outputs", [])
     for out in sensor_outputs:
-        sensor = out.get("sensor", "unknown_sensor")
+        sensor = out.get("sensor") or out.get("group", "unknown_sensor")
         output_dir = out.get("output_dir")
         if not output_dir:
             continue
