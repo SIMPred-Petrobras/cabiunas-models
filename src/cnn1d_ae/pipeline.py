@@ -215,11 +215,11 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     # Modo 2 — ENABLE_OPERATIONAL_MASK: infere estado por limiar do próprio sensor.
     # Modo 1 tem prioridade; é mais preciso quando disponível.
     if _running_col_series is not None:
-        exclude_off_train = _running_col_series <= 0.5
+        exclude_off_train = _running_col_series <= cfg.RUNNING_THRESHOLD
         n_off = int(exclude_off_train.sum())
         print(
             f"[RUNNING_COL] sensor={sensor}: {n_off} pontos OFF excluidos do treino "
-            f"via coluna '{cfg.RUNNING_COL}' ({100*n_off/max(len(df_use),1):.1f}%)."
+            f"via coluna '{cfg.RUNNING_COL}' (thr={cfg.RUNNING_THRESHOLD}, {100*n_off/max(len(df_use),1):.1f}%)."
         )
         exclude = exclude | exclude_off_train
     elif cfg.ENABLE_OPERATIONAL_MASK:
@@ -418,7 +418,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     elif _running_col_series is not None:
         # Constrói estado operacional direto do RUNNING_COL para plots e avaliação.
         state = _running_col_series.reindex(df_all_z.index).fillna(0.0).map(
-            lambda x: "on" if x > 0.5 else "off"
+            lambda x: "on" if x > cfg.RUNNING_THRESHOLD else "off"
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,

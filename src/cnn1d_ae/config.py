@@ -116,9 +116,14 @@ class PipelineConfig:
     TRAIN_END_DATE: Optional[str] = None
 
     # Coluna de estado operacional direta (ex: "RUNNING_A").
-    # Quando definida, substitui a detecção por limiar: ON = coluna > 0.5.
+    # Quando definida, substitui a detecção por limiar: ON = coluna > RUNNING_THRESHOLD.
     # Se None, usa OFF_ABS_THRESHOLD / OFF_VALUE_QUANTILE como antes.
     RUNNING_COL: Optional[str] = None
+
+    # Limiar para considerar "ON" quando RUNNING_COL é um sinal contínuo
+    # (ex: NGP_A em % de rotação do gerador de gás → ON = NGP_A > 50).
+    # Default 0.5 preserva o comportamento legado de coluna binária (RUNNING_A > 0.5).
+    RUNNING_THRESHOLD: float = 0.5
 
     # Exclusão de runs de forward-fill upstream do treino.
     # Quando o dado de entrada é pré-interpolado com last-value-carried-forward,
