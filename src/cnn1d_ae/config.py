@@ -38,6 +38,14 @@ class PipelineConfig:
     # =========================
     # PREPROCESSAMENTO
     # =========================
+    # Remoção de common-mode: substitui o valor do sensor pelo resíduo contra a
+    # média leave-one-out dos irmãos do grupo (ex: os 6 TC382). Mantém univariado
+    # (sem OOM), neutraliza deriva/carga compartilhada e deixa o AE enxergar a
+    # DIVERGÊNCIA de um sensor vs os vizinhos = sinal de anomalia local.
+    # Aplicado no início do feature engineering (antes do rolling).
+    ENABLE_COMMON_MODE_REMOVAL: bool = False
+    COMMON_MODE_GROUP: list = field(default_factory=list)
+
     EXCLUDE_MINUTES_AROUND_ALARM: int = 1440
     # Exclusão assimétrica em torno do alarme (sobrepõe AROUND quando definidos).
     # Motivação: alarmes HI/HIHI disparam em carga alta; uma janela simétrica larga
