@@ -310,7 +310,12 @@ def main() -> None:
     parser.add_argument("--task_id",      required=True)
     parser.add_argument("--label",        default="eval")
     parser.add_argument("--alarm_csv",    default=ALARM_CSV_DEFAULT)
-    parser.add_argument("--half_life",    type=float, default=4.0)
+    parser.add_argument("--half_life",    type=float, default=4.0,
+                        help="Half-life da EWMA (h) — default global")
+    parser.add_argument("--half_life_overrides", nargs="*", default=[],
+                        help="Override de half-life por sensor: SENSOR=HORAS "
+                             "(ex: TC382_04_A=0.5). Eventos breves (UNDER) pedem hl curto; "
+                             "deriva sustentada (térmica) pede hl longo.")
     parser.add_argument("--horizon",      type=float, default=HORIZON_HOURS)
     parser.add_argument("--fa_budget",    type=float, default=1.0)
     parser.add_argument("--eval_start",   default=None)
@@ -354,8 +359,16 @@ def main() -> None:
         print(f"      Carregando operational_state (mask_off/exclude_off_alarms)...")
         running_masks = load_running_masks(task, SENSORS)
 
-    print(f"\n[3/4] EWMA (hl={args.half_life}h) + quantile normalization...")
-    health_dict = {s: ewma_quantile(mae, args.half_life) for s, mae in mae_dict.items()}
+    hl_overrides: Dict[str, float] = {}
+    for item in (args.half_life_overrides or []):
+        if "=" in item:
+            k, v = item.split("=", 1)
+            hl_overrides[k.strip()] = float(v)
+    print(f"\n[3/4] EWMA (hl={args.half_life}h" +
+          (f", overrides={hl_overrides}" if hl_overrides else "") +
+          ") + quantile normalization...")
+    health_dict = {s: ewma_quantile(mae, hl_overrides.get(s, args.half_life))
+                   for s, mae in mae_dict.items()}
 
     if t0 or t1:
         print(f"      Período: {t0.date() if t0 else 'início'} → {t1.date() if t1 else 'fim'}")

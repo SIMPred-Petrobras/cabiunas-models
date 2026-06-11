@@ -250,6 +250,11 @@ class PipelineConfig:
         default_factory=lambda: [8.0, 24.0, 72.0]
     )
     PREDICTIVE_EWMA_HALF_LIFE_HOURS: float = 4.0
+    # Override de half-life por sensor (default usa o global acima). O half-life
+    # ideal depende do tipo de evento: deriva sustentada (térmica, ex: TC382_03)
+    # pede hl longo (~4h); dips breves (UNDER de termopar, ex: TC382_04) pedem hl
+    # curto (~0.5h) senão a EWMA os alisa. Ex: {"TC382_04_A": 0.5}.
+    PREDICTIVE_EWMA_HALF_LIFE_HOURS_PER_SENSOR: dict = field(default_factory=dict)
     PREDICTIVE_ALERT_DEBOUNCE_HOURS: float = 8.0
     PREDICTIVE_FA_BUDGET_PER_DAY: float = 1.0
 
