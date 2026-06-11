@@ -153,6 +153,52 @@ def build_lstm_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: 
     return model
 
 
+def build_dense_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: int) -> keras.Model:
+    """Dense (MLP) autoencoder sobre a janela achatada.
+
+    Flatten(T×F) → Dense(L1)+BN+ReLU → Dense(L2)+BN+ReLU → bottleneck →
+    Dense(L2)+BN+ReLU → Dense(L1)+BN+ReLU → Dense(T×F) → Reshape(T,F).
+    Referência: pipeline Dense AutoML (Transpetro), que venceu na maioria dos
+    equipamentos de bomba. Aqui serve para fechar a comparação de arquitetura.
+    """
+    l1      = hp.Choice("dense_1", [64, 128])
+    l2      = hp.Choice("dense_2", [32, 64])
+    bottleneck = hp.Choice("bottleneck", [8, 16, 32])
+    dropout = hp.Float("dropout", 0.0, 0.4, step=0.1)
+    lr      = hp.Choice("lr", [1e-4, 3e-4, 1e-3, 3e-3])
+    reg     = keras.regularizers.l2(1e-4)
+
+    input_dim = time_steps * n_features
+    print(f"[DENSE-AE] bottleneck={bottleneck} vs entrada={input_dim} "
+          f"(ratio={bottleneck/max(input_dim,1):.3f}) | l1={l1} l2={l2}")
+
+    inputs = keras.Input(shape=(time_steps, n_features))
+    x = layers.Flatten()(inputs)
+    for units in (l1, l2):
+        x = layers.Dense(units, kernel_regularizer=reg)(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        if dropout > 0:
+            x = layers.Dropout(dropout)(x)
+    x = layers.Dense(bottleneck, kernel_regularizer=reg)(x)  # gargalo sem ativação
+    for units in (l2, l1):
+        x = layers.Dense(units, kernel_regularizer=reg)(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.ReLU()(x)
+        if dropout > 0:
+            x = layers.Dropout(dropout)(x)
+    x = layers.Dense(input_dim)(x)
+    outputs = layers.Reshape((time_steps, n_features))(x)
+
+    model = keras.Model(inputs, outputs, name="dense_autoencoder")
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=lr),
+        loss="mse",
+        metrics=[keras.metrics.MeanAbsoluteError(name="mae")],
+    )
+    return model
+
+
 def build_cnn1d_autoencoder(hp: kt.HyperParameters, time_steps: int, n_features: int) -> keras.Model:
     f1 = hp.Choice("filters_1", [8, 16, 32, 64])
     f2 = hp.Choice("filters_2", [8, 16, 32, 64])

@@ -189,6 +189,17 @@ class PipelineConfig:
     POINT_WINDOW: int = 60
     POINT_MIN_COUNT: int = 3
 
+    # Política de alarme no nível da sequência (decide anomaly_seq a partir do erro).
+    # "threshold" = erro > threshold ponto a ponto (legado).
+    # "cusum"     = detector de deriva sustentada (imune a spikes isolados); usa
+    #               mu/sigma do erro de TREINO. Reduz FP que são picos curtos.
+    ALARM_POLICY: str = "threshold"
+    CUSUM_K: float = 0.5   # folga (em unidades de sigma)
+    CUSUM_H: float = 5.0   # limiar do acumulador que dispara
+    # Debounce (on-delay): exige N sequências consecutivas anômalas antes de confirmar.
+    # 0/1 = desligado. Aplicado depois da política de alarme, antes do mapeamento p/ ponto.
+    DEBOUNCE_POINTS: int = 0
+
     # Mascara operacional (reduz falso positivo em liga/desliga e off)
     ENABLE_OPERATIONAL_MASK: bool = False
     OFF_VALUE_QUANTILE: float = 0.05
