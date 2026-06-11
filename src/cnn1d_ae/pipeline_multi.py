@@ -443,10 +443,13 @@ def run_pipeline_multivariado(
         if cfg.MODEL_MODE == "per_sensor":
             n_seq_ps, n_sens_ps = mae_per_sensor_seq.shape
             per_sensor_health_matrix = np.empty_like(mae_per_sensor_seq, dtype=np.float32)
+            _hl_over = cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS_PER_SENSOR or {}
             for j in range(n_sens_ps):
+                _sensor_j = sensors_ok[j] if j < len(sensors_ok) else None
+                _hl = _hl_over.get(_sensor_j, cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS)
                 per_sensor_health_matrix[:, j] = compute_health_index_ewma(
                     mae_per_sensor_seq[:, j], seq_run_frac,
-                    half_life_hours=cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS,
+                    half_life_hours=_hl,
                     dt_seconds=dt_seconds,
                 )
             print(f"[PRED] per_sensor EWMA matrix={per_sensor_health_matrix.shape} "
