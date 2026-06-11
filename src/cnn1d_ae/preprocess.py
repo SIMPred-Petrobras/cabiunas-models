@@ -281,6 +281,20 @@ def build_sensor_dataframe(
     selected_cols = [cfg.TIME_COL, sensor, *context_cols]
     df_use = source_df[selected_cols].copy()
 
+    # Remoção de common-mode: substitui o sensor pelo resíduo contra a média
+    # leave-one-out dos irmãos do grupo (ex: os 6 TC382). Feito aqui porque
+    # source_df ainda tem TODOS os sensores; df_use já está reduzido. Mantém
+    # univariado e expõe a divergência local (anomalia) neutralizando deriva/carga
+    # compartilhada. No-op se o sensor não está no grupo ou faltam irmãos.
+    if cfg.ENABLE_COMMON_MODE_REMOVAL:
+        group = [c for c in (cfg.COMMON_MODE_GROUP or []) if c in source_df.columns]
+        siblings = [c for c in group if c != sensor]
+        if sensor in group and siblings:
+            s = pd.to_numeric(df_use[sensor], errors="coerce")
+            sib_mean = source_df[siblings].apply(pd.to_numeric, errors="coerce").mean(axis=1)
+            df_use[sensor] = (s - sib_mean).astype(float)
+            print(f"[COMMON-MODE] sensor={sensor} = valor − média({len(siblings)} irmãos do grupo)")
+
     before_dupes = int(df_use.duplicated(subset=[cfg.TIME_COL]).sum())
     if before_dupes:
         print(f"[DATA-CLEAN] sensor={sensor}: removendo {before_dupes} timestamps duplicados.")
