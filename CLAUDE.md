@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Anomaly detection pipeline for industrial time-series sensor data (Petrobras Cabiunas facility). Uses a CNN-1D Autoencoder trained on sensor readings (temperature, pressure, vibration) to detect equipment anomalies. Integrated with ClearML for experiment tracking, dataset versioning, and remote GPU execution.
 
+### Tech Stack
+
+- **Deep learning: TensorFlow / Keras** (`from tensorflow import keras`; Docker `tensorflow/tensorflow:2.16.1-gpu` → Keras 3). **NOT** PyTorch, **NOT** AutoKeras.
+- **Hyperparameter search: KerasTuner** (`keras_tuner`, `kt.RandomSearch` over `val_loss`) — low-level tuning over hand-defined architectures, not AutoML/NAS.
+- Model builders live in `model.py` (`build_cnn1d/gru/lstm/dense_autoencoder`), registered in `tuning.py::_BUILDERS` and selected via `MODEL_ARCH`.
+- Note: `automl_dense_report.md` describes a **different** project (Transpetro, PyTorch + custom AutoML). Only its *concepts* (load-residual, CUSUM, persisting the scaler) were borrowed — not its code or framework.
+
 ## Commands
 
 ### Setup
