@@ -185,6 +185,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         df_use.index,
         df_alarm_sensor["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_sensor.columns else pd.Series(dtype="datetime64[ns]"),
         cfg.EXCLUDE_MINUTES_AROUND_ALARM,
+        minutes_before=cfg.EXCLUDE_MINUTES_BEFORE_ALARM,
+        minutes_after=cfg.EXCLUDE_MINUTES_AFTER_ALARM,
     )
 
     exclude = exclude_alarm.copy()

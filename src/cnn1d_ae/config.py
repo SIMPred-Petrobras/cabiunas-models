@@ -39,6 +39,14 @@ class PipelineConfig:
     # PREPROCESSAMENTO
     # =========================
     EXCLUDE_MINUTES_AROUND_ALARM: int = 1440
+    # Exclusão assimétrica em torno do alarme (sobrepõe AROUND quando definidos).
+    # Motivação: alarmes HI/HIHI disparam em carga alta; uma janela simétrica larga
+    # (ex: ±48h) remove do treino o regime de carga alta normal, fazendo o AE
+    # subajustar carga alta → falsos positivos concentrados lá. O ideal é excluir
+    # generosamente DEPOIS (evento + recuperação) e pouco ANTES, preservando o
+    # entorno de carga alta normal. None => usa EXCLUDE_MINUTES_AROUND_ALARM (simétrico).
+    EXCLUDE_MINUTES_BEFORE_ALARM: Optional[int] = None
+    EXCLUDE_MINUTES_AFTER_ALARM: Optional[int] = None
     TRAIN_SKIP_CONDITIONS: list = field(default_factory=list)
     INTERPOLATE_LIMIT: int = 3
     EXCLUDE_LONG_GAPS_FROM_TRAIN: bool = True
