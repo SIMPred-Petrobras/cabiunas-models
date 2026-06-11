@@ -200,6 +200,15 @@ class PipelineConfig:
     # 0/1 = desligado. Aplicado depois da política de alarme, antes do mapeamento p/ ponto.
     DEBOUNCE_POINTS: int = 0
 
+    # Threshold por banda de regime de carga. O erro de reconstrução do AE depende
+    # da carga: regimes raros (ex: carga alta) têm baseline de erro maior, gerando
+    # FP com um threshold global único. Calibra um threshold (THRESH_MODE) separado
+    # por banda no erro de TREINO, usando o sinal de RUNNING_COL (ex: NGP_A) como
+    # proxy de carga. Bandas com poucas amostras caem para o threshold global.
+    ENABLE_REGIME_BAND_THRESHOLD: bool = False
+    REGIME_BANDS: list = field(default_factory=list)  # bordas, ex: [90, 94] → ≤90 / 90-94 / >94
+    REGIME_BAND_MIN_SAMPLES: int = 150
+
     # Mascara operacional (reduz falso positivo em liga/desliga e off)
     ENABLE_OPERATIONAL_MASK: bool = False
     OFF_VALUE_QUANTILE: float = 0.05

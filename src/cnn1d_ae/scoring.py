@@ -262,6 +262,57 @@ def apply_cusum_alarm(
     return cusum >= h, cusum
 
 
+def assign_regime_bands(
+    n_seq: int,
+    seq_index: pd.DatetimeIndex,
+    time_steps: int,
+    stride: int,
+    regime_series: pd.Series,
+    bands: list,
+) -> np.ndarray:
+    """Atribui cada sequência a uma banda de regime pelo valor do sinal de carga
+    no último ponto da janela (ex: NGP_A). `bands` são as bordas: [90, 94] →
+    banda 0 (≤90), 1 (90-94), 2 (>94). NaN/fora do índice → banda -1 (desconhecida)."""
+    end_pos = (int(time_steps) - 1) + np.arange(n_seq) * max(1, int(stride))
+    end_pos = np.clip(end_pos, 0, len(seq_index) - 1)
+    ts = seq_index[end_pos]
+    vals = pd.Series(regime_series).reindex(ts).to_numpy(dtype=float)
+    edges = np.asarray(sorted(bands), dtype=float)
+    band = np.digitize(vals, edges).astype(int)
+    band[~np.isfinite(vals)] = -1
+    return band
+
+
+def compute_regime_band_thresholds(
+    train_mae_seq: np.ndarray,
+    train_bands: np.ndarray,
+    mode: str,
+    target_rate: float,
+    min_samples: int = 150,
+) -> tuple[dict, float]:
+    """Calibra um threshold por banda no erro de TREINO. Bandas com menos de
+    `min_samples` sequências caem para o threshold global (robustez em regimes raros)."""
+    global_thr = compute_threshold(train_mae_seq, mode, target_rate)
+    thr: dict = {}
+    for b in np.unique(train_bands):
+        m = train_mae_seq[train_bands == b]
+        thr[int(b)] = (
+            compute_threshold(m, mode, target_rate) if len(m) >= min_samples else float(global_thr)
+        )
+    return thr, float(global_thr)
+
+
+def apply_regime_band_threshold(
+    mae_seq_all: np.ndarray,
+    all_bands: np.ndarray,
+    band_thr: dict,
+    global_thr: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """anomaly_seq[i] = erro[i] > threshold_da_banda[i] (global para banda ausente)."""
+    thr_seq = np.array([band_thr.get(int(b), global_thr) for b in all_bands], dtype=float)
+    return mae_seq_all > thr_seq, thr_seq
+
+
 def apply_debounce(anomaly_seq: np.ndarray, n_points: int) -> np.ndarray:
     """Exige `n_points` consecutivos anômalos antes de confirmar o alarme (on-delay
     ISA-18.2). O alarme é atribuído ao último ponto da janela. n<=1 = no-op."""

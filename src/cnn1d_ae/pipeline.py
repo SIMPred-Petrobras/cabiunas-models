@@ -34,6 +34,9 @@ from .scoring import (
     apply_adaptive_monthly_threshold,
     apply_cusum_alarm,
     apply_debounce,
+    assign_regime_bands,
+    compute_regime_band_thresholds,
+    apply_regime_band_threshold,
     map_seq_to_point_anomalies,
     build_sequence_scores_df,
     compute_anomaly_rate_per_day,
@@ -402,6 +405,12 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     elif cfg.ALARM_POLICY.lower() == "cusum":
         anomaly_seq, _cusum = apply_cusum_alarm(mae_seq_all, train_mae_seq, cfg.CUSUM_K, cfg.CUSUM_H)
         print(f"[CUSUM] k={cfg.CUSUM_K} h={cfg.CUSUM_H} disparos={int(anomaly_seq.sum())}/{len(anomaly_seq)}")
+    elif cfg.ENABLE_REGIME_BAND_THRESHOLD and _running_col_series is not None and cfg.REGIME_BANDS:
+        train_bands = assign_regime_bands(len(train_mae_seq), df_normal_z.index, cfg.TIME_STEPS, cfg.STRIDE, _running_col_series, cfg.REGIME_BANDS)
+        all_bands   = assign_regime_bands(len(mae_seq_all),  df_all_z.index,    cfg.TIME_STEPS, cfg.STRIDE, _running_col_series, cfg.REGIME_BANDS)
+        band_thr, gthr = compute_regime_band_thresholds(train_mae_seq, train_bands, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE, cfg.REGIME_BAND_MIN_SAMPLES)
+        anomaly_seq, _thr_seq = apply_regime_band_threshold(mae_seq_all, all_bands, band_thr, gthr)
+        print(f"[REGIME-THR] col={cfg.RUNNING_COL} bands={cfg.REGIME_BANDS} thr_por_banda={ {k: round(v,4) for k,v in sorted(band_thr.items())} } global={gthr:.4f}")
     else:
         anomaly_seq = mae_seq_all > threshold
 
