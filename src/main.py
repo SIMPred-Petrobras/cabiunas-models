@@ -110,6 +110,10 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
         hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
         _publish_artifact(task, f"{sensor}_best_hyperparameters_json", hp_path, local_task_dir / sensor)
 
+        bundle_path = os.path.join(output_dir, "best_model", "inference_bundle.json")
+        if os.path.isfile(bundle_path):
+            _publish_artifact(task, f"{sensor}_inference_bundle_json", bundle_path, local_task_dir / sensor)
+
 
 def main():
     args = parse_args()

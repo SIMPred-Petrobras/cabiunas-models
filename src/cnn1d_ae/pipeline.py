@@ -21,6 +21,8 @@ from .preprocess import (
     build_constant_run_mask,
     build_gradient_spike_mask,
     clip_outliers,
+    compute_clip_bounds,
+    apply_clip_bounds,
     apply_feature_engineering,
     normalize_train_only,
 )
@@ -298,8 +300,12 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         print(f"[SKIP] {sensor} (poucos dados normais apos exclusao)")
         return {"sensor": sensor, "skipped": True, "reason": "few_normal_points"}
 
+    # Bounds de clip fixados no treino (df_normal pré-clip): persistidos no bundle
+    # e aplicados também em df_all — evita vazamento (df_all não refita os próprios
+    # limites) e faz a inferência reproduzir o scoring exatamente.
+    clip_bounds = compute_clip_bounds(df_normal, cfg)
     df_normal = clip_outliers(df_normal, cfg)
-    df_all = clip_outliers(df_all, cfg)
+    df_all = apply_clip_bounds(df_all, clip_bounds)
 
     df_normal, df_all = apply_feature_engineering(df_normal, df_all, sensor, cfg)
     feature_engineering_report = {
@@ -327,7 +333,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             df_normal, sensor, cfg.STABLE_ON_GRADIENT_QUANTILE
         )
 
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all, stable_mask=stable_mask)
+    df_normal_z, df_all_z, center, scale = normalize_train_only(cfg, df_normal, df_all, stable_mask=stable_mask)
 
     values_normal = df_normal_z.values.astype(np.float32)
     values_all = df_all_z.values.astype(np.float32)
@@ -594,6 +600,39 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         calibration_report["operational_state_counts"] = {str(k): int(v) for k, v in counts.items()}
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
+
+    # Bundle de inferência: scaler + threshold + parâmetros para reproduzir o
+    # scoring em dados novos (sem refitar). Sem ele, a normalização recalculada
+    # numa nova distribuição invalida o threshold calibrado.
+    _hl_over = (cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS_PER_SENSOR or {}).get(sensor)
+    inference_bundle = {
+        "sensor": sensor,
+        "model_arch": getattr(cfg, "MODEL_ARCH", "cnn1d"),
+        "model_file": "model.keras",
+        "feature_columns": [str(c) for c in df_normal_z.columns],
+        "n_features": int(df_normal_z.shape[1]),
+        "time_steps": int(cfg.TIME_STEPS),
+        "stride": int(cfg.STRIDE),
+        "normalize_mode": cfg.NORMALIZE_MODE,
+        "center": {str(k): float(v) for k, v in center.to_dict().items()},
+        "scale": {str(k): float(v) for k, v in scale.to_dict().items()},
+        "outlier_mode": cfg.OUTLIER_MODE,
+        "clip_bounds": clip_bounds,
+        "threshold": float(threshold),
+        "thresh_mode": cfg.THRESH_MODE,
+        "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
+        "running_col": cfg.RUNNING_COL,
+        "running_threshold": float(cfg.RUNNING_THRESHOLD),
+        "predictive_ewma_half_life_hours": float(
+            _hl_over if _hl_over is not None else cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS
+        ),
+        "alarm_policy": cfg.ALARM_POLICY,
+        "point_rule": cfg.POINT_RULE,
+        "point_window": int(cfg.POINT_WINDOW),
+        "point_min_count": int(cfg.POINT_MIN_COUNT),
+    }
+    with open(os.path.join(out_dirs["best_model"], "inference_bundle.json"), "w", encoding="utf-8") as f:
+        json.dump(inference_bundle, f, indent=2, ensure_ascii=False)
 
     report = {
         "sensor": sensor,
