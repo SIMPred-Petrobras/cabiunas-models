@@ -453,6 +453,40 @@ def clip_outliers(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
     raise ValueError("OUTLIER_MODE invalido. Use 'none', 'quantile' ou 'mad'.")
 
 
+def compute_clip_bounds(df: pd.DataFrame, cfg: PipelineConfig) -> dict:
+    """Bounds (low, high) por coluna usados pelo clip, fixados no DataFrame de
+    treino (df_normal). Mesma fórmula de `clip_outliers`; persistir no bundle de
+    inferência para aplicar limites de treino em dados novos (sem refitar)."""
+    mode = cfg.OUTLIER_MODE.lower()
+    if mode == "none":
+        return {}
+    if mode == "quantile":
+        low = df.quantile(cfg.OUTLIER_Q_LOW)
+        high = df.quantile(cfg.OUTLIER_Q_HIGH)
+    elif mode == "mad":
+        med = df.median(axis=0)
+        mad = (df - med).abs().median(axis=0).replace(0, 1e-9)
+        low = med - cfg.OUTLIER_MAD_K * 1.4826 * mad
+        high = med + cfg.OUTLIER_MAD_K * 1.4826 * mad
+    else:
+        raise ValueError("OUTLIER_MODE invalido. Use 'none', 'quantile' ou 'mad'.")
+    return {str(c): [float(low[c]), float(high[c])] for c in df.columns}
+
+
+def apply_clip_bounds(df: pd.DataFrame, bounds: dict) -> pd.DataFrame:
+    """Aplica bounds (low, high) por coluna previamente fixados no treino. Usado
+    para clipar df_all/inferência com os limites de treino (sem refitar → sem vazamento)."""
+    if not bounds:
+        return df
+    out = df.copy()
+    for c in out.columns:
+        key = str(c)
+        if key in bounds:
+            low, high = bounds[key]
+            out[c] = out[c].clip(lower=low, upper=high)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 10. Normalização com suporte a subconjunto estável
 # ---------------------------------------------------------------------------
