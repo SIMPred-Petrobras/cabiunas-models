@@ -120,12 +120,17 @@ Agrupa sensores **fisicamente conectados** para treinar um único autoencoder mu
 |---|---|
 | `name` | Identificador do grupo (usado no nome da pasta de saída) |
 | `sensors` | Lista dos sensores que compõem o grupo. Devem vir todos do mesmo `RAW_CSV` |
+| `target_sensor` | **(Recomendado)** Sensor alvo: o threshold e a detecção de anomalias são calculados sobre o MAE **deste canal específico**, não sobre a média de todos os canais. Os sensores auxiliares entram como contexto no encoder (enriquecem a representação latente), mas o alerta dispara somente quando o canal alvo se desvia. Se omitido, usa-se o MAE global (média de todos os canais). |
 | `time_steps` | **Override local**: janela temporal deste grupo em número de amostras. Com dados a 30s, `180` = 90 minutos de histórico por janela de treino |
 | `thresh_mode` | **Override local**: como calcular o limiar de anomalia (ver seção Threshold abaixo) |
 | `target_anomaly_rate` | **Override local**: taxa alvo de anomalias sobre os dados de treino |
 | `point_window` | **Override local**: janela de votação para confirmar anomalia pontual |
 | `point_min_count` | **Override local**: mínimo de sequências anômalas dentro da janela para confirmar o ponto |
 
+> **Para rodar apenas os grupos, sem processar sensores individuais:** defina `SENSOR_LIST` com exatamente os sensores que compõem os grupos. Como eles já estão em `grouped_sensors`, o pipeline pula o processamento individual automaticamente.
+>
+> Exemplo: `"SENSOR_LIST": ["T5_AVG_A", "TC382_03_A"]` com o grupo `T5_temperatura` → só o grupo roda.
+>
 > Sensores não incluídos em nenhum grupo continuam sendo processados individualmente com os parâmetros globais.
 
 ---

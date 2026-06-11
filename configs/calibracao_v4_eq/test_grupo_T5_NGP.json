@@ -18,7 +18,7 @@
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
   "TRAIN_SOURCE": "raw",
 
-  "SENSOR_LIST": null,
+  "SENSOR_LIST": ["T5_AVG_A", "TC382_03_A"],
   "SENSOR_EXCLUDE": null,
   "SENSOR_REGEX": null,
 
@@ -26,6 +26,7 @@
     {
       "name": "T5_temperatura",
       "sensors": ["T5_AVG_A", "TC382_03_A"],
+      "target_sensor": "T5_AVG_A",
       "time_steps": 180,
       "thresh_mode": "target_rate",
       "target_anomaly_rate": 0.003,

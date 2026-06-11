@@ -312,6 +312,16 @@ def run_one_group(
     sensors = valid_sensors
     df_use = df_use[sensors]
 
+    # Sensor alvo: threshold e detecção baseados no MAE deste canal.
+    # Se não definido, usa MAE global (média de todos os canais).
+    target_sensor = group.get("target_sensor")
+    if target_sensor and target_sensor not in sensors:
+        print(f"[WARN] group={group_name}: target_sensor={target_sensor!r} removido por low_std — usando MAE global")
+        target_sensor = None
+    target_idx = sensors.index(target_sensor) if target_sensor else None
+    if target_idx is not None:
+        print(f"[TARGET] sensor alvo: {target_sensor!r} (canal {target_idx}) — anomalia baseada no MAE deste canal")
+
     # Máscara de alarmes: união de todos os sensores do grupo
     if "Tag" in df_alarm.columns:
         df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(sensors)].copy()
@@ -371,17 +381,21 @@ def run_one_group(
     train_abs_err = np.abs(x_train_pred - x_train_full)
     train_mae_seq = np.mean(train_abs_err, axis=(1, 2))
 
-    threshold = compute_threshold(train_mae_seq, effective_cfg.THRESH_MODE,
+    # Se target_sensor definido, usa MAE desse canal para o threshold
+    train_mae_thresh = (np.mean(train_abs_err[:, :, target_idx], axis=1)
+                        if target_idx is not None else train_mae_seq)
+    threshold = compute_threshold(train_mae_thresh, effective_cfg.THRESH_MODE,
                                   target_rate=effective_cfg.TARGET_ANOMALY_RATE)
-    plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
+    plot_hist_mae(train_mae_thresh, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
     x_all = make_sequences(values_all, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
     x_all_pred = best_model.predict(x_all, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
     abs_err_all = np.abs(x_all_pred - x_all)
-    mae_seq_all = np.mean(abs_err_all, axis=(1, 2))          # (n_seq,)
+    mae_seq_all = np.mean(abs_err_all, axis=(1, 2))          # (n_seq,) — MAE global
     mae_per_ch = np.mean(abs_err_all, axis=1)                 # (n_seq, n_features) — mean no eixo tempo
+    mae_for_anom = mae_per_ch[:, target_idx] if target_idx is not None else mae_seq_all
 
-    anomaly_seq = mae_seq_all > threshold
+    anomaly_seq = mae_for_anom > threshold
 
     state = None
     if cfg.ENABLE_OPERATIONAL_MASK:
@@ -410,7 +424,7 @@ def run_one_group(
         )
 
     all_index = df_all_z.index
-    df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq)
+    df_seq_scores = build_sequence_scores_df(all_index, mae_for_anom, anomaly_seq)
     # Colunas de MAE por canal — útil para diagnosticar qual sensor disparou
     for i, s in enumerate(sensors):
         col = np.full(len(df_seq_scores), np.nan)
@@ -461,6 +475,7 @@ def run_one_group(
     calibration_report = {
         "group": group_name,
         "sensors": sensors,
+        "target_sensor": target_sensor or "global_mae",
         "n_sensors": len(sensors),
         "threshold": float(threshold),
         "THRESH_MODE": effective_cfg.THRESH_MODE,
