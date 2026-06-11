@@ -327,6 +327,9 @@ def main() -> None:
                         help="Filtra alarmes ground-truth com duração < N min (remove fleeting alarms ISA-18.2)")
     parser.add_argument("--mask_off",     action="store_true",
                         help="Zera health score durante operational_state != 'on'")
+    parser.add_argument("--exclude_off_alarms", action="store_true",
+                        help="Exclui do ground-truth alarmes ocorridos em período OFF "
+                             "(operational_state != 'on'), ex: UNDER de termopar frio em turbina desligada")
     parser.add_argument("--out_dir",      default="eval_predictive_out/per_sensor_level")
     args = parser.parse_args()
 
@@ -347,8 +350,8 @@ def main() -> None:
     mae_dict = load_mae_series(task, SENSORS)
 
     running_masks: Dict[str, pd.Series] = {}
-    if args.mask_off:
-        print(f"      Carregando operational_state (mask_off=True)...")
+    if args.mask_off or args.exclude_off_alarms:
+        print(f"      Carregando operational_state (mask_off/exclude_off_alarms)...")
         running_masks = load_running_masks(task, SENSORS)
 
     print(f"\n[3/4] EWMA (hl={args.half_life}h) + quantile normalization...")
@@ -391,6 +394,20 @@ def main() -> None:
         alarms_s = raw_alarms.get(sensor, [])
         alarms_s = [a for a in alarms_s
                     if (t0 is None or a >= t0) and (t1 is None or a <= t1)]
+
+        # Exclui alarmes ocorridos em período OFF (ex: UNDER de termopar frio com
+        # a turbina desligada — o detector mascara esse regime, então não devem
+        # contar como incidente perdido).
+        if args.exclude_off_alarms and sensor in running_masks and alarms_s:
+            rm = running_masks[sensor]
+            on_at = rm.reindex(pd.DatetimeIndex(alarms_s), method="nearest",
+                               tolerance=pd.Timedelta("30min")).fillna(True)
+            kept = [a for a, ok in zip(alarms_s, on_at.tolist()) if ok]
+            n_off = len(alarms_s) - len(kept)
+            if n_off:
+                print(f"  [OFF-EXCL] {sensor}: {n_off}/{len(alarms_s)} alarmes em período OFF removidos do ground-truth")
+            alarms_s = kept
+
         incidents = get_incidents(sensor, alarms_s)
 
         if not incidents:
@@ -416,7 +433,8 @@ def main() -> None:
     mode_tag = ("_ok_aware" if args.ok_aware else "") + \
                (f"_sticky{int(args.sticky_hours)}h" if args.sticky_hours > 0 else "") + \
                (f"_mindur{args.min_duration_hours:.1f}h" if args.min_duration_hours > 0 else "") + \
-               ("_maskoff" if args.mask_off else "")
+               ("_maskoff" if args.mask_off else "") + \
+               ("_offexcl" if args.exclude_off_alarms else "")
     out_label = f"{args.label}{mode_tag}"
 
     print(f"\n=== RESULTADO POR SENSOR (H={args.horizon}h, {out_label}) ===")
