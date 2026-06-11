@@ -391,12 +391,25 @@ def apply_feature_engineering(
 # 8. Máscara de exclusão baseada em alarmes
 # ---------------------------------------------------------------------------
 
-def build_exclusion_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minutes: int) -> pd.Series:
+def build_exclusion_mask(
+    index: pd.DatetimeIndex,
+    alarm_times: pd.Series,
+    minutes: int,
+    minutes_before: int | None = None,
+    minutes_after: int | None = None,
+) -> pd.Series:
+    """Marca janelas de exclusão de treino em torno dos alarmes.
+
+    Quando minutes_before/minutes_after são None, usa `minutes` simétrico (legado).
+    A assimetria permite excluir mais depois do alarme (evento + recuperação) e
+    menos antes, preservando o regime normal pré-alarme no treino.
+    """
     exclude = pd.Series(False, index=index)
-    delta = pd.Timedelta(minutes=minutes)
+    before = pd.Timedelta(minutes=minutes_before if minutes_before is not None else minutes)
+    after = pd.Timedelta(minutes=minutes_after if minutes_after is not None else minutes)
     for t in alarm_times.values:
-        t0 = pd.Timestamp(t) - delta
-        t1 = pd.Timestamp(t) + delta
+        t0 = pd.Timestamp(t) - before
+        t1 = pd.Timestamp(t) + after
         exclude.loc[(exclude.index >= t0) & (exclude.index <= t1)] = True
     return exclude
 
