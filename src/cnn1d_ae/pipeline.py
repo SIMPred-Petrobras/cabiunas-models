@@ -32,6 +32,8 @@ from .scoring import (
     compute_threshold,
     compute_threshold_alarm_optimized,
     apply_adaptive_monthly_threshold,
+    apply_cusum_alarm,
+    apply_debounce,
     map_seq_to_point_anomalies,
     build_sequence_scores_df,
     compute_anomaly_rate_per_day,
@@ -397,8 +399,16 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             stride=cfg.STRIDE,
         )
         print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k, v in monthly_thresholds.items()} }")
+    elif cfg.ALARM_POLICY.lower() == "cusum":
+        anomaly_seq, _cusum = apply_cusum_alarm(mae_seq_all, train_mae_seq, cfg.CUSUM_K, cfg.CUSUM_H)
+        print(f"[CUSUM] k={cfg.CUSUM_K} h={cfg.CUSUM_H} disparos={int(anomaly_seq.sum())}/{len(anomaly_seq)}")
     else:
         anomaly_seq = mae_seq_all > threshold
+
+    if cfg.DEBOUNCE_POINTS and cfg.DEBOUNCE_POINTS > 1:
+        _before_db = int(np.sum(anomaly_seq))
+        anomaly_seq = apply_debounce(anomaly_seq, cfg.DEBOUNCE_POINTS)
+        print(f"[DEBOUNCE] n={cfg.DEBOUNCE_POINTS}: {_before_db} -> {int(np.sum(anomaly_seq))} sequências anômalas")
     state = None
     if cfg.ENABLE_OPERATIONAL_MASK:
         state = build_operational_state(

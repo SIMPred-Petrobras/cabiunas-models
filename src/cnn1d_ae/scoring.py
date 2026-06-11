@@ -230,6 +230,49 @@ def apply_adaptive_monthly_threshold(
     return new_anomaly_seq, monthly_thresholds
 
 
+def apply_cusum_alarm(
+    mae_seq: np.ndarray,
+    train_mae_seq: np.ndarray,
+    k: float = 0.5,
+    h: float = 5.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Política de alarme CUSUM sobre a série de erro de reconstrução.
+
+    Detector de deriva sustentada (imune a spikes isolados): acumula o desvio
+    normalizado do erro e dispara quando o acumulador supera `h`.
+        z[t]     = (erro[t] - mu_train) / sigma_train
+        cusum[t] = max(0, cusum[t-1] + z[t] - k)
+        alarme   = cusum[t] >= h
+    mu/sigma são calibrados nos erros de TREINO (sem vazamento). Para os erros de
+    reconstrução do AE, FP costumam ser picos de poucos minutos enquanto anomalias
+    reais mantêm o erro elevado por horas — o CUSUM exige essa persistência.
+
+    Retorna (anomaly_seq booleano, série cusum) para diagnóstico/plot.
+    """
+    mu = float(np.mean(train_mae_seq))
+    sigma = float(np.std(train_mae_seq))
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = 1e-9
+    z = (np.asarray(mae_seq, dtype=float) - mu) / sigma
+    cusum = np.empty(len(z), dtype=float)
+    acc = 0.0
+    for i, zi in enumerate(z):
+        acc = max(0.0, acc + zi - k)
+        cusum[i] = acc
+    return cusum >= h, cusum
+
+
+def apply_debounce(anomaly_seq: np.ndarray, n_points: int) -> np.ndarray:
+    """Exige `n_points` consecutivos anômalos antes de confirmar o alarme (on-delay
+    ISA-18.2). O alarme é atribuído ao último ponto da janela. n<=1 = no-op."""
+    n = int(n_points)
+    if n <= 1:
+        return np.asarray(anomaly_seq, dtype=bool)
+    s = pd.Series(np.asarray(anomaly_seq, dtype=int))
+    rolling = s.rolling(window=n, min_periods=n).sum()
+    return (rolling >= n).fillna(False).to_numpy()
+
+
 def map_seq_to_point_anomalies(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,
