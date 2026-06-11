@@ -124,8 +124,10 @@ def _parse_alarm_df(alarm_csv: str) -> Tuple[pd.DataFrame, str, str, str]:
     cond_col = next((c for c in df.columns if "condi" in c.lower()), None)
     tag_col  = next((c for c in df.columns if "tag" in c.lower()
                      and "alarm" in c.lower()), None)
+    if tag_col is None:  # formato novo (base 2025): coluna apenas "Tag"
+        tag_col = next((c for c in df.columns if c.strip().lower() == "tag"), None)
     if tag_col is None:
-        raise ValueError("Coluna 'Tag Alarme' não encontrada.")
+        raise ValueError("Coluna de tag ('Tag Alarme' ou 'Tag') não encontrada.")
     df = df.copy()
     df["_time"] = pd.to_datetime(df[date_col], utc=True, errors="coerce")
     df = df.dropna(subset=["_time"]).sort_values("_time")
