@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from src.cnn1d_ae.inference import load_bundle, transform_features, score_dataframe
+from src.cnn1d_ae.inference import load_bundle, transform_features, score_dataframe, score_production
 
 
 class _ZeroModel:
@@ -85,6 +85,37 @@ class TestScoreDataframe(unittest.TestCase):
         self.assertEqual(out["operational_state"].tolist(), ["on", "off", "off"])
         # mesmo com mae alto, OFF é suprimido
         self.assertEqual(out.loc[out["operational_state"] == "off", "is_anom_seq"].sum(), 0)
+
+
+class TestScoreProduction(unittest.TestCase):
+    def _prod_bundle(self, debounce_hours=0.0):
+        b = _bundle()
+        b["production_alerting"] = {
+            "half_life_hours": 0.5,
+            "ewma_abs_threshold": 2.0,
+            "sticky_hours": 12.0,
+            "debounce_hours": debounce_hours,
+        }
+        return b
+
+    def test_requires_production_block(self):
+        with self.assertRaises(ValueError):
+            score_production(_ZeroModel(), _bundle(), _df([10.0, 10.0, 10.0]))
+
+    def test_ewma_abs_threshold_and_columns(self):
+        df = _df([10.0] * 10 + [30.0] * 10, ngp=[90] * 20)  # 30 clipa 20 → norm 5
+        out = score_production(_ZeroModel(), self._prod_bundle(), df)
+        self.assertIn("health_ewma", out.columns)
+        self.assertIn("alert", out.columns)
+        # baseline 0 (norm 0) não alerta; após o degrau a EWMA cruza 2.0 e alerta
+        self.assertEqual(int(out["alert"].iloc[:5].sum()), 0)
+        self.assertGreater(int(out["alert"].iloc[-5:].sum()), 0)
+
+    def test_debounce_zeroes_short_runs(self):
+        # alerta de 1 ponto isolado deve ser apagado por debounce longo
+        df = _df([10.0] * 5 + [30.0] + [10.0] * 14, ngp=[90] * 20)
+        out = score_production(_ZeroModel(), self._prod_bundle(debounce_hours=2.0), df)
+        self.assertEqual(int(out["alert"].sum()), 0)
 
 
 class TestBundleRoundTrip(unittest.TestCase):
