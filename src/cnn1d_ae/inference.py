@@ -88,3 +88,48 @@ def score_dataframe(model, bundle: dict, df_sensor: pd.DataFrame, batch_size: in
         out.loc[~on, "is_anom_seq"] = 0  # suprime anomalia fora de operação
 
     return out
+
+
+def score_production(model, bundle: dict, df_sensor: pd.DataFrame, batch_size: int = 256) -> pd.DataFrame:
+    """Scoring de produção usando o bloco `production_alerting` do bundle finalizado
+    (finalize_bundle.py): erro de reconstrução → EWMA(half_life) → comparação com o
+    threshold ABSOLUTO calibrado → máscara de operação → debounce. É o ponto de
+    operação que minimiza FP sem perder recall, pronto para streaming.
+    """
+    pa = bundle.get("production_alerting")
+    if pa is None:
+        raise ValueError("bundle sem 'production_alerting' — rode scripts/finalize_bundle.py antes")
+
+    base = score_dataframe(model, bundle, df_sensor, batch_size)
+    s = pd.Series(base["mae_seq"].to_numpy(), index=pd.DatetimeIndex(base["seq_end_time"]))
+
+    dt = pd.Series(s.index).diff().dt.total_seconds().median()
+    dt = dt if (dt and dt > 0) else 300.0
+    hl_pts = max(1, int(round(float(pa["half_life_hours"]) * 3600.0 / dt)))
+    ewma = s.ewm(halflife=hl_pts).mean()
+
+    base = base.copy()
+    base["health_ewma"] = ewma.to_numpy()
+    alert = (ewma.to_numpy() >= float(pa["ewma_abs_threshold"])).astype(int)
+    if "operational_state" in base.columns:
+        alert = np.where(base["operational_state"].to_numpy() == "off", 0, alert)
+
+    debounce_h = float(pa.get("debounce_hours", 0.0) or 0.0)
+    if debounce_h > 0:
+        # exige alerta sustentado por >= debounce_h (runs contíguos mais curtos são zerados)
+        need = max(1, int(round(debounce_h * 3600.0 / dt)))
+        a = alert.copy()
+        i = 0
+        while i < len(a):
+            if a[i]:
+                j = i
+                while j + 1 < len(a) and a[j + 1]:
+                    j += 1
+                if (j - i + 1) < need:
+                    a[i:j + 1] = 0
+                i = j + 1
+            else:
+                i += 1
+        alert = a
+    base["alert"] = alert
+    return base
