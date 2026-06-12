@@ -28,19 +28,26 @@ def load_bundle(path: str) -> dict:
         return json.load(f)
 
 
-def transform_features(df: pd.DataFrame, bundle: dict) -> np.ndarray:
-    """Replica clip(bounds de treino) → (x − center)/scale com as estatísticas do bundle."""
+def transform_features(df: pd.DataFrame, bundle: dict, clip: bool = False) -> np.ndarray:
+    """Aplica (x − center)/scale com as estatísticas de treino do bundle.
+
+    clip=False (default) NÃO clipa os dados: clipar a entrada de scoring nos limites
+    de treino removeria as anomalias fora-de-faixa (UNDER/drift) que precisam aparecer
+    no erro de reconstrução. clip=True existe só para reproduzir a normalização de
+    treino sobre dados normais.
+    """
     cols = bundle["feature_columns"]
     missing = [c for c in cols if c not in df.columns]
     if missing:
         raise ValueError(f"Colunas ausentes para inferência: {missing}")
     out = df[cols].apply(pd.to_numeric, errors="coerce").copy()
 
-    clip_bounds = bundle.get("clip_bounds") or {}
-    for c in cols:
-        if c in clip_bounds:
-            low, high = clip_bounds[c]
-            out[c] = out[c].clip(lower=low, upper=high)
+    if clip:
+        clip_bounds = bundle.get("clip_bounds") or {}
+        for c in cols:
+            if c in clip_bounds:
+                low, high = clip_bounds[c]
+                out[c] = out[c].clip(lower=low, upper=high)
 
     center = bundle.get("center", {})
     scale = bundle.get("scale", {})
