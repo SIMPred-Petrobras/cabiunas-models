@@ -255,49 +255,68 @@ def best_point_for_sensor(
     min_duration_hours: float = 0.0,
     n_thresholds: int = 100,
     fa_budget: float = 1.0,
+    min_duration_grid: "list | None" = None,
 ) -> dict:
+    """Escolhe o ponto de operação que MAXIMIZA recall sob o teto de FA e, no
+    recall máximo, MINIMIZA a FA (desempate por menor FA → mínimo de FP sem perder
+    recall). Quando `min_duration_grid` é fornecido, varre debounce × threshold.
+    """
     horizon_sec = horizon_hours * 3600.0
     total_days  = (health.index[-1] - health.index[0]).total_seconds() / 86400.0
     inc_s       = np.array([t.timestamp() for t in incidents])
 
+    md_candidates = list(min_duration_grid) if min_duration_grid else [min_duration_hours]
+
     best = {"recall": 0.0, "fa_per_day": 0.0, "threshold_q": 0.5,
-            "n_incidents": len(incidents)}
+            "min_duration_hours": float(md_candidates[0]), "n_incidents": len(incidents)}
     best_recall = -1.0
+    best_fa = float("inf")
 
-    for q in np.linspace(0.50, 0.999, n_thresholds):
-        alert    = apply_sticky(health, q, sticky_hours)
-        episodes = detect_episodes_gap(alert)
-        alert, episodes = apply_min_duration(alert, episodes, min_duration_hours)
-        alert_s  = np.array([t.timestamp() for t in health.index[alert]])
+    for md in md_candidates:
+        for q in np.linspace(0.50, 0.999, n_thresholds):
+            alert    = apply_sticky(health, q, sticky_hours)
+            episodes = detect_episodes_gap(alert)
+            alert, episodes = apply_min_duration(alert, episodes, md)
+            alert_s  = np.array([t.timestamp() for t in health.index[alert]])
 
-        n_hit = sum(
-            1 for ti in inc_s
-            if alert_s.size and np.any(
-                (alert_s >= ti - horizon_sec) & (alert_s <= ti)
+            n_hit = sum(
+                1 for ti in inc_s
+                if alert_s.size and np.any(
+                    (alert_s >= ti - horizon_sec) & (alert_s <= ti)
+                )
             )
-        )
-        n_fp = sum(
-            1 for (s0, s1) in episodes
-            if not (np.any(
-                (inc_s - horizon_sec <= s1.timestamp()) &
-                (inc_s >= s0.timestamp())
-            ) if inc_s.size else False)
-        )
+            n_fp = sum(
+                1 for (s0, s1) in episodes
+                if not (np.any(
+                    (inc_s - horizon_sec <= s1.timestamp()) &
+                    (inc_s >= s0.timestamp())
+                ) if inc_s.size else False)
+            )
 
-        fa    = n_fp / max(total_days, 1.0)
-        recall = n_hit / len(incidents) if incidents else 0.0
+            fa    = n_fp / max(total_days, 1.0)
+            recall = n_hit / len(incidents) if incidents else 0.0
 
-        if fa <= fa_budget and recall > best_recall:
-            best_recall = recall
-            best = {
-                "recall":      recall,
-                "fa_per_day":  fa,
-                "threshold_q": float(q),
-                "n_incidents": len(incidents),
-                "n_hit":       n_hit,
-                "n_fp":        n_fp,
-                "total_days":  total_days,
-            }
+            if fa > fa_budget:
+                continue
+            if incidents:
+                # max recall; no empate de recall, menor FA
+                better = (recall > best_recall) or (recall == best_recall and fa < best_fa)
+            else:
+                # sem incidentes não há recall para satisfazer: preserva o legado
+                better = recall > best_recall
+            if better:
+                best_recall = recall
+                best_fa = fa
+                best = {
+                    "recall":      recall,
+                    "fa_per_day":  fa,
+                    "threshold_q": float(q),
+                    "min_duration_hours": float(md),
+                    "n_incidents": len(incidents),
+                    "n_hit":       n_hit,
+                    "n_fp":        n_fp,
+                    "total_days":  total_days,
+                }
     return best
 
 
@@ -326,6 +345,9 @@ def main() -> None:
                         help="Horas que o alerta fica ativo após o último disparo")
     parser.add_argument("--min_duration_hours", type=float, default=0.0,
                         help="Duração mínima (horas) de um episódio de alerta para contar")
+    parser.add_argument("--tune_debounce", nargs="*", type=float, default=None,
+                        help="Varre debounce junto do threshold p/ minimizar FP sem perder recall. "
+                             "Sem valores usa grade [0,0.5,1,2]h; ou passe a grade (ex: --tune_debounce 0 1 3)")
     parser.add_argument("--exclude_conditions", nargs="*", default=[],
                         help="Condições a excluir da avaliação (ex: LOLO)")
     parser.add_argument("--min_alarm_duration_minutes", type=float, default=0.0,
@@ -391,6 +413,11 @@ def main() -> None:
         def get_incidents(sensor, alarms_s):
             return cluster_incidents(alarms_s)
 
+    debounce_grid = None
+    if args.tune_debounce is not None:
+        debounce_grid = args.tune_debounce if len(args.tune_debounce) > 0 else [0.0, 0.5, 1.0, 2.0]
+        print(f"      Tuning debounce: grade {debounce_grid}h (minimiza FP sem perder recall)")
+
     rows = []
     for sensor, health in health_dict.items():
         h = health.copy()
@@ -427,20 +454,23 @@ def main() -> None:
             print(f"  {sensor}: 0 incidentes — FA/dia medido, recall=N/A")
             result = best_point_for_sensor(h, [], args.horizon,
                                            args.sticky_hours, args.min_duration_hours,
-                                           fa_budget=args.fa_budget)
+                                           fa_budget=args.fa_budget,
+                                           min_duration_grid=debounce_grid)
         else:
             result = best_point_for_sensor(h, incidents, args.horizon,
                                            args.sticky_hours, args.min_duration_hours,
-                                           fa_budget=args.fa_budget)
+                                           fa_budget=args.fa_budget,
+                                           min_duration_grid=debounce_grid)
             print(f"  {sensor}: {len(incidents)} inc | "
-                  f"rec={result['recall']:.2f} FA={result['fa_per_day']:.3f}")
+                  f"rec={result['recall']:.2f} FA={result['fa_per_day']:.3f} "
+                  f"db={result.get('min_duration_hours', 0.0):.1f}h")
 
         result["sensor"] = sensor
         rows.append(result)
 
     df_out = pd.DataFrame(rows).set_index("sensor")
     col_order = ["n_incidents", "recall", "fa_per_day", "threshold_q",
-                 "n_hit", "n_fp", "total_days"]
+                 "min_duration_hours", "n_hit", "n_fp", "total_days"]
     df_out = df_out[[c for c in col_order if c in df_out.columns]]
 
     mode_tag = ("_ok_aware" if args.ok_aware else "") + \
@@ -451,14 +481,16 @@ def main() -> None:
     out_label = f"{args.label}{mode_tag}"
 
     print(f"\n=== RESULTADO POR SENSOR (H={args.horizon}h, {out_label}) ===")
-    print(f"{'Sensor':<18} {'Inc':>5} {'Recall':>8} {'FA/dia':>8}")
-    print("─" * 44)
+    print(f"{'Sensor':<18} {'Inc':>5} {'Recall':>8} {'FA/dia':>8} {'thr_q':>6} {'db(h)':>6}")
+    print("─" * 56)
     for sensor, row in df_out.iterrows():
         n   = int(row.get("n_incidents", 0))
         rec = row.get("recall", float("nan"))
         fa  = row.get("fa_per_day", float("nan"))
+        thq = row.get("threshold_q", float("nan"))
+        db  = row.get("min_duration_hours", 0.0)
         rec_str = "  N/A" if n == 0 else f"{rec:7.1%}"
-        print(f"  {sensor:<16} {n:>5}  {rec_str}  {fa:>8.3f}")
+        print(f"  {sensor:<16} {n:>5}  {rec_str}  {fa:>8.3f} {thq:>6.3f} {db:>6.1f}")
 
     out_csv = os.path.join(args.out_dir, f"per_sensor_eval_{out_label}.csv")
     df_out.to_csv(out_csv)
