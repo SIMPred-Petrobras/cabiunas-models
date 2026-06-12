@@ -53,29 +53,29 @@ def _df(vals, ngp=None):
 
 
 class TestTransformFeatures(unittest.TestCase):
-    def test_clip_then_normalize_with_train_stats(self):
-        # 100 -> clip 20 -> (20-10)/2 = 5 ; -50 -> clip 0 -> (0-10)/2 = -5 ; 12 -> (12-10)/2 = 1
-        out = transform_features(_df([100.0, -50.0, 12.0]), _bundle())
+    def test_clip_true_reproduz_normalizacao_treino(self):
+        # clip=True: 100 -> clip 20 -> (20-10)/2 = 5 ; -50 -> clip 0 -> -5 ; 12 -> 1
+        out = transform_features(_df([100.0, -50.0, 12.0]), _bundle(), clip=True)
         np.testing.assert_allclose(out.ravel(), [5.0, -5.0, 1.0], rtol=0, atol=1e-6)
+
+    def test_default_nao_clipa_para_preservar_anomalias(self):
+        # default clip=False: 100 NÃO é clipado -> (100-10)/2 = 45 (anomalia fora-de-faixa preservada)
+        out = transform_features(_df([100.0, 12.0]), _bundle())
+        np.testing.assert_allclose(out.ravel(), [45.0, 1.0], rtol=0, atol=1e-6)
 
     def test_missing_column_raises(self):
         with self.assertRaises(ValueError):
             transform_features(_df([1.0]).rename(columns={"TC382_03_A": "x"}), _bundle())
 
-    def test_no_clip_when_bounds_absent(self):
-        out = transform_features(_df([100.0]), _bundle(clip_bounds={}))
-        self.assertAlmostEqual(float(out.ravel()[0]), (100.0 - 10.0) / 2.0)
-
 
 class TestScoreDataframe(unittest.TestCase):
     def test_mae_matches_zero_model_and_threshold_flag(self):
-        # valores já dentro do clip; normalizado = (v-10)/2
-        df = _df([10.0, 10.0, 10.0, 30.0, 10.0])  # 30 clipa em 20 -> norm 5
+        # sem clip no scoring: norm = (v-10)/2, 30 -> norm 10 (anomalia preservada)
+        df = _df([10.0, 10.0, 10.0, 30.0, 10.0])
         b = _bundle(threshold=1.0)
         out = score_dataframe(_ZeroModel(), b, df)
-        # 3 janelas (T=3, stride=1): médias de |norm| por janela
-        # norm = [0,0,0,5(clip),0]; janelas: [0,0,0]=0 ; [0,0,5]=1.667 ; [0,5,0]=1.667
-        np.testing.assert_allclose(out["mae_seq"].to_numpy(), [0.0, 5.0 / 3, 5.0 / 3], atol=1e-6)
+        # norm = [0,0,0,10,0]; janelas (T=3): [0,0,0]=0 ; [0,0,10]=3.333 ; [0,10,0]=3.333
+        np.testing.assert_allclose(out["mae_seq"].to_numpy(), [0.0, 10.0 / 3, 10.0 / 3], atol=1e-6)
         self.assertEqual(out["is_anom_seq"].tolist(), [0, 1, 1])  # >1.0
 
     def test_operational_mask_suppresses_off_periods(self):
@@ -112,10 +112,18 @@ class TestScoreProduction(unittest.TestCase):
         self.assertGreater(int(out["alert"].iloc[-5:].sum()), 0)
 
     def test_debounce_zeroes_short_runs(self):
-        # alerta de 1 ponto isolado deve ser apagado por debounce longo
-        df = _df([10.0] * 5 + [30.0] + [10.0] * 14, ngp=[90] * 20)
-        out = score_production(_ZeroModel(), self._prod_bundle(debounce_hours=2.0), df)
-        self.assertEqual(int(out["alert"].sum()), 0)
+        # surto curto: dispara sem debounce, mas é zerado por debounce longo (2h >> surto)
+        df = _df([10.0] * 5 + [30.0] * 3 + [10.0] * 22, ngp=[90] * 30)
+        b = self._prod_bundle(debounce_hours=0.0)
+        b["production_alerting"]["ewma_abs_threshold"] = 0.3
+        out_no_db = score_production(_ZeroModel(), b, df)
+        self.assertGreater(int(out_no_db["alert"].sum()), 0)  # dispara sem debounce
+
+        # debounce maior que a própria série zera qualquer run (nenhum é longo o bastante)
+        b2 = self._prod_bundle(debounce_hours=100.0)
+        b2["production_alerting"]["ewma_abs_threshold"] = 0.3
+        out_db = score_production(_ZeroModel(), b2, df)
+        self.assertEqual(int(out_db["alert"].sum()), 0)
 
 
 class TestBundleRoundTrip(unittest.TestCase):

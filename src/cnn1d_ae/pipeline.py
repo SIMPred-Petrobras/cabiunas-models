@@ -300,12 +300,13 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         print(f"[SKIP] {sensor} (poucos dados normais apos exclusao)")
         return {"sensor": sensor, "skipped": True, "reason": "few_normal_points"}
 
-    # Bounds de clip fixados no treino (df_normal pré-clip): persistidos no bundle
-    # e aplicados também em df_all — evita vazamento (df_all não refita os próprios
-    # limites) e faz a inferência reproduzir o scoring exatamente.
+    # Bounds de clip de TREINO (df_normal): persistidos no bundle só para documentar
+    # as estatísticas do scaler. NÃO clipar df_all/scoring com esses limites: cortaria
+    # as anomalias fora-de-faixa (UNDER do TC, drift do T5) que precisam aparecer no
+    # erro de reconstrução. df_all clipa com os próprios limites (de-glitch suave).
     clip_bounds = compute_clip_bounds(df_normal, cfg)
     df_normal = clip_outliers(df_normal, cfg)
-    df_all = apply_clip_bounds(df_all, clip_bounds)
+    df_all = clip_outliers(df_all, cfg)
 
     df_normal, df_all = apply_feature_engineering(df_normal, df_all, sensor, cfg)
     feature_engineering_report = {
