@@ -291,6 +291,12 @@ class PipelineConfig:
     # Modelo multivariado conjunto: treina UM AE com todos os SENSOR_LIST como canais
     MULTIVARIATE_JOINT: bool = False
 
+    # Sensor-alvo do grupo multivariado: o AE reconstrói TODOS os canais, mas o
+    # threshold e a decisão de anomalia usam SÓ o MAE deste canal. Detecta quebra
+    # de correlação do alvo vs os vizinhos (ex: T5_AVG_A com TC382_03_A de contexto).
+    # None = comportamento legado (MAE combinado entre canais).
+    TARGET_SENSOR: Optional[str] = None
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

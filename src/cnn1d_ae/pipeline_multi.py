@@ -204,9 +204,10 @@ def run_pipeline_multivariado(
     # RUNNING_COL (usa primeiro sensor como referência)
     running = _load_running_col(cfg, df_raw, common_index)
     if running is not None:
-        n_off = int((running <= 0.5).sum())
-        print(f"[RUNNING_COL] {n_off} pontos OFF excluídos do treino.")
-        exclude = exclude | (running <= 0.5)
+        _rthr = getattr(cfg, "RUNNING_THRESHOLD", 0.5)
+        n_off = int((running <= _rthr).sum())
+        print(f"[RUNNING_COL] {n_off} pontos OFF excluídos do treino (thr={_rthr}).")
+        exclude = exclude | (running <= _rthr)
 
     # Startup exclusion (referencia o primeiro sensor que é de temperatura)
     temp_sensors = [s for s in sensors_ok if s.startswith("TC") or s.startswith("T5")]
@@ -328,6 +329,19 @@ def run_pipeline_multivariado(
         mae_seq_all, mae_per_sensor_seq = reconstruction_mae_and_per_sensor(
             best_model, x_all, cfg.BATCH_SIZE
         )  # (n_seq,), (n_seq, n_sensors)
+
+        # TARGET_SENSOR: threshold/anomalia calculados SÓ no canal-alvo (detecção de
+        # quebra de correlação alvo↔vizinhos). O AE reconstrói todos os canais; só o
+        # scoring muda. None = MAE combinado (legado).
+        if cfg.TARGET_SENSOR and cfg.TARGET_SENSOR in sensors_ok:
+            _ti = sensors_ok.index(cfg.TARGET_SENSOR)
+            _, train_per_sensor_seq = reconstruction_mae_and_per_sensor(
+                best_model, x_train_full, cfg.BATCH_SIZE
+            )
+            train_mae_seq = train_per_sensor_seq[:, _ti]
+            mae_seq_all = mae_per_sensor_seq[:, _ti]
+            print(f"[TARGET] scoring no canal-alvo '{cfg.TARGET_SENSOR}' "
+                  f"(idx {_ti} de {len(sensors_ok)} sensores)")
 
     # ------------------------------------------------------------------
     # 8. Threshold — usando TODOS os alarmes
