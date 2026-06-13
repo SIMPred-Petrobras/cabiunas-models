@@ -499,6 +499,15 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
 
+    # Não flagar anomalia em gaps longos: esses pontos são valores fabricados pela
+    # interpolação (além de INTERPOLATE_LIMIT), não dado real → alarme seria ruído.
+    if cfg.EXCLUDE_LONG_GAPS_FROM_SCORING:
+        _lg = long_gap_mask.reindex(df_point.index).fillna(False)
+        _n = int((df_point["is_anom_point"].astype(bool) & _lg).sum())
+        df_point.loc[_lg, "is_anom_point"] = 0
+        if _n:
+            print(f"[LONG-GAP-SCORE] {sensor}: {_n} anomalias suprimidas em gaps longos (dado interpolado).")
+
     # Nível de warning: threshold mais permissivo, min_count menor → detecção antecipada
     if cfg.ENABLE_WARN_LEVEL:
         warn_thresh = compute_threshold(train_mae_seq, "target_rate", target_rate=cfg.WARN_TARGET_ANOMALY_RATE)

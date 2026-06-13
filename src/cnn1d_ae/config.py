@@ -58,6 +58,10 @@ class PipelineConfig:
     TRAIN_SKIP_CONDITIONS: list = field(default_factory=list)
     INTERPOLATE_LIMIT: int = 3
     EXCLUDE_LONG_GAPS_FROM_TRAIN: bool = True
+    # Não flagar anomalia em pontos dentro de gaps longos (valores FABRICADOS por
+    # interpolação além de INTERPOLATE_LIMIT). Dado inventado não deve gerar alarme
+    # nem poluir o scoring. Espelha EXCLUDE_LONG_GAPS_FROM_TRAIN, mas no scoring.
+    EXCLUDE_LONG_GAPS_FROM_SCORING: bool = False
     # Deprecated: substituido por ENABLE_ROLLING_FEATURES / ENABLE_SPECTRAL_FEATURES / ENABLE_CONTEXT_FEATURES.
     ENABLE_DERIVED_FEATURES: bool = False
     DERIVED_ROLLING_WINDOW: int = 12
