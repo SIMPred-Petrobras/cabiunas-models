@@ -1,0 +1,44 @@
+{
+  "sensor": "TV_355X_A",
+  "model_arch": "cnn1d",
+  "model_file": "model.keras",
+  "feature_columns": [
+    "TV_355X_A"
+  ],
+  "n_features": 1,
+  "time_steps": 96,
+  "stride": 10,
+  "normalize_mode": "zscore",
+  "center": {
+    "TV_355X_A": 16.88516561716879
+  },
+  "scale": {
+    "TV_355X_A": 1.6612015682050143
+  },
+  "outlier_mode": "mad",
+  "clip_bounds": {
+    "TV_355X_A": [
+      10.365248961540011,
+      22.972173638459985
+    ]
+  },
+  "threshold": 0.09223781637847418,
+  "thresh_mode": "p99",
+  "monthly_thresholds": {},
+  "running_col": "NGP_A",
+  "running_threshold": 50.0,
+  "predictive_ewma_half_life_hours": 4.0,
+  "alarm_policy": "threshold",
+  "point_rule": "k_of_window",
+  "point_window": 60,
+  "point_min_count": 3,
+  "production_alerting": {
+    "half_life_hours": 4.0,
+    "threshold_q": 0.5,
+    "ewma_abs_threshold": 0.04319563039185881,
+    "sticky_hours": 12.0,
+    "debounce_hours": 0.0,
+    "recall_at_op": 0.0,
+    "fa_per_day_at_op": 0.0921431509666803
+  }
+}
