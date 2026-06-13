@@ -114,6 +114,13 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
         if os.path.isfile(bundle_path):
             _publish_artifact(task, f"{sensor}_inference_bundle_json", bundle_path, local_task_dir / sensor)
 
+        # Modelo por sensor como artefato NOMEADO: o output_uri salva todos em
+        # models/model.keras (colidem → só 1 sobrevive). O artefato nomeado é o
+        # único caminho confiável para recuperar o modelo de cada sensor.
+        model_path = os.path.join(output_dir, "best_model", "model.keras")
+        if os.path.isfile(model_path):
+            _publish_artifact(task, f"{sensor}_model_keras", model_path, local_task_dir / sensor)
+
 
 def main():
     args = parse_args()
