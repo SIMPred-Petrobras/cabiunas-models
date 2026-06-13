@@ -1,0 +1,44 @@
+{
+  "sensor": "TC382_04_A",
+  "model_arch": "cnn1d",
+  "model_file": "model.keras",
+  "feature_columns": [
+    "TC382_04_A"
+  ],
+  "n_features": 1,
+  "time_steps": 96,
+  "stride": 10,
+  "normalize_mode": "zscore",
+  "center": {
+    "TC382_04_A": 584.9534244518352
+  },
+  "scale": {
+    "TC382_04_A": 35.12290067282451
+  },
+  "outlier_mode": "mad",
+  "clip_bounds": {
+    "TC382_04_A": [
+      491.7994172442502,
+      677.2799827557499
+    ]
+  },
+  "threshold": 0.03710595309734345,
+  "thresh_mode": "p99",
+  "monthly_thresholds": {},
+  "running_col": "NGP_A",
+  "running_threshold": 50.0,
+  "predictive_ewma_half_life_hours": 0.5,
+  "alarm_policy": "threshold",
+  "point_rule": "k_of_window",
+  "point_window": 60,
+  "point_min_count": 3,
+  "production_alerting": {
+    "half_life_hours": 0.5,
+    "threshold_q": 0.5100808080808081,
+    "ewma_abs_threshold": 0.026274457485992615,
+    "sticky_hours": 12.0,
+    "debounce_hours": 0.0,
+    "recall_at_op": 0.7777777777777778,
+    "fa_per_day_at_op": 0.078979843685726
+  }
+}

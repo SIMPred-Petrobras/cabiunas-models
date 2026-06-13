@@ -1,0 +1,44 @@
+{
+  "sensor": "T5_AVG_A",
+  "model_arch": "cnn1d",
+  "model_file": "model.keras",
+  "feature_columns": [
+    "T5_AVG_A"
+  ],
+  "n_features": 1,
+  "time_steps": 96,
+  "stride": 10,
+  "normalize_mode": "zscore",
+  "center": {
+    "T5_AVG_A": 620.3856948243715
+  },
+  "scale": {
+    "T5_AVG_A": 29.1727348766586
+  },
+  "outlier_mode": "mad",
+  "clip_bounds": {
+    "T5_AVG_A": [
+      542.6766716244,
+      700.3061283756
+    ]
+  },
+  "threshold": 0.03492799773812294,
+  "thresh_mode": "p99",
+  "monthly_thresholds": {},
+  "running_col": "NGP_A",
+  "running_threshold": 50.0,
+  "predictive_ewma_half_life_hours": 4.0,
+  "alarm_policy": "threshold",
+  "point_rule": "k_of_window",
+  "point_window": 60,
+  "point_min_count": 3,
+  "production_alerting": {
+    "half_life_hours": 4.0,
+    "threshold_q": 0.5,
+    "ewma_abs_threshold": 0.012662534649501893,
+    "sticky_hours": 12.0,
+    "debounce_hours": 0.0,
+    "recall_at_op": 0.8823529411764706,
+    "fa_per_day_at_op": 0.0855614973262032
+  }
+}
