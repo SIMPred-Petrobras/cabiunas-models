@@ -11,11 +11,31 @@ import pandas as pd
 from tensorflow import keras
 
 
+_OFF_STATES = ["off_curto", "off_longo"]
+
+
+def _on_mask(idx: pd.DatetimeIndex, operational_state: pd.Series | None) -> pd.Series:
+    """Booleano alinhado a `idx`: True onde a maquina esta ligada.
+    Sem operational_state assume tudo ligado (preserva comportamento antigo)."""
+    if operational_state is None or len(idx) == 0:
+        return pd.Series(True, index=idx)
+    st = operational_state.reindex(idx).fillna("on").astype(str)
+    return ~st.isin(_OFF_STATES)
+
+
+def _filter_idx_on(idx: pd.DatetimeIndex, is_on: pd.Series) -> pd.DatetimeIndex:
+    """Mantem apenas timestamps de `idx` cujo estado (mais proximo) e ligado."""
+    if idx is None or len(idx) == 0 or is_on.empty:
+        return pd.DatetimeIndex([])
+    on_here = is_on.reindex(pd.DatetimeIndex(idx), method="nearest")
+    return pd.DatetimeIndex(idx)[on_here.fillna(True).values]
+
+
 def _shade_machine_states(ax: plt.Axes, idx: pd.DatetimeIndex, operational_state: pd.Series | None) -> None:
     if operational_state is None or len(idx) == 0:
         return
     st = operational_state.reindex(idx).fillna("on").astype(str)
-    is_off = st.isin(["off_curto", "off_longo"])
+    is_off = st.isin(_OFF_STATES)
     is_on = ~is_off
 
     # Faixa visual no rodape para indicar ligado/desligado de forma explicita.
@@ -48,7 +68,8 @@ def _shade_machine_states(ax: plt.Axes, idx: pd.DatetimeIndex, operational_state
         if bool(g["off"].iloc[0]):
             t0 = pd.Timestamp(g["t"].iloc[0])
             t1 = pd.Timestamp(g["t"].iloc[-1])
-            ax.axvspan(t0, t1, color="#ef6c00", alpha=0.22)
+            # OFF fica em branco (linha/marcadores escondidos); so marcamos as
+            # bordas pra o gap nao ser confundido com perda de dado.
             ax.axvline(t0, color="#ef6c00", alpha=0.35, linewidth=0.8)
             ax.axvline(t1, color="#ef6c00", alpha=0.35, linewidth=0.8)
 
@@ -161,12 +182,15 @@ def plot_series_with_anomalies(
 
     fig = plt.figure(figsize=(14, 4))
     ax = plt.gca()
+    is_on = _on_mask(s.index, operational_state)
     _shade_machine_states(ax, s.index, operational_state)
-    plt.plot(s.index, s.values, linewidth=1)
+    # Esconde a serie no OFF (NaN quebra a linha -> gap em branco).
+    plt.plot(s.index, s.where(is_on).values, linewidth=1)
     if len(anomalous_times) > 0:
         # Evita erro de tamanho x/y quando há timestamps repetidos ou fora do índice.
         anom_idx = pd.DatetimeIndex(pd.to_datetime(anomalous_times, errors="coerce"))
         anom_idx = anom_idx.dropna().drop_duplicates().intersection(s.index)
+        anom_idx = anom_idx.intersection(is_on[is_on].index)  # so anomalias em ON
         if len(anom_idx) > 0:
             vals = s.reindex(anom_idx).dropna()
             if len(vals) > 0:
@@ -203,8 +227,12 @@ def plot_series_alarm_anomaly_subplots(
     if s.empty:
         return
 
+    is_on = _on_mask(s.index, operational_state)
+    s_on = s.where(is_on)  # serie com OFF em NaN (linha quebra no gap)
+
     anom_idx = pd.DatetimeIndex(pd.to_datetime(anomalous_times, errors="coerce"))
     anom_idx = anom_idx.dropna().drop_duplicates().intersection(s.index)
+    anom_idx = anom_idx.intersection(is_on[is_on].index)  # so anomalias em ON
     s_anom = s.reindex(anom_idx).dropna() if len(anom_idx) > 0 else pd.Series(dtype=float)
 
     alarm_idx = pd.to_datetime(alarm_times, errors="coerce")
@@ -213,13 +241,15 @@ def plot_series_alarm_anomaly_subplots(
     # Restringe alarmes ao range da série para não expandir o eixo X além de 2025.
     if len(alarm_idx) and len(s):
         alarm_idx = alarm_idx[(alarm_idx >= s.index.min()) & (alarm_idx <= s.index.max())]
+    # Esconde alarmes que caem em periodo OFF.
+    alarm_idx = pd.Series(_filter_idx_on(pd.DatetimeIndex(alarm_idx), is_on))
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 9), sharex=True)
     plt.subplots_adjust(hspace=0.15)
 
     # Painel 1
     _shade_machine_states(ax1, s.index, operational_state)
-    ax1.plot(s.index, s.values, color="blue", linewidth=1, label="Série do sensor")
+    ax1.plot(s.index, s_on.values, color="blue", linewidth=1, label="Série do sensor")
     if len(s_anom) > 0:
         ax1.scatter(s_anom.index, s_anom.values, color="red", s=14, alpha=0.8, label="Anomalias (ponto)")
     ax1.set_title(f"{title} | Série + Anomalias")
@@ -228,7 +258,7 @@ def plot_series_alarm_anomaly_subplots(
 
     # Painel 2
     _shade_machine_states(ax2, s.index, operational_state)
-    ax2.plot(s.index, s.values, color="blue", linewidth=1, alpha=0.85, label="Série do sensor")
+    ax2.plot(s.index, s_on.values, color="blue", linewidth=1, alpha=0.85, label="Série do sensor")
     if len(s_anom) > 0:
         ax2.scatter(s_anom.index, s_anom.values, color="red", s=16, alpha=0.85, label="Anomalias (ponto)")
     if len(alarm_idx) > 0:
@@ -287,12 +317,19 @@ def plot_series_with_mae_reconstruction(
     mae_s.index = pd.to_datetime(mae_s.index, errors="coerce")
     mae_s = mae_s.dropna().sort_index()
 
+    is_on = _on_mask(s.index, operational_state)
+    s_on = s.where(is_on)  # OFF em NaN -> linha quebra no gap
+    is_on_mae = _on_mask(mae_s.index, operational_state)
+    mae_on = mae_s.where(is_on_mae)
+
     alarm_idx = pd.to_datetime(alarm_times, errors="coerce").dropna().sort_values().drop_duplicates()
     if len(alarm_idx) and len(s):
         alarm_idx = alarm_idx[(alarm_idx >= s.index.min()) & (alarm_idx <= s.index.max())]
+    alarm_idx = pd.DatetimeIndex(_filter_idx_on(pd.DatetimeIndex(alarm_idx), is_on))  # so alarmes em ON
 
     anom_idx = pd.DatetimeIndex(pd.to_datetime(anomalous_times, errors="coerce")).dropna().drop_duplicates()
     anom_idx = anom_idx.intersection(s.index)
+    anom_idx = anom_idx.intersection(is_on[is_on].index)  # so anomalias em ON
     s_anom = s.reindex(anom_idx).dropna() if len(anom_idx) > 0 else pd.Series(dtype=float)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 7), sharex=True)
@@ -300,7 +337,7 @@ def plot_series_with_mae_reconstruction(
 
     # --- Painel 1: série + anomalias + alarmes ---
     _shade_machine_states(ax1, s.index, operational_state)
-    ax1.plot(s.index, s.values, color="#1565c0", linewidth=0.8, alpha=0.9, label="Sensor")
+    ax1.plot(s.index, s_on.values, color="#1565c0", linewidth=0.8, alpha=0.9, label="Sensor")
     if len(s_anom) > 0:
         ax1.scatter(s_anom.index, s_anom.values, color="red", s=12, alpha=0.7, zorder=4, label="Anomalia")
     if len(alarm_idx) > 0:
@@ -319,14 +356,14 @@ def plot_series_with_mae_reconstruction(
                labels=["Ligada", "Desligada"] + ax1.get_legend_handles_labels()[1],
                loc="upper right", fontsize="x-small", ncol=2)
 
-    # --- Painel 2: MAE + threshold ---
-    ax2.plot(mae_s.index, mae_s.values, color="#37474f", linewidth=0.7, alpha=0.85, label="MAE reconstrução")
+    # --- Painel 2: MAE + threshold (OFF escondido) ---
+    ax2.plot(mae_on.index, mae_on.values, color="#37474f", linewidth=0.7, alpha=0.85, label="MAE reconstrução")
     ax2.axhline(threshold, color="red", linestyle="--", linewidth=1.2, label=f"Threshold ({threshold:.4f})")
 
-    # Sombreia regiões anômalas (MAE > threshold)
-    anom_mae = mae_s > threshold
+    # Sombreia regiões anômalas (MAE > threshold) apenas em ON
+    anom_mae = (mae_on > threshold).fillna(False)
     if anom_mae.any():
-        ax2.fill_between(mae_s.index, 0, mae_s.values,
+        ax2.fill_between(mae_on.index, 0, mae_on.values.astype(float),
                          where=anom_mae.values, color="red", alpha=0.25, label="MAE > threshold")
 
     if len(alarm_idx) > 0:
