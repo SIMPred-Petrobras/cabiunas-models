@@ -21,7 +21,7 @@ SENS2024 = "/home/thallys/Downloads/2024.csv"
 PREFIX = "bapiha02-"
 ALARM = "../dados/alarmes_selecionados_turbina_a.csv"
 TASK = "58bc393c1d7a4e42815236e8897abc88"
-OOS_CSV = "eval_predictive_out/oos_2024h2.csv"
+DEPLOY_CSV = "eval_predictive_out/validate_deployed_2024.csv"
 OUT = "eval_predictive_out/fig_oos_2024"
 RUN_THR = 50.0
 HORIZON, STICKY = 8.0, 12.0
@@ -30,7 +30,8 @@ W0, W1 = pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-12-31", tz="UT
 
 
 def main():
-    ops = pd.read_csv(OOS_CSV).set_index("sensor")
+    # números deployáveis (ponto de operação q=0.9/0.92 dos bundles), não o piso q=0.5
+    ops = pd.read_csv(DEPLOY_CSV).set_index("sensor")
     task = Task.get_task(task_id=TASK)
     alarms = E.load_alarms_gap(ALARM)
 
@@ -48,10 +49,11 @@ def main():
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
     for s in PLOT_SENSORS:
-        hl = float(ops.loc[s, "hl"]); athr = float(ops.loc[s, "abs_thr"])
         rec = float(ops.loc[s, "recall"]); fa = float(ops.loc[s, "fa_per_day"]); n = int(ops.loc[s, "n_inc"])
-        bundle = load_bundle(f"production_bundles/{s}_inference_bundle.json") if s in ("T5_AVG_A", "TC382_04_A") \
-            else load_bundle(task.artifacts[f"{s}_inference_bundle_json"].get_local_copy())
+        duty = float(ops.loc[s, "duty_cycle"])
+        # threshold/half-life DEPLOYÁVEIS direto do bundle (production_alerting)
+        bundle = load_bundle(f"production_bundles/{s}_inference_bundle.json")
+        pa = bundle["production_alerting"]; hl = float(pa["half_life_hours"]); athr = float(pa["ewma_abs_threshold"])
         model = keras.models.load_model(task.artifacts[f"{s}_model_keras"].get_local_copy(), compile=False)
 
         scored = score_dataframe(model, bundle, df[[s, "NGP_A"]])
@@ -77,27 +79,31 @@ def main():
         # janelas de alerta (detecção)
         ax1.fill_between(alert.index, ymin, ymax, where=alert.values, color="red", alpha=0.18,
                          step="mid", label="Alerta do modelo")
-        ax1.set_title(f"OOS 2024 — {s}: recall {rec*100:.0f}%  ({n}/{n})  ·  FA {fa:.3f}/dia  "
-                      f"(modelo 2025, threshold fixo)")
+        nh = int(round(rec * n))
+        ax1.set_title(f"OOS 2024 — {s}: recall {rec*100:.0f}% ({nh}/{n}) · alarme ligado {duty*100:.0f}% do tempo · "
+                      f"FA {fa:.3f}/dia  (q={pa['threshold_q']}, modelo 2025 OOS)")
         ax1.set_ylabel("valor (bruto)"); ax1.legend(loc="upper right", fontsize="small"); ax1.grid(alpha=0.25)
 
         ax2.plot(ew.index, ew.values, color="#37474f", lw=0.6, label=f"EWMA-MAE (hl={hl}h)")
-        ax2.axhline(athr, color="red", ls="--", lw=1.2, label=f"threshold (2025) {athr:.4f}")
+        ax2.axhline(athr, color="red", ls="--", lw=1.2, label=f"threshold deployável (2025) {athr:.4f}")
         ax2.set_ylabel("EWMA do erro"); ax2.set_xlabel("2024"); ax2.legend(loc="upper right", fontsize="small"); ax2.grid(alpha=0.25)
         ax2.xaxis.set_major_formatter(mdates.DateFormatter("%b/%y"))
         out = f"{OUT}_{s}.png"
         plt.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
-        print(f"salvo: {out}  (recall {rec*100:.0f}%, {n} incidentes, FA {fa:.3f})")
+        print(f"salvo: {out}  (recall {rec*100:.0f}%, duty {duty*100:.0f}%, {n} incidentes, FA {fa:.3f})")
 
-    # barra-resumo dos 7
+    # barra-resumo dos 7 (recall + duty)
     m = ops[ops.n_inc > 0].sort_values("n_inc", ascending=False)
-    fig, ax = plt.subplots(figsize=(9, 4))
-    ax.bar(m.index, m["recall"] * 100, color="#2e7d32", alpha=0.85)
-    for i, (s, r) in enumerate(zip(m.index, m["recall"])):
-        ax.text(i, r * 100 + 1, f"{int(m.loc[s,'n_inc'])}", ha="center", fontsize=9)
-    ax.set_ylim(0, 108); ax.set_ylabel("recall OOS 2024 (%)")
-    ax.set_title("Validação OOS 2024 — recall por sensor (nº = incidentes); modelo 2025, threshold fixo")
-    plt.xticks(rotation=30, ha="right"); plt.tight_layout()
+    x = np.arange(len(m)); w = 0.38
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.bar(x - w/2, m["recall"] * 100, w, color="#2e7d32", alpha=0.85, label="recall")
+    ax.bar(x + w/2, m["duty_cycle"] * 100, w, color="#ef6c00", alpha=0.85, label="duty (tempo-em-alerta)")
+    for i, r in enumerate(m["recall"]):
+        ax.text(i - w/2, r * 100 + 1, f"{int(m['n_inc'].iloc[i])}", ha="center", fontsize=8)
+    ax.set_xticks(x); ax.set_xticklabels(m.index, rotation=30, ha="right")
+    ax.set_ylim(0, 108); ax.set_ylabel("%"); ax.legend(loc="upper right", fontsize="small")
+    ax.set_title("Validação OOS 2024 (ponto deployável) — recall vs duty por sensor (nº = incidentes)")
+    plt.tight_layout()
     plt.savefig(f"{OUT}_resumo.png", dpi=150); plt.close(fig)
     print(f"salvo: {OUT}_resumo.png")
 
