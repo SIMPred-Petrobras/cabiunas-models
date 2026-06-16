@@ -256,10 +256,16 @@ def best_point_for_sensor(
     n_thresholds: int = 100,
     fa_budget: float = 1.0,
     min_duration_grid: "list | None" = None,
+    max_duty_cycle: float = 1.0,
 ) -> dict:
     """Escolhe o ponto de operação que MAXIMIZA recall sob o teto de FA e, no
     recall máximo, MINIMIZA a FA (desempate por menor FA → mínimo de FP sem perder
     recall). Quando `min_duration_grid` é fornecido, varre debounce × threshold.
+
+    `max_duty_cycle` (default 1.0 = sem efeito) rejeita thresholds cujo duty-cycle
+    bruto (fração do tempo com health>=q, antes do sticky) ultrapasse o teto. A
+    FA-por-episódio não enxerga tempo-em-alerta, então sem esse teto a busca escolhe
+    o piso q=0.5 (alarme ligado quase sempre). Com o teto, o ponto vira deployável.
     """
     horizon_sec = horizon_hours * 3600.0
     total_days  = (health.index[-1] - health.index[0]).total_seconds() / 86400.0
@@ -267,13 +273,16 @@ def best_point_for_sensor(
 
     md_candidates = list(min_duration_grid) if min_duration_grid else [min_duration_hours]
 
-    best = {"recall": 0.0, "fa_per_day": 0.0, "threshold_q": 0.5,
+    best = {"recall": 0.0, "fa_per_day": 0.0, "threshold_q": 0.5, "duty_cycle": 1.0,
             "min_duration_hours": float(md_candidates[0]), "n_incidents": len(incidents)}
     best_recall = -1.0
     best_fa = float("inf")
 
     for md in md_candidates:
         for q in np.linspace(0.50, 0.999, n_thresholds):
+            duty = float((health >= q).mean())   # tempo-em-alerta bruto (pré-sticky)
+            if duty > max_duty_cycle:
+                continue
             alert    = apply_sticky(health, q, sticky_hours)
             episodes = detect_episodes_gap(alert)
             alert, episodes = apply_min_duration(alert, episodes, md)
@@ -311,6 +320,7 @@ def best_point_for_sensor(
                     "recall":      recall,
                     "fa_per_day":  fa,
                     "threshold_q": float(q),
+                    "duty_cycle":  duty,
                     "min_duration_hours": float(md),
                     "n_incidents": len(incidents),
                     "n_hit":       n_hit,
@@ -337,6 +347,8 @@ def main() -> None:
                              "deriva sustentada (térmica) pede hl longo.")
     parser.add_argument("--horizon",      type=float, default=HORIZON_HOURS)
     parser.add_argument("--fa_budget",    type=float, default=1.0)
+    parser.add_argument("--max_duty_cycle", type=float, default=1.0,
+                        help="teto de duty-cycle (fração tempo-em-alerta); <1 evita o piso q=0.5")
     parser.add_argument("--eval_start",   default=None)
     parser.add_argument("--eval_end",     default=None)
     parser.add_argument("--ok_aware",     action="store_true",
@@ -455,21 +467,24 @@ def main() -> None:
             result = best_point_for_sensor(h, [], args.horizon,
                                            args.sticky_hours, args.min_duration_hours,
                                            fa_budget=args.fa_budget,
-                                           min_duration_grid=debounce_grid)
+                                           min_duration_grid=debounce_grid,
+                                           max_duty_cycle=args.max_duty_cycle)
         else:
             result = best_point_for_sensor(h, incidents, args.horizon,
                                            args.sticky_hours, args.min_duration_hours,
                                            fa_budget=args.fa_budget,
-                                           min_duration_grid=debounce_grid)
+                                           min_duration_grid=debounce_grid,
+                                           max_duty_cycle=args.max_duty_cycle)
             print(f"  {sensor}: {len(incidents)} inc | "
                   f"rec={result['recall']:.2f} FA={result['fa_per_day']:.3f} "
+                  f"duty={result.get('duty_cycle', float('nan')):.2f} "
                   f"db={result.get('min_duration_hours', 0.0):.1f}h")
 
         result["sensor"] = sensor
         rows.append(result)
 
     df_out = pd.DataFrame(rows).set_index("sensor")
-    col_order = ["n_incidents", "recall", "fa_per_day", "threshold_q",
+    col_order = ["n_incidents", "recall", "fa_per_day", "threshold_q", "duty_cycle",
                  "min_duration_hours", "n_hit", "n_fp", "total_days"]
     df_out = df_out[[c for c in col_order if c in df_out.columns]]
 
@@ -481,16 +496,17 @@ def main() -> None:
     out_label = f"{args.label}{mode_tag}"
 
     print(f"\n=== RESULTADO POR SENSOR (H={args.horizon}h, {out_label}) ===")
-    print(f"{'Sensor':<18} {'Inc':>5} {'Recall':>8} {'FA/dia':>8} {'thr_q':>6} {'db(h)':>6}")
-    print("─" * 56)
+    print(f"{'Sensor':<18} {'Inc':>5} {'Recall':>8} {'FA/dia':>8} {'thr_q':>6} {'duty':>6} {'db(h)':>6}")
+    print("─" * 64)
     for sensor, row in df_out.iterrows():
         n   = int(row.get("n_incidents", 0))
         rec = row.get("recall", float("nan"))
         fa  = row.get("fa_per_day", float("nan"))
         thq = row.get("threshold_q", float("nan"))
+        duty = row.get("duty_cycle", float("nan"))
         db  = row.get("min_duration_hours", 0.0)
         rec_str = "  N/A" if n == 0 else f"{rec:7.1%}"
-        print(f"  {sensor:<16} {n:>5}  {rec_str}  {fa:>8.3f} {thq:>6.3f} {db:>6.1f}")
+        print(f"  {sensor:<16} {n:>5}  {rec_str}  {fa:>8.3f} {thq:>6.3f} {duty:>6.2f} {db:>6.1f}")
 
     out_csv = os.path.join(args.out_dir, f"per_sensor_eval_{out_label}.csv")
     df_out.to_csv(out_csv)
