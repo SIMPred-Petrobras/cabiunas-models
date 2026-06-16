@@ -5,8 +5,14 @@ processo (fora do escopo do modelo, máscara operacional em produção) e os "hi
 nesses períodos são artefato do estado, não skill. A coluna SEM-OFF é o número
 honesto de frota.
 
+IMPORTANTE: usar o registro de alarme COMPLETO (alarmes_selecionados_turbina_a.csv,
+todos os 17 sensores), NÃO o _tags_modelo (filtrado a 3). half-life é escolhida por
+sensor (grade), sob orçamento de FA. Recall/FA são in-sample (não validados
+temporalmente — usar validate_oppoint_temporal.py para isso).
+
 Uso:
-  PYTHONPATH=. python scripts/close_fleet_off_excl.py --task_id <prod_task_id>
+  PYTHONPATH=. python scripts/close_fleet_off_excl.py \
+    --alarm_csv ../dados/alarmes_selecionados_turbina_a.csv
 """
 import argparse
 import numpy as np
@@ -16,10 +22,29 @@ from clearml import Task
 import scripts.eval_per_sensor_level as E
 
 DS = "/home/thallys/.clearml/cache/storage_manager/datasets/ds_424e5b589e13402d9d95371a317e85c9"
-ALARM = f"{DS}/alarmes_record_2025_tags_modelo.csv"
+ALARM_COMPLETO = "../dados/alarmes_selecionados_turbina_a.csv"
 RAWCSV = f"{DS}/sensores_filtrados_Interpolados_2025.csv"
 RUN_THR = 50
-HORIZON, HL, STICKY, FA_BUDGET = 8.0, 4.0, 12.0, 1.0
+HORIZON, STICKY, FA_BUDGET = 8.0, 12.0, 1.0
+HL_GRID = [0.5, 1.0, 2.0, 4.0]
+
+
+def best_over_hl(mae: pd.Series, inc, ngp: pd.Series) -> dict:
+    """Escolhe a half-life (grade) que maximiza recall sob FA budget, OFF excluído."""
+    if not inc:
+        return dict(recall=float("nan"), fa_per_day=float("nan"),
+                    n_incidents=0, n_hit=0, hl=float("nan"), threshold_q=float("nan"))
+    best = None
+    for hl in HL_GRID:
+        h = E.ewma_quantile(mae, hl)
+        on_h = ngp.reindex(h.index, method="nearest") > RUN_THR
+        r = E.best_point_for_sensor(h.where(on_h).dropna(), inc, horizon_hours=HORIZON,
+                                    sticky_hours=STICKY, fa_budget=FA_BUDGET, n_thresholds=120)
+        r["hl"] = hl
+        if best is None or (r["recall"] > best["recall"]) or \
+           (r["recall"] == best["recall"] and r["fa_per_day"] < best["fa_per_day"]):
+            best = r
+    return best
 
 
 def ngp_series() -> pd.Series:
@@ -32,59 +57,53 @@ def ngp_series() -> pd.Series:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task_id", default="58bc393c1d7a4e42815236e8897abc88")
+    ap.add_argument("--alarm_csv", default=ALARM_COMPLETO,
+                    help="registro COMPLETO de alarmes (todos os 17 sensores)")
     args = ap.parse_args()
 
     ngp = ngp_series()
     task = Task.get_task(task_id=args.task_id)
     mae_all = E.load_mae_series(task, E.SENSORS)
-    alarms_gap = E.load_alarms_gap(ALARM)
+    alarms_gap = E.load_alarms_gap(args.alarm_csv)
 
     rows = []
     for sensor in E.SENSORS:
         mae = mae_all.get(sensor)
         if mae is None or mae.empty:
             continue
-        health = E.ewma_quantile(mae, HL)
-        on_h = ngp.reindex(health.index, method="nearest") > RUN_THR  # ON na cadência da health
-
-        inc_raw = E.cluster_incidents(alarms_gap.get(sensor, []), gap_hours=E.GAP_HOURS)
+        # janela do MAE (=2025): alarmes fora dela não têm sinal e deflacionariam o recall
+        t_lo, t_hi = mae.index.min(), mae.index.max()
+        raw_al = [t for t in alarms_gap.get(sensor, []) if t_lo <= t <= t_hi]
+        inc_raw = E.cluster_incidents(raw_al, gap_hours=E.GAP_HOURS)
         # ON por incidente (NGP no onset)
         on_inc = ngp.reindex(pd.DatetimeIndex(inc_raw), method="nearest") > RUN_THR if inc_raw else pd.Series([], dtype=bool)
-        inc_on = [t for t, o in zip(inc_raw, on_inc.values)] if not len(inc_raw) else [t for t, o in zip(inc_raw, on_inc.values) if o]
+        inc_on = [t for t, o in zip(inc_raw, on_inc.values) if o]
 
-        def pt(health_s, inc):
-            if not inc:
-                return dict(recall=float("nan"), fa_per_day=float("nan"), n_incidents=0, n_hit=0)
-            return E.best_point_for_sensor(health_s, inc, horizon_hours=HORIZON,
-                                           sticky_hours=STICKY, fa_budget=FA_BUDGET, n_thresholds=120)
-
-        full = pt(health, inc_raw)                       # COM OFF (denominador inflado)
-        # SEM OFF: health só em ON (sem hits/FP de estado), incidentes só ON
-        excl = pt(health.where(on_h).dropna(), inc_on)
+        excl = best_over_hl(mae, inc_on, ngp)  # SEM OFF, half-life por sensor (in-sample)
 
         rows.append({
             "sensor": sensor,
             "inc_all": len(inc_raw), "inc_on": len(inc_on), "inc_off": len(inc_raw) - len(inc_on),
-            "recall_COM_off": full.get("recall"), "fa_COM_off": full.get("fa_per_day"),
-            "recall_SEM_off": excl.get("recall"), "fa_SEM_off": excl.get("fa_per_day"),
+            "recall": excl.get("recall"), "fa_per_day": excl.get("fa_per_day"),
+            "hl": excl.get("hl"), "threshold_q": excl.get("threshold_q"),
         })
 
     df = pd.DataFrame(rows)
     pd.set_option("display.width", 160, "display.max_columns", 20)
-    def fmt(x): return f"{x*100:.1f}%" if pd.notna(x) else "  -"
     out = df.copy()
-    for c in ["recall_COM_off", "recall_SEM_off"]:
-        out[c] = df[c].map(fmt)
-    for c in ["fa_COM_off", "fa_SEM_off"]:
-        out[c] = df[c].map(lambda x: f"{x:.3f}" if pd.notna(x) else "  -")
+    out["recall"] = df["recall"].map(lambda x: f"{x*100:.1f}%" if pd.notna(x) else "  -")
+    out["fa_per_day"] = df["fa_per_day"].map(lambda x: f"{x:.3f}" if pd.notna(x) else "  -")
+    out["hl"] = df["hl"].map(lambda x: f"{x:.1f}" if pd.notna(x) else " -")
+    out["threshold_q"] = df["threshold_q"].map(lambda x: f"{x:.3f}" if pd.notna(x) else "  -")
+    print(f"Alarme: {args.alarm_csv}  (SEM OFF, half-life por sensor, in-sample)\n")
     print(out.to_string(index=False))
 
-    # média macro de recall (só sensores com incidentes ON)
     m = df[df.inc_on > 0]
-    print(f"\nincidentes OFF removidos no total: {int(df.inc_off.sum())} de {int(df.inc_all.sum())}")
-    print(f"recall macro COM off: {m.recall_COM_off.mean()*100:.1f}%   SEM off: {m.recall_SEM_off.mean()*100:.1f}%")
-    df.to_csv("eval_predictive_out/fleet_off_excl.csv", index=False)
-    print("csv: eval_predictive_out/fleet_off_excl.csv")
+    print(f"\nsensores com incidente ON: {len(m)}/17   "
+          f"incidentes OFF removidos: {int(df.inc_off.sum())} de {int(df.inc_all.sum())}")
+    print(f"recall macro (SEM off): {m.recall.mean()*100:.1f}%")
+    df.to_csv("eval_predictive_out/fleet_off_excl_completo.csv", index=False)
+    print("csv: eval_predictive_out/fleet_off_excl_completo.csv")
 
 
 if __name__ == "__main__":
