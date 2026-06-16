@@ -4,8 +4,15 @@ de 2025 (half-life por sensor + threshold ABSOLUTO de EWMA), OFF excluído — N
 re-otimiza em 2024. É a validação de generalização que faltava (N grande: TC382_03
 tem 83 alarmes só em 2024-H2).
 
-Uso: PYTHONPATH=. python scripts/eval_oos_2024.py
+Uso:
+  # 2024-H2 (default, arquivo do projeto):
+  PYTHONPATH=. python scripts/eval_oos_2024.py
+  # 2024 inteiro (arquivo com prefixo bapiha02- e NGP):
+  PYTHONPATH=. python scripts/eval_oos_2024.py \
+    --sens_csv /home/thallys/Downloads/2024.csv --col_prefix bapiha02- \
+    --w0 2024-01-01 --w1 2024-12-31
 """
+import argparse
 import numpy as np
 import pandas as pd
 from clearml import Task
@@ -25,7 +32,6 @@ HORIZON, STICKY, FA_BUDGET, GAP = 8.0, 12.0, 1.0, 4.0
 HL = {"T5_AVG_A": 0.5, "TC382_01_A": 0.5, "TC382_02_A": 2.0, "TC382_03_A": 4.0,
       "TC382_04_A": 0.5, "TC382_05_A": 1.0, "TC382_06_A": 0.5}
 Q = 0.5  # threshold_q saturado (sensibilidade máxima sob FA budget)
-W0, W1 = pd.Timestamp("2024-06-01", tz="UTC"), pd.Timestamp("2024-12-31", tz="UTC")
 
 
 def abs_thr_2025(mae2025: pd.Series, ngp2025: pd.Series, hl: float, dt_s: float) -> float:
@@ -53,19 +59,34 @@ def recall_fa(alert: pd.Series, incidents, days: float) -> tuple:
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sens_csv", default=SENS2024)
+    ap.add_argument("--col_prefix", default="", help="prefixo a remover das colunas (ex.: bapiha02-)")
+    ap.add_argument("--w0", default="2024-06-01")
+    ap.add_argument("--w1", default="2024-12-31")
+    args = ap.parse_args()
+    W0, W1 = pd.Timestamp(args.w0, tz="UTC"), pd.Timestamp(args.w1, tz="UTC")
+
     task = Task.get_task(task_id=TASK)
     alarms = E.load_alarms_gap(ALARM)
     mae2025_all = E.load_mae_series(task, list(HL))
 
-    df24 = pd.read_csv(SENS2024)
-    df24["data_datetime"] = pd.to_datetime(df24["data_datetime"], utc=True, errors="coerce")
-    df24 = df24.dropna(subset=["data_datetime"]).set_index("data_datetime").sort_index()
+    df24 = pd.read_csv(args.sens_csv, low_memory=False)
+    if args.col_prefix:
+        df24.columns = [c[len(args.col_prefix):] if c.startswith(args.col_prefix) else c for c in df24.columns]
+    tcol = next((c for c in df24.columns if "datetime" in c.lower() or c.lower() in ("data", "time", "timestamp")), df24.columns[0])
+    df24[tcol] = pd.to_datetime(df24[tcol], utc=True, errors="coerce")
+    df24 = df24.dropna(subset=[tcol]).set_index(tcol).sort_index()
     df24 = df24[(df24.index >= W0) & (df24.index <= W1)]
+    # tipos mistos (sentinelas/strings) → numérico nas colunas usadas
+    for c in list(HL) + ["NGP_A"]:
+        if c in df24.columns:
+            df24[c] = pd.to_numeric(df24[c], errors="coerce")
     ngp25 = pd.read_csv(SENS2025, usecols=["data_datetime", "NGP_A"])
     ngp25["data_datetime"] = pd.to_datetime(ngp25["data_datetime"], utc=True, errors="coerce")
     ngp25 = ngp25.dropna(subset=["data_datetime"]).set_index("data_datetime").sort_index()["NGP_A"]
 
-    print(f"OOS 2024-H2 ({W0.date()}..{W1.date()})  ponto de operação FIXO de 2025 (hl por sensor, q={Q}, OFF excl)\n")
+    print(f"OOS ({W0.date()}..{W1.date()})  ponto de operação FIXO de 2025 (hl por sensor, q={Q}, OFF excl)\n")
     print(f"{'sensor':11s} {'hl':>4s} {'absThr':>8s} | {'recall':>6s} {'FA/dia':>6s} {'hit/N':>7s}")
     rows = []
     for s, hl in HL.items():
@@ -91,7 +112,7 @@ def main():
         print(f"{s:11s} {hl:4.1f} {athr:8.5f} | {rec*100:5.1f}% {fa:6.3f} {nh:3d}/{n:<3d}")
         rows.append({"sensor": s, "hl": hl, "abs_thr": athr, "recall": rec, "fa_per_day": fa, "n_inc": n})
     df = pd.DataFrame(rows); m = df[df.n_inc > 0]
-    print(f"\nrecall macro OOS 2024-H2: {m.recall.mean()*100:.1f}%  (n sensores={len(m)})")
+    print(f"\nrecall macro OOS: {m.recall.mean()*100:.1f}%  (n sensores={len(m)}, incidentes={int(m.n_inc.sum())})")
     df.to_csv("eval_predictive_out/oos_2024h2.csv", index=False)
     print("csv: eval_predictive_out/oos_2024h2.csv")
 
