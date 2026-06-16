@@ -25,7 +25,8 @@ TASK = "58bc393c1d7a4e42815236e8897abc88"
 RUN_THR, HORIZON, STICKY = 50.0, 8.0, 12.0
 HL = {"T5_AVG_A": 0.5, "TC382_01_A": 0.5, "TC382_02_A": 2.0, "TC382_03_A": 4.0,
       "TC382_04_A": 0.5, "TC382_05_A": 1.0, "TC382_06_A": 0.5}
-Q_GRID = [0.50, 0.80, 0.90, 0.95, 0.97, 0.99, 0.995]
+Q_GRID = [0.50, 0.80, 0.85, 0.88, 0.90, 0.92, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]
+RECALL_TARGET = 0.85  # regra de escolha: menor duty que mantém recall >= alvo
 W0, W1 = pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-12-31", tz="UTC")
 
 
@@ -97,6 +98,7 @@ def main():
 
     res = pd.DataFrame(rows)
     pd.set_option("display.width", 160)
+    recipe = {}
     for s in HL:
         sub = res[res.sensor == s]
         n = int(sub["n_inc"].iloc[0])
@@ -105,8 +107,19 @@ def main():
         for _, r in sub.iterrows():
             rc = "  -" if pd.isna(r.recall) else f"{r.recall*100:5.0f}%"
             print(f"{r.q:5.3f} {rc:>7} {r.fa_per_day:7.3f} {r.duty_cycle*100:6.1f}%")
+        # escolha por sensor: menor duty que mantém recall >= alvo (senão, maior recall)
+        ok = sub[sub.recall >= RECALL_TARGET]
+        pick = ok.loc[ok.duty_cycle.idxmin()] if len(ok) else sub.loc[sub.recall.idxmax()]
+        recipe[s] = (HL[s], round(float(pick.q), 3))
+        print(f"  >>> escolhido: q={pick.q:.3f}  recall={pick.recall*100:.0f}%  duty={pick.duty_cycle*100:.0f}%")
+
     res.to_csv("eval_predictive_out/duty_cycle_2024.csv", index=False)
     print("\ncsv: eval_predictive_out/duty_cycle_2024.csv")
+    print(f"\nRECIPE por sensor (regra: menor duty c/ recall>={RECALL_TARGET:.0%}):")
+    print("RECIPE = {")
+    for s, (hl, q) in recipe.items():
+        print(f'    "{s}": ({hl}, {q}),')
+    print("}")
 
 
 if __name__ == "__main__":

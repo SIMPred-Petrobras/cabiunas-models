@@ -24,18 +24,18 @@ from scripts.finalize_bundle import smoothed_mae
 DS = "/home/thallys/.clearml/cache/storage_manager/datasets/ds_424e5b589e13402d9d95371a317e85c9"
 RAWCSV = f"{DS}/sensores_filtrados_Interpolados_2025.csv"
 RUN_THR = 50
-# sensor -> (half_life_hours, threshold_q)  (ponto de operação DEPLOYÁVEL:
-# q escolhido pelo trade-off recall × duty-cycle OOS 2024, scripts/analyze_duty_cycle.py.
-# q=0.9 na maioria (recall ~90-100%, duty 13-21%); TC382_03 q=0.92 (meio-termo
-# 76% recall / 33% duty — sensor genuinamente anômalo grande parte do tempo).
+# sensor -> (half_life_hours, threshold_q)  (ponto de operação DEPLOYÁVEL, q POR SENSOR:
+# cada sensor tem curva recall×duty própria → q escolhido como o menor duty que mantém
+# recall>=85% (OOS 2024), via scripts/analyze_duty_cycle.py. Resultado: 6/7 ficam em
+# 8-23% duty com 86-100% recall; TC382_03 é intrinsecamente barulhento (q0.88 → 92%/53%).
 RECIPE = {
-    "T5_AVG_A": (0.5, 0.90),
-    "TC382_01_A": (0.5, 0.90),
-    "TC382_02_A": (2.0, 0.90),
-    "TC382_03_A": (4.0, 0.92),
-    "TC382_04_A": (0.5, 0.90),
-    "TC382_05_A": (1.0, 0.90),
-    "TC382_06_A": (0.5, 0.90),
+    "T5_AVG_A": (0.5, 0.92),
+    "TC382_01_A": (0.5, 0.92),
+    "TC382_02_A": (2.0, 0.92),
+    "TC382_03_A": (4.0, 0.88),
+    "TC382_04_A": (0.5, 0.94),
+    "TC382_05_A": (1.0, 0.96),
+    "TC382_06_A": (0.5, 0.98),
 }
 
 
