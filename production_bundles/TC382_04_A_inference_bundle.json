@@ -34,11 +34,11 @@
   "point_min_count": 3,
   "production_alerting": {
     "half_life_hours": 0.5,
-    "threshold_q": 0.5100808080808081,
-    "ewma_abs_threshold": 0.026274457485992615,
+    "threshold_q": 0.94,
+    "ewma_abs_threshold": 0.03861068639245121,
     "sticky_hours": 12.0,
     "debounce_hours": 0.0,
-    "recall_at_op": 0.7777777777777778,
-    "fa_per_day_at_op": 0.078979843685726
+    "off_excluded_in_calibration": true,
+    "note": "hl revisado p/ eventos UNDER breves (validado temporalmente OOS)"
   }
 }
