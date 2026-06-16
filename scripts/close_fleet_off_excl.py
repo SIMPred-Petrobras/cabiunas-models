@@ -29,17 +29,24 @@ HORIZON, STICKY, FA_BUDGET = 8.0, 12.0, 1.0
 HL_GRID = [0.5, 1.0, 2.0, 4.0]
 
 
-def best_over_hl(mae: pd.Series, inc, ngp: pd.Series) -> dict:
-    """Escolhe a half-life (grade) que maximiza recall sob FA budget, OFF excluído."""
+def best_over_hl(mae: pd.Series, inc, ngp: pd.Series, max_duty_cycle: float = 0.35) -> dict:
+    """Escolhe a half-life (grade) que maximiza recall sob FA budget, OFF excluído.
+    `max_duty_cycle` (default 0.35) garante ponto deployável (não o piso q=0.5)."""
     if not inc:
         return dict(recall=float("nan"), fa_per_day=float("nan"),
                     n_incidents=0, n_hit=0, hl=float("nan"), threshold_q=float("nan"))
     best = None
     for hl in HL_GRID:
-        h = E.ewma_quantile(mae, hl)
-        on_h = ngp.reindex(h.index, method="nearest") > RUN_THR
-        r = E.best_point_for_sensor(h.where(on_h).dropna(), inc, horizon_hours=HORIZON,
-                                    sticky_hours=STICKY, fa_budget=FA_BUDGET, n_thresholds=120)
+        # EWMA + rank na população ON (não na série inteira): com OFF incluído, o MAE
+        # alto do estado desligado rouba os ranks altos e o duty fica irreal. Ranqueando
+        # só em ON, o duty = (health>=q).mean() = 1-q, consistente com produção.
+        hl_pts = max(1, int(round(pd.Timedelta(hours=hl) / pd.Timedelta(E.SAMPLING_INTERVAL))))
+        ew = mae.ewm(halflife=hl_pts).mean()
+        on_h = ngp.reindex(ew.index, method="nearest") > RUN_THR
+        h = ew.where(on_h).dropna().rank(pct=True)
+        r = E.best_point_for_sensor(h, inc, horizon_hours=HORIZON,
+                                    sticky_hours=STICKY, fa_budget=FA_BUDGET, n_thresholds=120,
+                                    max_duty_cycle=max_duty_cycle)
         r["hl"] = hl
         if best is None or (r["recall"] > best["recall"]) or \
            (r["recall"] == best["recall"] and r["fa_per_day"] < best["fa_per_day"]):
