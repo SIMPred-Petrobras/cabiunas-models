@@ -24,8 +24,19 @@ from scripts.finalize_bundle import smoothed_mae
 DS = "/home/thallys/.clearml/cache/storage_manager/datasets/ds_424e5b589e13402d9d95371a317e85c9"
 RAWCSV = f"{DS}/sensores_filtrados_Interpolados_2025.csv"
 RUN_THR = 50
-# sensor -> (half_life_hours, threshold_q)  (validados)
-RECIPE = {"T5_AVG_A": (0.5, 0.5), "TC382_04_A": (0.5, 0.5)}
+# sensor -> (half_life_hours, threshold_q)  (ponto de operação DEPLOYÁVEL:
+# q escolhido pelo trade-off recall × duty-cycle OOS 2024, scripts/analyze_duty_cycle.py.
+# q=0.9 na maioria (recall ~90-100%, duty 13-21%); TC382_03 q=0.92 (meio-termo
+# 76% recall / 33% duty — sensor genuinamente anômalo grande parte do tempo).
+RECIPE = {
+    "T5_AVG_A": (0.5, 0.90),
+    "TC382_01_A": (0.5, 0.90),
+    "TC382_02_A": (2.0, 0.90),
+    "TC382_03_A": (4.0, 0.92),
+    "TC382_04_A": (0.5, 0.90),
+    "TC382_05_A": (1.0, 0.90),
+    "TC382_06_A": (0.5, 0.90),
+}
 
 
 def main():
