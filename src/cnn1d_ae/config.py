@@ -126,6 +126,16 @@ class PipelineConfig:
     RUN_REMOTE: bool = False
     REMOTE_QUEUE: str = "default"
 
+    # =========================
+    # TRANSPETRO / FEATHER
+    # Campos opcionais — valor vazio preserva comportamento Cabiunas inalterado.
+    # =========================
+    FEATHER_PATH: str = ""          # caminho para o .feather do equipamento
+    FEATHER_BASE_DIR: str = ""      # prefixo opcional para FEATHER_PATH
+    EQUIPMENT_ID: str = ""          # identificador do equipamento (ex: "B-8802B")
+    FAILURE_DATE: str = ""          # data(s) da falha documentada; múltiplas com ";"
+    FAILURE_DESCRIPTION: str = ""   # descrição informativa (não afeta execução)
+
 
 def cfg_to_dict(cfg: PipelineConfig) -> Dict[str, Any]:
     return asdict(cfg)

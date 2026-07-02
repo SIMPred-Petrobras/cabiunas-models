@@ -519,9 +519,12 @@ def _worker_entry(cfg_dict: Dict, sensor: str) -> Dict:
     return run_one_sensor(cfg, df_alarm, df_feat, df_raw, sensor)
 
 
-def run(cfg: PipelineConfig) -> Dict[str, Any]:
+def run(cfg: PipelineConfig, data=None) -> Dict[str, Any]:
     setup_gpu()
-    df_alarm, df_feat, df_raw, time_report = load_data(cfg)
+    if data is not None:
+        df_alarm, df_feat, df_raw, time_report = data
+    else:
+        df_alarm, df_feat, df_raw, time_report = load_data(cfg)
 
     summary_out_root = cfg.OUTPUT_ROOT if cfg.OUTPUT_ROOT else "."
     os.makedirs(summary_out_root, exist_ok=True)
