@@ -100,6 +100,9 @@ def main():
     task = None
     try:
         from clearml import Task
+        # pyarrow é usado por pandas.read_feather mas nunca importado diretamente,
+        # então o auto-detector de requirements do ClearML não o captura sozinho.
+        Task.add_requirements("pyarrow")
         task_name = f"transpetro::{cfg.EQUIPMENT_ID or stem}"
         task = Task.init(
             project_name=cfg.CLEARML_PROJECT_NAME or "TranspetroML",
