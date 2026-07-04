@@ -3,7 +3,6 @@
   "FEATHER_PATH": "/home/dvar/transpetro/PROJETO/B-6511502A.feather",
   "FAILURE_DATE": "2023-05-15",
   "FAILURE_DESCRIPTION": "Quebra das lâminas do acoplamento",
-
   "MODE": "local",
   "N_WORKERS": 1,
   "FEATURES_CSV": "",
@@ -15,16 +14,30 @@
   "APPLY_HOUR_SHIFT": false,
   "SHIFT_HOURS": 0,
   "LOG_TIME_AUDIT_SAMPLES": 3,
-
   "OUTPUT_ROOT": "runs_transpetro/B-6511502A",
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
   "TRAIN_SOURCE": "raw",
-
   "SENSOR_LIST": null,
   "SENSOR_EXCLUDE": null,
   "SENSOR_REGEX": null,
-  "SENSOR_GROUPS": null,
-
+  "SENSOR_GROUPS": [
+    {
+      "name": "B-6511502A",
+      "sensors": [
+        "VIB. MANCAL RADIAL BB LA 0° VE-50C",
+        "VIB. MANCAL RADIAL BB LA 90° VE-51C",
+        "POTÊNCIA REATIVA MOTOR BOMBA",
+        "POTÊNCIA ATIVA MOTOR BOMBA",
+        "CORRENTE ELÉTRICA DO MOTOR",
+        "CORRENTE L1",
+        "CORRENTE L3",
+        "CORRENTE L2",
+        "FATOR DE POTÊNCIA MOTOR BOMBA",
+        "VAZÃO DESCARGA"
+      ],
+      "target_sensor": "VIB. MANCAL RADIAL BB LA 0° VE-50C"
+    }
+  ],
   "EXCLUDE_MINUTES_AROUND_ALARM": 2880,
   "INTERPOLATE_LIMIT": 3,
   "EXCLUDE_LONG_GAPS_FROM_TRAIN": true,
@@ -35,25 +48,21 @@
   "OUTLIER_Q_HIGH": 0.999,
   "OUTLIER_MAD_K": 6.0,
   "NORMALIZE_MODE": "zscore",
-
   "TIME_STEPS": 60,
   "STRIDE": 1,
   "VAL_FRAC": 0.1,
   "SHUFFLE_TRAIN": false,
   "SPLIT_MODE": "temporal",
-
   "MAX_TRIALS": 10,
   "EXECUTIONS_PER_TRIAL": 1,
   "EPOCHS": 15,
   "BATCH_SIZE": 512,
   "PATIENCE": 5,
-
   "THRESH_MODE": "target_rate",
   "TARGET_ANOMALY_RATE": 0.01,
   "POINT_RULE": "k_of_window",
   "POINT_WINDOW": 60,
   "POINT_MIN_COUNT": 5,
-
   "ENABLE_OPERATIONAL_MASK": true,
   "OPERATIONAL_REF_SENSOR": "CORRENTE ELÉTRICA DO MOTOR",
   "OFF_VALUE_QUANTILE": 0.05,
@@ -61,11 +70,9 @@
   "OFF_LONG_MIN_HOURS": 4.0,
   "TRANSIENT_PADDING_MINUTES": 60,
   "TRANSIENT_DIFF_QUANTILE": 0.99,
-
   "RANDOM_SEED": 42,
   "OVERWRITE": true,
-  "MIN_STD": 1e-8,
-
+  "MIN_STD": 1e-08,
   "RUN_REMOTE": false,
   "USE_CLEARML_DATASET": false,
   "CLEARML_PROJECT_NAME": "TranspetroML",
