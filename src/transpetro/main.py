@@ -30,7 +30,9 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Pipeline CNN1D-AE para dados Transpetro (feather)."
     )
-    p.add_argument("--config", required=True, help="Caminho para o JSON de configuração.")
+    # Opcional: no worker remoto o ClearML não repassa --config;
+    # a config é recuperada via task.connect() abaixo.
+    p.add_argument("--config", default=None, help="Caminho para o JSON de configuração.")
     return p.parse_args()
 
 
@@ -83,39 +85,47 @@ def _upload_run_artifacts(task, run_info: Dict, local_root: Path) -> None:
 
 def main():
     args = parse_args()
-    path = Path(args.config)
-    if not path.exists():
-        raise FileNotFoundError(f"Config não encontrado: {path}")
 
+    # --- Carrega config do arquivo (execução local) ---
     cfg = PipelineConfig()
-    d = json.loads(path.read_text(encoding="utf-8"))
-    cfg = update_cfg_from_dict(cfg, d)
+    if args.config:
+        path = Path(args.config)
+        if not path.exists():
+            raise FileNotFoundError(f"Config não encontrado: {path}")
+        cfg = update_cfg_from_dict(cfg, json.loads(path.read_text(encoding="utf-8")))
+        stem = path.stem
+    else:
+        stem = cfg.EQUIPMENT_ID or "transpetro"
 
     task = None
-    if cfg.CLEARML_PROJECT_NAME:
-        try:
-            from clearml import Task
-            task_name = f"transpetro::{cfg.EQUIPMENT_ID or path.stem}"
-            task = Task.init(
-                project_name=cfg.CLEARML_PROJECT_NAME,
-                task_name=task_name,
-                output_uri=True,
-                reuse_last_task_id=False,
-            )
-            task.set_base_docker(cfg.CLEARML_DOCKER_IMAGE)
-            task.connect(cfg_to_dict(cfg), name="pipeline_config")
-            print(f"[CLEARML] Task: {task_name} | ID: {task.id}")
+    try:
+        from clearml import Task
+        task_name = f"transpetro::{cfg.EQUIPMENT_ID or stem}"
+        task = Task.init(
+            project_name=cfg.CLEARML_PROJECT_NAME or "TranspetroML",
+            task_name=task_name,
+            output_uri=True,
+            reuse_last_task_id=False,
+        )
+        task.set_base_docker(cfg.CLEARML_DOCKER_IMAGE)
 
-            if cfg.RUN_REMOTE and task.running_locally():
-                print(f"[CLEARML] Enfileirando remotamente na fila '{cfg.REMOTE_QUEUE}'...")
-                task.execute_remotely(queue_name=cfg.REMOTE_QUEUE, exit_process=True)
-                # O processo local encerra aqui; o worker continua a partir daqui.
+        # connect() armazena o config localmente e devolve os valores do servidor
+        # quando executando no worker (remote) — isso recupera todos os params.
+        params = task.connect(cfg_to_dict(cfg), name="pipeline_config")
+        cfg = update_cfg_from_dict(cfg, params)
 
-        except Exception as e:
-            print(f"[CLEARML] Não disponível ou erro na inicialização: {e}")
-            task = None
+        print(f"[CLEARML] Task: {task_name} | ID: {task.id}")
 
-    local_artifact_root = Path("artifacts_local") / (cfg.EQUIPMENT_ID or path.stem)
+        if cfg.RUN_REMOTE and task.running_locally():
+            print(f"[CLEARML] Enfileirando remotamente na fila '{cfg.REMOTE_QUEUE}'...")
+            task.execute_remotely(queue_name=cfg.REMOTE_QUEUE, exit_process=True)
+            # O processo local encerra aqui; o worker continua a partir daqui.
+
+    except Exception as e:
+        print(f"[CLEARML] Não disponível ou erro na inicialização: {e}")
+        task = None
+
+    local_artifact_root = Path("artifacts_local") / (cfg.EQUIPMENT_ID or stem)
 
     try:
         data = load_data_transpetro(cfg)
