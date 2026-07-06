@@ -41,7 +41,7 @@ def run_tuner(
         epochs=cfg.EPOCHS,
         batch_size=cfg.BATCH_SIZE,
         callbacks=callbacks,
-        verbose=1,
+        verbose=2,
     )
 
     best_hp = tuner.get_best_hyperparameters(1)[0]
@@ -65,6 +65,6 @@ def refit_best_model(cfg: PipelineConfig, best_model: keras.Model, x_train, x_va
         epochs=cfg.EPOCHS,
         batch_size=cfg.BATCH_SIZE,
         callbacks=callbacks,
-        verbose=1,
+        verbose=2,
     )
     return history
