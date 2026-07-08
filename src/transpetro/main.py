@@ -75,6 +75,15 @@ def _upload_run_artifacts(task, run_info: Dict, local_root: Path) -> None:
                         task.upload_artifact(f"{sensor}/csv/{name}", fpath)
                     except Exception as exc:
                         print(f"[WARN] upload artifact '{sensor}/csv/{name}': {exc}")
+        figs_dir = os.path.join(output_dir, "figs")
+        if os.path.isdir(figs_dir):
+            for name in sorted(os.listdir(figs_dir)):
+                fpath = os.path.join(figs_dir, name)
+                if os.path.isfile(fpath):
+                    try:
+                        task.upload_artifact(f"{sensor}/figs/{name}", fpath)
+                    except Exception as exc:
+                        print(f"[WARN] upload artifact '{sensor}/figs/{name}': {exc}")
         hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
         if os.path.isfile(hp_path):
             try:
