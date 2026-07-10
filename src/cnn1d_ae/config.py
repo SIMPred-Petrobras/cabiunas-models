@@ -184,9 +184,10 @@ class PipelineConfig:
     ALARM_F2_MAX_FP_PER_DAY: float = 15.0  # FP/dia máximo tolerado
     ALARM_F2_INCIDENT_GAP_HOURS: float = 4.0  # gap mínimo (h) para definir incidentes distintos
 
-    # Threshold adaptativo mensal (recalibra sem retreinar)
-    ADAPTIVE_THRESHOLD_MODE: str = "none"       # "none" | "monthly"
+    # Threshold adaptativo (recalibra sem retreinar)
+    ADAPTIVE_THRESHOLD_MODE: str = "none"       # "none" | "monthly" | "rolling_p99"
     ADAPTIVE_THRESHOLD_PERCENTILE: float = 99.0
+    ADAPTIVE_THRESHOLD_WINDOW_DAYS: int = 30    # lookback para rolling_p99 (dias)
 
     # Detecção em dois níveis: warning (sensível) + alarm (confirmado)
     ENABLE_WARN_LEVEL: bool = False

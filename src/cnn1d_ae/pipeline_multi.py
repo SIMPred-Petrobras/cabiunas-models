@@ -41,6 +41,7 @@ from .scoring import (
     compute_threshold,
     compute_threshold_alarm_optimized,
     apply_adaptive_monthly_threshold,
+    apply_rolling_percentile_threshold,
     map_seq_to_point_anomalies,
     build_operational_state_from_running,
     mask_anomaly_seq_by_operational_state,
@@ -389,6 +390,16 @@ def run_pipeline_multivariado(
             stride=cfg.STRIDE,
         )
         print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k,v in monthly_thresholds.items()} }")
+    elif cfg.ADAPTIVE_THRESHOLD_MODE.lower() == "rolling_p99":
+        anomaly_seq, monthly_thresholds = apply_rolling_percentile_threshold(
+            mae_seq=mae_seq_all,
+            index=df_all_z.index,
+            time_steps=cfg.TIME_STEPS,
+            stride=cfg.STRIDE,
+            window_days=cfg.ADAPTIVE_THRESHOLD_WINDOW_DAYS,
+            percentile=cfg.ADAPTIVE_THRESHOLD_PERCENTILE,
+        )
+        print(f"[ROLLING-THR] window={cfg.ADAPTIVE_THRESHOLD_WINDOW_DAYS}d p{cfg.ADAPTIVE_THRESHOLD_PERCENTILE:g} fallback={monthly_thresholds['rolling_p99_global_fallback']:.5f}")
     else:
         anomaly_seq = mae_seq_all > threshold
 
