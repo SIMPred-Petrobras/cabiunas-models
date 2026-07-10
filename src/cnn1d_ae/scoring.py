@@ -230,6 +230,39 @@ def apply_adaptive_monthly_threshold(
     return new_anomaly_seq, monthly_thresholds
 
 
+def apply_rolling_percentile_threshold(
+    mae_seq: np.ndarray,
+    index: pd.DatetimeIndex,
+    time_steps: int,
+    stride: int = 1,
+    window_days: int = 30,
+    percentile: float = 99.0,
+) -> tuple[np.ndarray, dict]:
+    """Threshold causal rolling: threshold(t) = percentil_k do MAE em [t - window_days, t).
+
+    Resolve deriva sazonal sem re-treinamento. Nunca usa dados futuros.
+    Fallback para percentil global quando a janela tem menos de 30 pontos.
+    """
+    n = len(mae_seq)
+    end_offset = time_steps - 1
+    seq_end_idx = end_offset + np.arange(n) * max(1, int(stride))
+    valid_mask = seq_end_idx < len(index)
+    seq_end_times = index[seq_end_idx[valid_mask]]
+
+    mae_series = pd.Series(mae_seq[valid_mask], index=seq_end_times)
+    window = pd.Timedelta(days=window_days)
+    global_thr = float(np.percentile(mae_seq, percentile))
+
+    per_seq_thr = np.full(n, global_thr, dtype=float)
+    for i, t in zip(np.where(valid_mask)[0], seq_end_times):
+        past = mae_series.loc[(mae_series.index >= t - window) & (mae_series.index < t)]
+        if len(past) >= 30:
+            per_seq_thr[i] = float(np.percentile(past.values, percentile))
+
+    anomaly_seq = mae_seq > per_seq_thr
+    return anomaly_seq, {"rolling_p99_global_fallback": global_thr}
+
+
 def apply_cusum_alarm(
     mae_seq: np.ndarray,
     train_mae_seq: np.ndarray,

@@ -34,6 +34,7 @@ from .scoring import (
     compute_threshold,
     compute_threshold_alarm_optimized,
     apply_adaptive_monthly_threshold,
+    apply_rolling_percentile_threshold,
     apply_cusum_alarm,
     apply_debounce,
     assign_regime_bands,
@@ -409,6 +410,16 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             stride=cfg.STRIDE,
         )
         print(f"[ADAPTIVE] Thresholds mensais: { {k: f'{v:.5f}' for k, v in monthly_thresholds.items()} }")
+    elif cfg.ADAPTIVE_THRESHOLD_MODE.lower() == "rolling_p99":
+        anomaly_seq, monthly_thresholds = apply_rolling_percentile_threshold(
+            mae_seq=mae_seq_all,
+            index=df_all_z.index,
+            time_steps=cfg.TIME_STEPS,
+            stride=cfg.STRIDE,
+            window_days=cfg.ADAPTIVE_THRESHOLD_WINDOW_DAYS,
+            percentile=cfg.ADAPTIVE_THRESHOLD_PERCENTILE,
+        )
+        print(f"[ROLLING-THR] window={cfg.ADAPTIVE_THRESHOLD_WINDOW_DAYS}d p{cfg.ADAPTIVE_THRESHOLD_PERCENTILE:g} fallback={monthly_thresholds['rolling_p99_global_fallback']:.5f}")
     elif cfg.ALARM_POLICY.lower() == "cusum":
         anomaly_seq, _cusum = apply_cusum_alarm(mae_seq_all, train_mae_seq, cfg.CUSUM_K, cfg.CUSUM_H)
         print(f"[CUSUM] k={cfg.CUSUM_K} h={cfg.CUSUM_H} disparos={int(anomaly_seq.sum())}/{len(anomaly_seq)}")
