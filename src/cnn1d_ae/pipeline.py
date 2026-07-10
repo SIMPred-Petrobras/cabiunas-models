@@ -4,7 +4,7 @@ import os
 import json
 import re
 from dataclasses import asdict, replace
-from typing import Dict, List, Any, Set
+from typing import Dict, List, Any, Set, Optional
 
 import numpy as np
 import pandas as pd
@@ -35,7 +35,25 @@ from .plots import (
     plot_hist_mae,
     plot_series_with_anomalies,
     plot_series_alarm_anomaly_subplots,
+    plot_series_failure_zoom,
 )
+from .model_card import write_model_card
+
+
+def parse_failure_dates(failure_date: str) -> List[pd.Timestamp]:
+    """Converte o campo FAILURE_DATE (datas separadas por ';', com ou sem hora)
+    em uma lista de Timestamps. Entradas inválidas são ignoradas."""
+    if not failure_date:
+        return []
+    out: List[pd.Timestamp] = []
+    for part in str(failure_date).split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        ts = pd.to_datetime(part, errors="coerce", dayfirst=False)
+        if pd.notna(ts):
+            out.append(ts)
+    return out
 
 
 def discover_sensors(cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.DataFrame) -> List[str]:
@@ -148,7 +166,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     history = refit_best_model(cfg, best_model, x_train, x_val)
     best_model.save(model_path)
 
-    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"), title=f"sensor={sensor}")
 
     train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
     threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
@@ -207,14 +225,32 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         title=f"Serie + anomalias (CNN1D-AE) | sensor={sensor}",
         operational_state=state,
     )
+    alarm_series = (
+        df_alarm_sensor["Data da Ocorrencia"]
+        if "Data da Ocorrencia" in df_alarm_sensor.columns
+        else pd.Series(dtype="datetime64[ns]")
+    )
     plot_series_alarm_anomaly_subplots(
         df_all[sensor],
         anomalous_times,
-        df_alarm_sensor["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_sensor.columns else pd.Series(dtype="datetime64[ns]"),
+        alarm_series,
         os.path.join(out_dirs["figs"], "series_alarm_anomaly_subplots.png"),
         title=f"{sensor}",
         operational_state=state,
     )
+
+    failure_times = parse_failure_dates(cfg.FAILURE_DATE)
+    if failure_times:
+        plot_series_failure_zoom(
+            df_all[sensor],
+            anomalous_times,
+            alarm_series,
+            failure_times,
+            os.path.join(out_dirs["figs"], "series_failure_zoom.png"),
+            title=f"{cfg.EQUIPMENT_ID or ''} | {sensor}".strip(" |"),
+            zoom_days=cfg.FAILURE_ZOOM_DAYS,
+            operational_state=state,
+        )
 
     eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
 
@@ -236,12 +272,27 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
 
+    try:
+        card_path = write_model_card(
+            cfg, out_dirs,
+            kind="sensor", name=sensor, sensors=[sensor],
+            best_hp=best_hp.values, threshold=float(threshold),
+            calibration_report=calibration_report, failure_times=failure_times,
+            n_train_seq=int(len(x_train_full)), n_features=int(n_features),
+            data_period=f"{df_all.index.min()} → {df_all.index.max()}",
+        )
+        print(f"[CARD] {card_path}")
+    except Exception as exc:
+        print(f"[WARN] falha ao gerar MODEL_CARD para {sensor}: {exc}")
+
     report = {
         "sensor": sensor,
         "output_dir": out_dirs["root"],
         "model_path": model_path,
+        "card_path": os.path.join(out_dirs["root"], "MODEL_CARD.md"),
         "threshold": float(threshold),
         "THRESH_MODE": cfg.THRESH_MODE,
+        "anomaly_rate_points_per_day": calibration_report.get("anomaly_rate_points_per_day"),
         **eval_stats,
         "skipped": False,
     }
@@ -374,7 +425,7 @@ def run_one_group(
     history = refit_best_model(effective_cfg, best_model, x_train, x_val)
     best_model.save(model_path)
 
-    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
+    plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"), title=f"grupo={group_name}")
 
     # Inferência única — deriva MAE global e por canal ao mesmo tempo
     x_train_pred = best_model.predict(x_train_full, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
@@ -470,6 +521,19 @@ def run_one_group(
             operational_state=state,
         )
 
+        failure_times = parse_failure_dates(cfg.FAILURE_DATE)
+        if failure_times:
+            plot_series_failure_zoom(
+                df_all[s],
+                anomalous_times,
+                s_alarm_times,
+                failure_times,
+                os.path.join(out_dirs["figs"], f"series_failure_zoom_{safe_name}.png"),
+                title=f"{group_name} | {s}",
+                zoom_days=cfg.FAILURE_ZOOM_DAYS,
+                operational_state=state,
+            )
+
     eval_stats = eval_alarm_hit_rate(df_alarm_group, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
 
     calibration_report = {
@@ -495,14 +559,30 @@ def run_one_group(
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
 
+    try:
+        card_path = write_model_card(
+            effective_cfg, out_dirs,
+            kind="group", name=group_name, sensors=sensors,
+            best_hp=best_hp.values, threshold=float(threshold),
+            calibration_report=calibration_report,
+            failure_times=parse_failure_dates(cfg.FAILURE_DATE),
+            n_train_seq=int(len(x_train_full)), n_features=int(n_features),
+            data_period=f"{df_all.index.min()} → {df_all.index.max()}",
+        )
+        print(f"[CARD] {card_path}")
+    except Exception as exc:
+        print(f"[WARN] falha ao gerar MODEL_CARD para grupo {group_name}: {exc}")
+
     report = {
         "group": group_name,
         "sensors": sensors,
         "output_dir": out_dirs["root"],
         "model_path": model_path,
+        "card_path": os.path.join(out_dirs["root"], "MODEL_CARD.md"),
         "threshold": float(threshold),
         "THRESH_MODE": effective_cfg.THRESH_MODE,
         "TIME_STEPS": int(effective_cfg.TIME_STEPS),
+        "anomaly_rate_points_per_day": calibration_report.get("anomaly_rate_points_per_day"),
         **eval_stats,
         "skipped": False,
     }
@@ -517,6 +597,41 @@ def _worker_entry(cfg_dict: Dict, sensor: str) -> Dict:
     setup_gpu()
     df_alarm, df_feat, df_raw, _ = load_data(cfg)
     return run_one_sensor(cfg, df_alarm, df_feat, df_raw, sensor)
+
+
+def _write_models_index(cfg: PipelineConfig, out_root: str, rows: List[Dict]) -> Optional[str]:
+    """Gera MODELS_INDEX.md consolidando todos os modelos treinados na execução."""
+    trained = [r for r in rows if not r.get("skipped")]
+    if not trained:
+        return None
+
+    lines = [
+        f"# Modelos treinados — {cfg.EQUIPMENT_ID or 'execução'}",
+        "",
+        f"- **Falha(s):** {cfg.FAILURE_DATE or '—'}",
+        f"- **Modo:** {'multivariado (grupo)' if cfg.SENSOR_GROUPS else 'univariado (por sensor)'}",
+        f"- **Total de modelos:** {len(trained)}",
+        "",
+        "| Modelo | Hit rate | Limiar (MAE) | Anom./dia | Model card |",
+        "|---|---|---|---|---|",
+    ]
+    for r in trained:
+        name = r.get("sensor") or r.get("group", "—")
+        card = r.get("card_path", "")
+        rel = os.path.relpath(card, out_root) if card else ""
+        # <...> preserva caminhos com espaços (nomes de sensores) em Markdown.
+        link = f"[MODEL_CARD.md](<{rel}>)" if rel else "—"
+        hit = r.get("hit_rate")
+        thr = r.get("threshold")
+        rate = r.get("anomaly_rate_points_per_day", "")
+        thr_s = f"{thr:.6g}" if isinstance(thr, (int, float)) else "—"
+        lines.append(f"| `{name}` | {hit if hit is not None else '—'} | {thr_s} | {rate} | {link} |")
+
+    lines += ["", "_Índice gerado automaticamente pela pipeline CNN1D-AE (Transpetro)._", ""]
+    index_path = os.path.join(out_root, "MODELS_INDEX.md")
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    return index_path
 
 
 def run(cfg: PipelineConfig, data=None) -> Dict[str, Any]:
@@ -586,6 +701,10 @@ def run(cfg: PipelineConfig, data=None) -> Dict[str, Any]:
     df_summary = pd.DataFrame(rows).sort_values("skipped", ascending=True)
     df_summary.to_csv(summary_path, index=False)
     print(f"\n[DONE] Summary salvo em: {summary_path}")
+
+    index_path = _write_models_index(cfg, summary_out_root, rows)
+    if index_path:
+        print(f"[INDEX] Índice de modelos: {index_path}")
 
     return {
         "summary_path": summary_path,

@@ -118,6 +118,12 @@ def main():
             task_name=task_name,
             output_uri=True,
             reuse_last_task_id=False,
+            # O auto-bind de matplotlib do ClearML tenta converter cada plt.savefig()
+            # (nossas series/histogramas com centenas de milhares de pontos) em Plotly
+            # interativo, gerando payloads >40MB que travam a sessao de report em loop
+            # de retry infinito (events.add_batch exceeds limit) e derrubam a task.
+            # Os PNGs continuam indo pro ClearML via upload_artifact manual (figs/).
+            auto_connect_frameworks={"matplotlib": False},
         )
         task.set_base_docker(cfg.CLEARML_DOCKER_IMAGE)
 

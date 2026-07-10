@@ -135,6 +135,7 @@ class PipelineConfig:
     EQUIPMENT_ID: str = ""          # identificador do equipamento (ex: "B-8802B")
     FAILURE_DATE: str = ""          # data(s) da falha documentada; múltiplas com ";"
     FAILURE_DESCRIPTION: str = ""   # descrição informativa (não afeta execução)
+    FAILURE_ZOOM_DAYS: float = 10.0  # janela (dias antes/depois) do gráfico de zoom na falha
 
 
 def cfg_to_dict(cfg: PipelineConfig) -> Dict[str, Any]:
