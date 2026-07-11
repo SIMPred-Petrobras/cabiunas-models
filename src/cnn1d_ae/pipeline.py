@@ -36,6 +36,7 @@ from .plots import (
     plot_series_with_anomalies,
     plot_series_alarm_anomaly_subplots,
     plot_series_failure_zoom,
+    plot_signal_mae_anomaly,
 )
 from .model_card import write_model_card
 
@@ -239,6 +240,10 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         operational_state=state,
     )
 
+    # Série do MAE (erro de reconstrução) alinhada ao tempo, p/ o plot duplo-eixo.
+    mae_series = pd.Series(mae_seq_all, index=all_index[: len(mae_seq_all)])
+    _title = f"{cfg.EQUIPMENT_ID or ''} | {sensor}".strip(" |")
+
     failure_times = parse_failure_dates(cfg.FAILURE_DATE)
     if failure_times:
         plot_series_failure_zoom(
@@ -247,9 +252,26 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             alarm_series,
             failure_times,
             os.path.join(out_dirs["figs"], "series_failure_zoom.png"),
-            title=f"{cfg.EQUIPMENT_ID or ''} | {sensor}".strip(" |"),
+            title=_title,
             zoom_days=cfg.FAILURE_ZOOM_DAYS,
             operational_state=state,
+        )
+
+    # Plots duplo-eixo (bruto + MAE + anomalia): visão geral e zoom(s) na falha.
+    plot_signal_mae_anomaly(
+        df_all[sensor], mae_series, float(threshold), anomalous_times,
+        os.path.join(out_dirs["figs"], "signal_mae_anomaly.png"),
+        title=_title, windows=None, failure_times=failure_times,
+        alarm_times=alarm_series, operational_state=state,
+    )
+    if failure_times:
+        z = pd.Timedelta(days=float(cfg.FAILURE_ZOOM_DAYS))
+        wins = [(f - z, f + z, f"falha {pd.Timestamp(f).strftime('%d/%m/%Y %H:%M')}") for f in failure_times]
+        plot_signal_mae_anomaly(
+            df_all[sensor], mae_series, float(threshold), anomalous_times,
+            os.path.join(out_dirs["figs"], "signal_mae_anomaly_zoom.png"),
+            title=_title, windows=wins, failure_times=failure_times,
+            alarm_times=alarm_series, operational_state=state,
         )
 
     eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
@@ -496,7 +518,7 @@ def run_one_group(
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
 
     # Plota cada sensor do grupo com a máscara de anomalia compartilhada
-    for s in sensors:
+    for i, s in enumerate(sensors):
         safe_name = s.replace("/", "_").replace("\\", "_")
         if "Tag" in df_alarm.columns and "Data da Ocorrencia" in df_alarm.columns:
             s_alarm_times = df_alarm.loc[df_alarm["Tag"] == s, "Data da Ocorrencia"].dropna()
@@ -521,8 +543,24 @@ def run_one_group(
             operational_state=state,
         )
 
+        # MAE do canal deste sensor (erro de reconstrução por-canal)
+        mae_series_s = pd.Series(mae_per_ch[:, i], index=all_index[: len(mae_per_ch)])
         failure_times = parse_failure_dates(cfg.FAILURE_DATE)
+        plot_signal_mae_anomaly(
+            df_all[s], mae_series_s, float(threshold), anomalous_times,
+            os.path.join(out_dirs["figs"], f"signal_mae_anomaly_{safe_name}.png"),
+            title=f"{group_name} | {s}", windows=None, failure_times=failure_times,
+            alarm_times=s_alarm_times, operational_state=state,
+        )
         if failure_times:
+            z = pd.Timedelta(days=float(cfg.FAILURE_ZOOM_DAYS))
+            wins = [(f - z, f + z, f"falha {pd.Timestamp(f).strftime('%d/%m/%Y %H:%M')}") for f in failure_times]
+            plot_signal_mae_anomaly(
+                df_all[s], mae_series_s, float(threshold), anomalous_times,
+                os.path.join(out_dirs["figs"], f"signal_mae_anomaly_zoom_{safe_name}.png"),
+                title=f"{group_name} | {s}", windows=wins, failure_times=failure_times,
+                alarm_times=s_alarm_times, operational_state=state,
+            )
             plot_series_failure_zoom(
                 df_all[s],
                 anomalous_times,

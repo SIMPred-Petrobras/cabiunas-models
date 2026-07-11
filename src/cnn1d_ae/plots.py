@@ -204,6 +204,106 @@ def plot_series_alarm_anomaly_subplots(
     plt.close(fig)
 
 
+def _clean_series(series: pd.Series) -> pd.Series:
+    s = series.copy()
+    s.index = pd.to_datetime(s.index, errors="coerce")
+    s = s[~s.index.isna()]
+    s = s[~s.index.duplicated(keep="last")].sort_index()
+    return s
+
+
+def plot_signal_mae_anomaly(
+    raw_series: pd.Series,
+    mae_series: pd.Series,
+    threshold: float,
+    anomalous_times: pd.DatetimeIndex,
+    out_path: str,
+    title: str,
+    windows: list | None = None,
+    failure_times: list | None = None,
+    alarm_times: pd.Series | None = None,
+    operational_state: pd.Series | None = None,
+) -> None:
+    """Painel duplo-eixo por janela: sinal BRUTO (eixo esq, azul) + ERRO DE
+    RECONSTRUÇÃO MAE (eixo dir, laranja, com threshold e área acima realçada) +
+    ANOMALIAS (pontos vermelhos sobre o bruto) + falha (linha vermelha) +
+    alarmes (linha verde) + estado operacional (faixas no rodapé).
+
+    `windows` = lista de (t0, t1, rótulo); None => série completa (1 painel).
+    Um subplot por janela — use os zooms passando janelas ±N dias na falha.
+    """
+    raw = _clean_series(raw_series)
+    mae = _clean_series(mae_series)
+    if raw.empty:
+        return
+
+    anom_idx = pd.DatetimeIndex(pd.to_datetime(anomalous_times, errors="coerce")).dropna()
+    anom_idx = anom_idx.drop_duplicates().intersection(raw.index)
+    s_anom = raw.reindex(anom_idx).dropna() if len(anom_idx) else pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+
+    fails = pd.DatetimeIndex(pd.to_datetime(pd.Series(failure_times or []), errors="coerce")).dropna()
+    alarms = pd.DatetimeIndex(pd.to_datetime(pd.Series(alarm_times if alarm_times is not None else []),
+                                             errors="coerce")).dropna()
+
+    if not windows:
+        windows = [(raw.index.min(), raw.index.max(), "período completo")]
+
+    n = len(windows)
+    fig, axes = plt.subplots(n, 1, figsize=(15, 4.6 * n), squeeze=False)
+    axes = axes[:, 0]
+
+    for ax, (t0, t1, label) in zip(axes, windows):
+        t0 = raw.index.min() if t0 is None else pd.Timestamp(t0)
+        t1 = raw.index.max() if t1 is None else pd.Timestamp(t1)
+        rw = raw[(raw.index >= t0) & (raw.index <= t1)]
+        mw = mae[(mae.index >= t0) & (mae.index <= t1)]
+        aw = s_anom[(s_anom.index >= t0) & (s_anom.index <= t1)]
+
+        _shade_machine_states(ax, rw.index, operational_state)
+        # Eixo esquerdo: sinal bruto
+        l_raw, = ax.plot(rw.index, rw.values, color="#1f4e79", linewidth=1.0, zorder=3, label="Sinal bruto")
+        ax.set_ylabel("Sinal bruto (unidades reais)", color="#1f4e79")
+        ax.tick_params(axis="y", labelcolor="#1f4e79")
+
+        # Eixo direito: MAE (erro de reconstrução)
+        ax2 = ax.twinx()
+        l_mae, = ax2.plot(mw.index, mw.values, color="#e8820c", linewidth=1.0, alpha=0.85, zorder=2, label="Erro reconstr. (MAE)")
+        if np.isfinite(threshold):
+            ax2.axhline(threshold, color="#8B4513", linestyle="--", linewidth=1.0, alpha=0.8)
+            ax2.fill_between(mw.index, threshold, mw.values, where=(mw.values > threshold),
+                             color="#e8820c", alpha=0.25, zorder=1)
+        ax2.set_ylabel("MAE (erro de reconstrução)", color="#e8820c")
+        ax2.tick_params(axis="y", labelcolor="#e8820c")
+        ax2.set_ylim(bottom=0)
+
+        # Anomalias (sobre o bruto)
+        if len(aw):
+            ax.scatter(aw.index, aw.values, color="red", s=18, zorder=5, label="Anomalia (ponto)")
+
+        # Falhas e alarmes na janela
+        for ft in fails[(fails >= t0) & (fails <= t1)]:
+            ax.axvline(ft, color="red", linewidth=2.0, alpha=0.9, zorder=4)
+        for at in alarms[(alarms >= t0) & (alarms <= t1)]:
+            ax.axvline(at, color="green", linestyle="--", linewidth=1.0, alpha=0.55, zorder=4)
+
+        ax.set_title(f"{title} | {label}")
+        ax.grid(True, alpha=0.25)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha="right")
+        handles = [
+            l_raw, l_mae,
+            plt.Line2D([], [], color="red", marker="o", ls="", label="Anomalia (ponto)"),
+            plt.Line2D([], [], color="red", lw=2.0, label="Falha documentada"),
+            plt.Line2D([], [], color="green", ls="--", lw=1.0, label="Alarme"),
+        ]
+        ax.legend(handles=handles, loc="upper left", fontsize="small", framealpha=0.9)
+
+    axes[-1].set_xlabel("tempo")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=170, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_series_failure_zoom(
     series: pd.Series,
     anomalous_times: pd.DatetimeIndex,
