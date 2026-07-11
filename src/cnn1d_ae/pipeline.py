@@ -437,15 +437,11 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         anomaly_seq = apply_debounce(anomaly_seq, cfg.DEBOUNCE_POINTS)
         print(f"[DEBOUNCE] n={cfg.DEBOUNCE_POINTS}: {_before_db} -> {int(np.sum(anomaly_seq))} sequências anômalas")
     state = None
-    if cfg.ENABLE_OPERATIONAL_MASK:
-        state = build_operational_state(
-            index=df_all_z.index,
-            sensor_series=df_all[sensor],
-            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
-            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
-            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
-            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
-            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+    if _running_col_series is not None:
+        # RUNNING_COL tem prioridade: usa NGP_A (ou similar) como indicador de operação.
+        # Espelha o comportamento do treino e de pipeline_multi.py.
+        state = _running_col_series.reindex(df_all_z.index).fillna(0.0).map(
+            lambda x: "on" if x > cfg.RUNNING_THRESHOLD else "off"
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,
@@ -454,10 +450,16 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             state=state,
             stride=cfg.STRIDE,
         )
-    elif _running_col_series is not None:
-        # Constrói estado operacional direto do RUNNING_COL para plots e avaliação.
-        state = _running_col_series.reindex(df_all_z.index).fillna(0.0).map(
-            lambda x: "on" if x > cfg.RUNNING_THRESHOLD else "off"
+    elif cfg.ENABLE_OPERATIONAL_MASK:
+        # Fallback: infere estado pelo valor do próprio sensor (para sensores sem RUNNING_COL).
+        state = build_operational_state(
+            index=df_all_z.index,
+            sensor_series=df_all[sensor],
+            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
+            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
+            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
+            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,
