@@ -14,8 +14,10 @@ Classificação por equipamento:
   PARCIAL -> só precursor nos 10 dias antes (fora de ±48h)
   FRACO   -> nenhuma anomalia em ±10 dias da falha
 
-Multivariado é baixado do ClearML (só os artefatos leves). Por-sensor usa os
-CSVs já coletados em analysis/persensor_results/.
+Multivariado é baixado do ClearML (só os artefatos leves) e fica em
+resultados/raw_multivar_v2/. Por-sensor usa os CSVs já coletados em
+resultados/Uni_sensor/ (dados pesados ficam fora de analysis/, que é só
+relatórios/scripts).
 """
 from __future__ import annotations
 
@@ -27,8 +29,8 @@ import pandas as pd
 
 from src.cnn1d_ae.pipeline import parse_failure_dates
 
-PERSENSOR_DIR = Path("analysis/persensor_results")
-MULTIVAR_DIR = Path("analysis/multivar_results")
+PERSENSOR_DIR = Path("resultados/Uni_sensor")
+MULTIVAR_DIR = Path("resultados/raw_multivar_v2")
 OUT_MD = Path("analysis/COMPARACAO_persensor_vs_multivar.md")
 
 MULTIVAR_TASKS = {

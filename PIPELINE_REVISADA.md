@@ -87,10 +87,35 @@ Config-fonte por equipamento: `analysis/status_sensor_choice.json`.
 
 ---
 
+## v3 → v3.1: plots do grupo — alvo em destaque vs contexto
+
+**Problema relatado pelo usuário:** no multivariado, a pipeline gerava um plot completo
+(geral + zoom + duplo-eixo) para **cada sensor de entrada** do grupo, todos com os
+**mesmos** pontos de anomalia (a decisão vem só do `target_sensor`). Sem rótulo, parecia
+que cada sensor tinha sua própria detecção — confuso, não dava pra saber "quem treinou
+quem".
+
+**Correção (`pipeline.py::run_one_group`):**
+- O **sensor-alvo** (`target_sensor`) ganha o conjunto completo de plots, com prefixo
+  **`TARGET_`** direto em `figs/` (destaque, é o resultado do experimento).
+- Os **demais sensores de entrada** (contexto/co-variáveis) viram apoio leve — só o painel
+  duplo-eixo, um PNG cada, em **`figs/contexto/`** — mesma anomalia compartilhada, útil
+  para auditoria ("os outros canais também reagiram quando o alvo disparou?"), mas
+  claramente não são detecções próprias.
+- Se o grupo não tem `target_sensor` (usa MAE global), nenhum sensor é destacado — aviso
+  no log — e tudo vai para `contexto/`.
+- `MODEL_CARD.md` passa a listar só as figuras do alvo (o `_figs_list` já não desce em
+  subpastas).
+- Dados já baixados de tasks anteriores à mudança: reorganizados uma única vez com
+  `scripts/reorganize_mult_figs.py` (renomeia/move localmente, sem re-treinar/rebaixar).
+
+---
+
 ## Histórico de versões
 
 | Versão | Data | Mudança principal |
 |---|---|---|
 | v1 | — | pipeline por-sensor + gráficos (loss, geral, zoom) + model cards |
 | v2 | 2026-07-10 | rodada por-sensor e multivariada nos 12 equipamentos (ClearML) |
-| **v3** | **2026-07-11** | máscara por equipamento (sensor+limiar+transiente=0), plot duplo-eixo, organização `resultados/` |
+| v3 | 2026-07-11 | máscara por equipamento (sensor+limiar+transiente=0), plot duplo-eixo, organização `resultados/` |
+| **v3.1** | **2026-07-12** | plots do grupo: alvo em destaque (`TARGET_`) vs contexto (`figs/contexto/`) |

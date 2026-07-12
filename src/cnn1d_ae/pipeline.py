@@ -517,39 +517,58 @@ def run_one_group(
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
 
-    # Plota cada sensor do grupo com a máscara de anomalia compartilhada
+    # A decisão de anomalia vem de UM canal só (target_sensor) ou do MAE global
+    # (se não houver alvo). Para não confundir "canal de contexto" com "detecção
+    # própria", o alvo ganha o conjunto completo de plots em destaque
+    # (prefixo TARGET_, na raiz de figs/); os demais viram apoio leve em
+    # figs/contexto/ (mesma anomalia compartilhada, só para auditoria visual).
+    contexto_dir = os.path.join(out_dirs["figs"], "contexto")
+    os.makedirs(contexto_dir, exist_ok=True)
+    failure_times = parse_failure_dates(cfg.FAILURE_DATE)
+
     for i, s in enumerate(sensors):
         safe_name = s.replace("/", "_").replace("\\", "_")
+        is_target = (target_sensor is not None and s == target_sensor)
         if "Tag" in df_alarm.columns and "Data da Ocorrencia" in df_alarm.columns:
             s_alarm_times = df_alarm.loc[df_alarm["Tag"] == s, "Data da Ocorrencia"].dropna()
         elif "Data da Ocorrencia" in df_alarm.columns:
             s_alarm_times = df_alarm["Data da Ocorrencia"].dropna()
         else:
             s_alarm_times = pd.Series(dtype="datetime64[ns]")
+        mae_series_s = pd.Series(mae_per_ch[:, i], index=all_index[: len(mae_per_ch)])
 
+        if not is_target:
+            # Contexto: só o painel duplo-eixo (mais informativo num único PNG).
+            plot_signal_mae_anomaly(
+                df_all[s], mae_series_s, float(threshold), anomalous_times,
+                os.path.join(contexto_dir, f"{safe_name}.png"),
+                title=f"[CONTEXTO] {group_name} | {s} (anomalia decidida pelo alvo: {target_sensor or 'MAE global'})",
+                windows=None, failure_times=failure_times,
+                alarm_times=s_alarm_times, operational_state=state,
+            )
+            continue
+
+        # Alvo: conjunto completo de plots, em destaque (prefixo TARGET_).
+        prefix = f"TARGET_{safe_name}"
         plot_series_with_anomalies(
             df_all[s],
             anomalous_times,
-            os.path.join(out_dirs["figs"], f"series_with_anomalies_{safe_name}.png"),
-            title=f"Serie + anomalias (CNN1D-AE) | grupo={group_name} | sensor={s}",
+            os.path.join(out_dirs["figs"], f"{prefix}_series_with_anomalies.png"),
+            title=f"[ALVO] Serie + anomalias (CNN1D-AE) | grupo={group_name} | sensor={s}",
             operational_state=state,
         )
         plot_series_alarm_anomaly_subplots(
             df_all[s],
             anomalous_times,
             s_alarm_times,
-            os.path.join(out_dirs["figs"], f"series_alarm_anomaly_subplots_{safe_name}.png"),
-            title=f"{group_name} | {s}",
+            os.path.join(out_dirs["figs"], f"{prefix}_series_alarm_anomaly_subplots.png"),
+            title=f"[ALVO] {group_name} | {s}",
             operational_state=state,
         )
-
-        # MAE do canal deste sensor (erro de reconstrução por-canal)
-        mae_series_s = pd.Series(mae_per_ch[:, i], index=all_index[: len(mae_per_ch)])
-        failure_times = parse_failure_dates(cfg.FAILURE_DATE)
         plot_signal_mae_anomaly(
             df_all[s], mae_series_s, float(threshold), anomalous_times,
-            os.path.join(out_dirs["figs"], f"signal_mae_anomaly_{safe_name}.png"),
-            title=f"{group_name} | {s}", windows=None, failure_times=failure_times,
+            os.path.join(out_dirs["figs"], f"{prefix}_signal_mae_anomaly.png"),
+            title=f"[ALVO] {group_name} | {s}", windows=None, failure_times=failure_times,
             alarm_times=s_alarm_times, operational_state=state,
         )
         if failure_times:
@@ -557,8 +576,8 @@ def run_one_group(
             wins = [(f - z, f + z, f"falha {pd.Timestamp(f).strftime('%d/%m/%Y %H:%M')}") for f in failure_times]
             plot_signal_mae_anomaly(
                 df_all[s], mae_series_s, float(threshold), anomalous_times,
-                os.path.join(out_dirs["figs"], f"signal_mae_anomaly_zoom_{safe_name}.png"),
-                title=f"{group_name} | {s}", windows=wins, failure_times=failure_times,
+                os.path.join(out_dirs["figs"], f"{prefix}_signal_mae_anomaly_zoom.png"),
+                title=f"[ALVO] {group_name} | {s}", windows=wins, failure_times=failure_times,
                 alarm_times=s_alarm_times, operational_state=state,
             )
             plot_series_failure_zoom(
@@ -566,11 +585,15 @@ def run_one_group(
                 anomalous_times,
                 s_alarm_times,
                 failure_times,
-                os.path.join(out_dirs["figs"], f"series_failure_zoom_{safe_name}.png"),
-                title=f"{group_name} | {s}",
+                os.path.join(out_dirs["figs"], f"{prefix}_series_failure_zoom.png"),
+                title=f"[ALVO] {group_name} | {s}",
                 zoom_days=cfg.FAILURE_ZOOM_DAYS,
                 operational_state=state,
             )
+
+    if target_sensor is None:
+        print(f"[WARN] group={group_name}: sem target_sensor definido — todos os sensores "
+              f"ficaram em figs/contexto/ (nenhum plot em destaque; anomalia = MAE global do grupo)")
 
     eval_stats = eval_alarm_hit_rate(df_alarm_group, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
 
