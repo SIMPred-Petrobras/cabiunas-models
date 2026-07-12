@@ -29,6 +29,7 @@ from .scoring import (
     compute_anomaly_rate_per_day,
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
+    suppress_short_transient_episodes,
 )
 from .plots import (
     plot_loss,
@@ -216,6 +217,24 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+
+    suppressed_episodes = []
+    if cfg.SUPPRESS_SHORT_TRANSIENT_EPISODES:
+        df_point, suppressed_episodes = suppress_short_transient_episodes(
+            df_point, df_all[sensor], state,
+            min_sustained_minutes=cfg.EPISODE_MIN_SUSTAINED_MINUTES,
+            glitch_step_mult=cfg.EPISODE_GLITCH_STEP_MULT,
+            regime_shift_mult=cfg.EPISODE_REGIME_SHIFT_MULT,
+            shutdown_lookahead_minutes=cfg.EPISODE_SHUTDOWN_LOOKAHEAD_MINUTES,
+            lookback_minutes=cfg.EPISODE_LOOKBACK_MINUTES,
+            baseline_window_minutes=cfg.EPISODE_BASELINE_WINDOW_MINUTES,
+        )
+        if suppressed_episodes:
+            print(f"[TRIAGE] {sensor}: {len(suppressed_episodes)} episódio(s) "
+                  f"'transiente_curto' suprimido(s)")
+            pd.DataFrame(suppressed_episodes).to_csv(
+                os.path.join(out_dirs["csv"], "suppressed_transient_episodes.csv"), index=False)
+
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -286,6 +305,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        "suppressed_transient_episodes": len(suppressed_episodes),
         **eval_stats,
     }
     if state is not None:
@@ -513,6 +533,28 @@ def run_one_group(
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+
+    suppressed_episodes = []
+    if cfg.SUPPRESS_SHORT_TRANSIENT_EPISODES:
+        if target_sensor is not None:
+            df_point, suppressed_episodes = suppress_short_transient_episodes(
+                df_point, df_all[target_sensor], state,
+                min_sustained_minutes=cfg.EPISODE_MIN_SUSTAINED_MINUTES,
+                glitch_step_mult=cfg.EPISODE_GLITCH_STEP_MULT,
+                regime_shift_mult=cfg.EPISODE_REGIME_SHIFT_MULT,
+                shutdown_lookahead_minutes=cfg.EPISODE_SHUTDOWN_LOOKAHEAD_MINUTES,
+                lookback_minutes=cfg.EPISODE_LOOKBACK_MINUTES,
+                baseline_window_minutes=cfg.EPISODE_BASELINE_WINDOW_MINUTES,
+            )
+            if suppressed_episodes:
+                print(f"[TRIAGE] group={group_name}: {len(suppressed_episodes)} episódio(s) "
+                      f"'transiente_curto' suprimido(s) (base: {target_sensor})")
+                pd.DataFrame(suppressed_episodes).to_csv(
+                    os.path.join(out_dirs["csv"], "suppressed_transient_episodes.csv"), index=False)
+        else:
+            print(f"[TRIAGE] group={group_name}: sem target_sensor — supressão de "
+                  f"transiente_curto pulada (MAE global não tem sensor único de referência)")
+
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -611,6 +653,7 @@ def run_one_group(
         "POINT_MIN_COUNT": int(effective_cfg.POINT_MIN_COUNT),
         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        "suppressed_transient_episodes": len(suppressed_episodes),
         **eval_stats,
     }
     if state is not None:

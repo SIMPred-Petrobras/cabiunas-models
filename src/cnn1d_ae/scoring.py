@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -154,3 +154,99 @@ def mask_anomaly_seq_by_operational_state(
     out_valid = out[valid] & allowed
     out[valid] = out_valid
     return out
+
+
+def suppress_short_transient_episodes(
+    df_point: pd.DataFrame,
+    raw_series: pd.Series,
+    state: Optional[pd.Series],
+    min_sustained_minutes: float = 30.0,
+    glitch_step_mult: float = 8.0,
+    regime_shift_mult: float = 4.0,
+    shutdown_lookahead_minutes: float = 360.0,
+    lookback_minutes: float = 60.0,
+    baseline_window_minutes: float = 120.0,
+) -> Tuple[pd.DataFrame, List[Dict]]:
+    """Suprime episódios de anomalia (`is_anom_point` contínuo) classificados
+    como "transiente_curto": curtos, fracos, sem assinatura de glitch de
+    sensor, mudança de regime operacional, nem parada em seguida.
+
+    Origem: estudo de assinatura de episódios (`analysis/EPISODE_TRIAGE.md`) —
+    esse bucket concentra 202 episódios "far" contra só 2 "near" da falha real
+    (~1%), o único com risco desprezível de apagar sinal genuíno. Os demais
+    buckets (glitch, mudança de regime, precursor de parada, sustentado sem
+    causa) exigem tratamento próprio (filtro de qualidade de dado, threshold
+    por regime, revisão manual) e NÃO são tocados aqui.
+
+    Retorna o df_point com os episódios suprimidos (is_anom_point -> 0) e a
+    lista dos episódios suprimidos (para auditoria/relatório).
+    """
+    anom = df_point["is_anom_point"].values.astype(bool)
+    if not anom.any():
+        return df_point, []
+
+    raw = pd.to_numeric(raw_series, errors="coerce").sort_index()
+    if state is not None:
+        on_mask = state.reindex(raw.index).fillna("on").eq("on")
+        raw_on = raw[on_mask]
+    else:
+        raw_on = raw
+    diffs_nz = raw_on.diff().abs()
+    diffs_nz = diffs_nz[diffs_nz > 0]
+    typical_step = float(diffs_nz.median()) if len(diffs_nz) else np.nan
+    step = typical_step if np.isfinite(typical_step) and typical_step > 0 else None
+
+    idx = df_point.index
+    grp = (anom != np.r_[False, anom[:-1]]).cumsum()
+    keep_mask = np.ones(len(df_point), dtype=bool)
+    suppressed: List[Dict] = []
+
+    baseline_win = pd.Timedelta(minutes=baseline_window_minutes)
+    lead = pd.Timedelta(minutes=lookback_minutes)
+    lookahead = pd.Timedelta(minutes=shutdown_lookahead_minutes)
+
+    for _, pos in pd.Series(grp).groupby(grp).groups.items():
+        pos = list(pos)
+        if not anom[pos[0]]:
+            continue
+        t0, t1 = idx[pos[0]], idx[pos[-1]]
+        duration_min = (t1 - t0).total_seconds() / 60.0
+        if duration_min >= min_sustained_minutes:
+            continue  # só episódios curtos são candidatos a "transiente_curto"
+
+        before = raw[(raw.index >= t0 - baseline_win) & (raw.index < t0)]
+        after = raw[(raw.index > t1) & (raw.index <= t1 + baseline_win)]
+        lead_in = raw[(raw.index >= t0 - lead) & (raw.index <= t1)]
+        base_before = float(before.median()) if len(before) else np.nan
+        base_after = float(after.median()) if len(after) else np.nan
+        level_shift = (abs(base_after - base_before)
+                       if np.isfinite(base_before) and np.isfinite(base_after) else np.nan)
+        max_step_in_ep = float(lead_in.diff().abs().max()) if len(lead_in) > 1 else 0.0
+
+        frac_off_lead = 0.0
+        if state is not None and len(lead_in):
+            st_lead = state.reindex(lead_in.index).fillna("on")
+            frac_off_lead = float(st_lead.isin(["off_curto", "off_longo", "transiente"]).mean())
+
+        shutdown_after = False
+        if state is not None:
+            st_after = state[(state.index > t1) & (state.index <= t1 + lookahead)]
+            shutdown_after = bool(st_after.isin(["off_curto", "off_longo"]).any())
+
+        is_glitch = step is not None and max_step_in_ep >= glitch_step_mult * step and frac_off_lead >= 0.15
+        is_regime = (not is_glitch and step is not None and np.isfinite(level_shift)
+                     and level_shift >= regime_shift_mult * step)
+
+        if is_glitch or is_regime or shutdown_after:
+            continue  # tratamento próprio (glitch/regime) ou candidato a precursor — não suprime
+
+        keep_mask[pos] = False
+        suppressed.append({
+            "start": str(t0), "end": str(t1),
+            "duration_min": round(duration_min, 1), "n_points": len(pos),
+        })
+
+    if suppressed:
+        df_point = df_point.copy()
+        df_point.loc[~keep_mask, "is_anom_point"] = 0
+    return df_point, suppressed

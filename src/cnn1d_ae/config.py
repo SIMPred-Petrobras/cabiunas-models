@@ -82,6 +82,18 @@ class PipelineConfig:
     TRANSIENT_PADDING_MINUTES: int = 20
     TRANSIENT_DIFF_QUANTILE: float = 0.99
 
+    # Triagem de episódios de anomalia (pós point_rule) — suprime só
+    # "transiente_curto" (curto, fraco, sem glitch/regime/parada em seguida).
+    # Ver analysis/EPISODE_TRIAGE.md: esse bucket concentra 202 far / 2 near
+    # (~1%) — os demais buckets exigem tratamento próprio, não são tocados.
+    SUPPRESS_SHORT_TRANSIENT_EPISODES: bool = True
+    EPISODE_MIN_SUSTAINED_MINUTES: float = 30.0
+    EPISODE_GLITCH_STEP_MULT: float = 8.0
+    EPISODE_REGIME_SHIFT_MULT: float = 4.0
+    EPISODE_SHUTDOWN_LOOKAHEAD_MINUTES: float = 360.0
+    EPISODE_LOOKBACK_MINUTES: float = 60.0
+    EPISODE_BASELINE_WINDOW_MINUTES: float = 120.0
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 

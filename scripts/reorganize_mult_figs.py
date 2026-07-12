@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reorganiza figs/ já baixadas em resultados/Mult_sensor/<eq>/ para o novo
+"""Reorganiza figs/ já baixadas em resultados/experimento_1_mascara_v3/Mult_sensor/<eq>/ para o novo
 padrão: sensor-alvo em destaque (prefixo TARGET_, raiz de figs/) e demais
 sensores de entrada como contexto leve (figs/contexto/, um PNG duplo-eixo
 cada). Não re-treina nem rebaixa nada — só renomeia/move arquivos locais já
@@ -11,7 +11,7 @@ import json
 import shutil
 from pathlib import Path
 
-ROOT = Path("resultados/Mult_sensor")
+ROOT = Path("resultados/experimento_1_mascara_v3/Mult_sensor")
 
 
 def reorganize_equip(eq_dir: Path) -> None:

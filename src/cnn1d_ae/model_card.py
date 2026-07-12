@@ -117,6 +117,8 @@ Modelo **CNN-1D Autoencoder** para detecção de anomalias ({'univariado (por se
 - **Limiar (MAE):** {threshold:.6g}
 - **Regra ponto:** `{cfg.POINT_RULE}` (window={cfg.POINT_WINDOW}, min_count={cfg.POINT_MIN_COUNT})
 - **Máscara operacional:** {op_mask}{ref_line}
+- **Triagem de episódios (transiente_curto):** {'habilitada' if cfg.SUPPRESS_SHORT_TRANSIENT_EPISODES else 'desabilitada'}
+  ({calibration_report.get('suppressed_transient_episodes', 0)} episódio(s) suprimido(s){', ver `csv/suppressed_transient_episodes.csv`' if calibration_report.get('suppressed_transient_episodes', 0) else ''})
 
 ## Avaliação frente às falhas
 

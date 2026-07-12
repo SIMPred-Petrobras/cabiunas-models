@@ -111,6 +111,41 @@ quem".
 
 ---
 
+## v3.1 → v3.2: supressão de episódios "transiente_curto"
+
+**Motivação:** investigação de falsos positivos (`ESTUDO_E_DECISOES_TRANSPETRO.md` §7) —
+triagem de 1.913 episódios de anomalia revelou 5 mecanismos físicos distintos misturados
+no que antes era tratado como "ruído genérico". Só um deles (`transiente_curto`: episódios
+curtos, fracos, sem glitch/mudança de regime/parada em seguida) tem sobreposição
+desprezível com episódios reais perto da falha (~1%) — os outros 4 exigem tratamento
+próprio (filtro de qualidade de dado, threshold por regime, revisão manual) e não são
+tocados.
+
+**Implementação:**
+- `scoring.py::suppress_short_transient_episodes` — extrai episódios contínuos de
+  `is_anom_point`, classifica cada um (glitch/regime/parada/curto) usando o sinal bruto ao
+  redor (baseline antes/depois, salto máximo, estado operacional, parada nas horas
+  seguintes) e zera só os classificados `transiente_curto`.
+- Chamado em `run_one_sensor` e `run_one_group` logo após a máscara operacional, antes de
+  salvar `point_anomalies_all.csv` e dos plots — todo o resto do pipeline (figs, model
+  card, avaliação) já reflete a supressão.
+- Novos campos em `PipelineConfig`: `SUPPRESS_SHORT_TRANSIENT_EPISODES` (default `True`),
+  `EPISODE_MIN_SUSTAINED_MINUTES` (30), `EPISODE_GLITCH_STEP_MULT` (8x), 
+  `EPISODE_REGIME_SHIFT_MULT` (4x), `EPISODE_SHUTDOWN_LOOKAHEAD_MINUTES` (360),
+  `EPISODE_LOOKBACK_MINUTES` (60), `EPISODE_BASELINE_WINDOW_MINUTES` (120).
+- `calibration_report.json` e `MODEL_CARD.md` passam a reportar
+  `suppressed_transient_episodes` (contagem) + `csv/suppressed_transient_episodes.csv`
+  (lista, para auditoria).
+- Validado: a função reproduz exatamente a classificação do estudo exploratório
+  (`scripts/triage_episodes.py`) — mesmo episódio, mesma janela, testado em B-4064A.
+
+**Organização de experimentos:** a partir daqui, cada rodada completa vira uma pasta
+própria em `resultados/experimento_N_<apelido>/`, nunca sobrescrita — ver `EXPERIMENTOS.md`
+na raiz. Os resultados anteriores a esta mudança viraram `experimento_1_mascara_v3/`; os
+configs (`OUTPUT_ROOT`) já apontam para `experimento_2_supressao_transiente/`.
+
+---
+
 ## Histórico de versões
 
 | Versão | Data | Mudança principal |
@@ -118,4 +153,5 @@ quem".
 | v1 | — | pipeline por-sensor + gráficos (loss, geral, zoom) + model cards |
 | v2 | 2026-07-10 | rodada por-sensor e multivariada nos 12 equipamentos (ClearML) |
 | v3 | 2026-07-11 | máscara por equipamento (sensor+limiar+transiente=0), plot duplo-eixo, organização `resultados/` |
-| **v3.1** | **2026-07-12** | plots do grupo: alvo em destaque (`TARGET_`) vs contexto (`figs/contexto/`) |
+| v3.1 | 2026-07-12 | plots do grupo: alvo em destaque (`TARGET_`) vs contexto (`figs/contexto/`) |
+| **v3.2** | **2026-07-12** | supressão de episódios `transiente_curto` + convenção de `experimento_N/` |

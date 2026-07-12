@@ -14,7 +14,7 @@
   "APPLY_HOUR_SHIFT": false,
   "SHIFT_HOURS": 0,
   "LOG_TIME_AUDIT_SAMPLES": 3,
-  "OUTPUT_ROOT": "resultados/Mult_sensor/B-24001B",
+  "OUTPUT_ROOT": "resultados/experimento_2_supressao_transiente/Mult_sensor/B-24001B",
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
   "TRAIN_SOURCE": "raw",
   "SENSOR_LIST": null,

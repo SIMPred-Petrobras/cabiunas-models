@@ -10,7 +10,7 @@ disponíveis nos artefatos csv/.
 
 Uso:
     PYTHONPATH=. python scripts/collect_persensor_results.py \
-        --out resultados/Uni_sensor
+        --out resultados/experimento_1_mascara_v3/Uni_sensor
 """
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def _rebuild_card(eq: str, eq_dir: Path) -> str | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="resultados/Uni_sensor")
+    ap.add_argument("--out", default="resultados/experimento_1_mascara_v3/Uni_sensor")
     ap.add_argument("--only", nargs="*", help="Subconjunto de equipamentos (default: todos concluídos).")
     args = ap.parse_args()
 

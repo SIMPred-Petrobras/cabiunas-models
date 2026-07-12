@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Baixa os produtos das tasks MULTIVARIADAS v3 concluídas no ClearML e monta
-resultados/Mult_sensor/<eq>/: figs/, csv/, MODEL_CARD.md por equipamento e um
+resultados/experimento_1_mascara_v3/Mult_sensor/<eq>/: figs/, csv/, MODEL_CARD.md por equipamento e um
 MODELS_INDEX.md consolidado.
 
 Baixa SOMENTE os artefatos do prefixo do GRUPO (== EQUIPMENT_ID) — a task
@@ -16,7 +16,7 @@ scripts/reorganize_mult_figs.py depois deste script para reorganizar.
 
 Uso:
     PYTHONPATH=. python scripts/collect_multivar_results.py \
-        --out resultados/Mult_sensor
+        --out resultados/experimento_1_mascara_v3/Mult_sensor
 """
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ def rebuild_card(eq: str, eq_dir: Path) -> str | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="resultados/Mult_sensor")
+    ap.add_argument("--out", default="resultados/experimento_1_mascara_v3/Mult_sensor")
     ap.add_argument("--only", nargs="*", help="Subconjunto de equipamentos (default: todos).")
     args = ap.parse_args()
 

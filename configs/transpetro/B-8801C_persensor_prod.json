@@ -14,7 +14,7 @@
   "APPLY_HOUR_SHIFT": false,
   "SHIFT_HOURS": 0,
   "LOG_TIME_AUDIT_SAMPLES": 3,
-  "OUTPUT_ROOT": "runs_transpetro/B-8801C_persensor_prod",
+  "OUTPUT_ROOT": "resultados/experimento_2_supressao_transiente/Uni_sensor/B-8801C",
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
   "TRAIN_SOURCE": "raw",
   "SENSOR_LIST": [

@@ -126,3 +126,53 @@ pressão; ex. B-8802B filtra `Pressão Descarga > 12.9`). Validamos candidatos p
 | `scripts/analyze_operational_mask.py` | recomputa o diagnóstico da máscara |
 | `scripts/choose_status_sensor.py` | recomputa a escolha do sensor de status |
 | `scripts/collect_persensor_results.py` | baixa produtos das tasks + reconstrói cards |
+
+---
+
+## 7. Redução de falsos positivos — assinatura de episódio (2026-07-12)
+
+### 7.1 Diagnóstico
+
+Mesmo com a máscara v3 corrigida, vários equipamentos com "sucesso relativo" (anomalia
+perto da falha real) ainda têm muitos falsos positivos ao longo da série. Investigamos se
+duração/magnitude do MAE ao redor da falha real formam um padrão explorável.
+
+**Achado 1 — corte único de duração/magnitude não funciona.** Agregado (11 equip válidos,
+excluindo B-5401A por MAE degenerada — threshold no chão numérico, equipamento já
+descartado pelo time PdM), episódios `near` da falha são mais longos/fortes que `far`
+(duração mediana 57min vs 20min uni, 97,5min vs 76min mult). Mas **por equipamento o
+padrão é inconsistente** — em B-6511502A, B-4064A, B-3403C, B-8802B o episódio `near` é
+igual ou mais fraco que vários `far`. Um corte global apagaria detecções reais nesses
+casos. Ver `analysis/EPISODE_SIGNATURE_STUDY.md`.
+
+**Achado 2 — o balde "far" não é ruído homogêneo.** Inspecionando visualmente os maiores
+episódios `far` de B-6511502A e B-4064A, achamos **3 mecanismos físicos distintos**
+misturados, cada um exigindo tratamento diferente:
+
+| Mecanismo | O que é | Tratamento correto |
+|---|---|---|
+| `glitch_sensor` | Salto instantâneo implausível (poucos pontos), tipicamente junto de `off_curto`/`transiente` | Filtro de qualidade de dado (despike), não supressão por duração |
+| `mudanca_regime` | Sinal se estabiliza num patamar NOVO (não volta à baseline) — modelo não reconhece o regime | Threshold por regime de carga (item já no backlog da auditoria do time PdM) — **maior bucket, 715 episódios far** |
+| `precursor_parada` | Sinal sustentado, sem salto/mudança de patamar, seguido de parada em poucas horas | **Não suprimir** — candidato a evento real não documentado |
+| `sustentado_sem_causa` | MAE elevado por tempo considerável sem causa visível no bruto | **Não suprimir** — revisão manual/domínio |
+| `transiente_curto` | Sobra: curto e fraco, sem nenhum padrão acima | Único bucket seguro de suprimir (~1% de sobreposição com `near`) |
+
+Triagem automática (validada contra os 5 casos inspecionados visualmente — 100% de
+concordância) em `analysis/EPISODE_TRIAGE.md` + `episodes_{uni,mult}_classified.csv`.
+Proporção near/far por classe (pooled, 1913 episódios): `transiente_curto`=1,0% near,
+`precursor_parada`=4,5%, `glitch_sensor`=4,9%, `mudanca_regime`=5,8%,
+`sustentado_sem_causa`=6,3% — os últimos dois são os **mais arriscados de suprimir**.
+
+### 7.2 Decisão implementada
+
+Implementado na pipeline (`scoring.py::suppress_short_transient_episodes`, ver
+`PIPELINE_REVISADA.md` v3.2): suprime **só** `transiente_curto` (episódios <30min sem
+assinatura de glitch, mudança de regime, ou parada em seguida). Os demais mecanismos
+**não são tocados** — ficam como próximos passos:
+
+1. ~~Suprimir `transiente_curto`~~ — ✅ feito (v3.2).
+2. Threshold por regime para `mudanca_regime` (maior volume, 715 episódios) — pendente.
+3. Filtro de glitch no dado bruto para `glitch_sensor` (487 episódios) — pendente.
+4. Gerar lista de `precursor_parada`/`sustentado_sem_causa` para revisão da manutenção —
+   pendente. Achado bônus: se algum desses episódios for confirmado como evento real, ganhamos
+   mais exemplos de falha para calibrar (quebra a limitação de "1 falha conhecida por equipamento").

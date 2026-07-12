@@ -15,8 +15,8 @@ Classificação por equipamento:
   FRACO   -> nenhuma anomalia em ±10 dias da falha
 
 Multivariado é baixado do ClearML (só os artefatos leves) e fica em
-resultados/raw_multivar_v2/. Por-sensor usa os CSVs já coletados em
-resultados/Uni_sensor/ (dados pesados ficam fora de analysis/, que é só
+resultados/experimento_1_mascara_v3/baseline_v2_mascara_antiga/. Por-sensor usa os CSVs já coletados em
+resultados/experimento_1_mascara_v3/Uni_sensor/ (dados pesados ficam fora de analysis/, que é só
 relatórios/scripts).
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ import pandas as pd
 
 from src.cnn1d_ae.pipeline import parse_failure_dates
 
-PERSENSOR_DIR = Path("resultados/Uni_sensor")
-MULTIVAR_DIR = Path("resultados/raw_multivar_v2")
+PERSENSOR_DIR = Path("resultados/experimento_1_mascara_v3/Uni_sensor")
+MULTIVAR_DIR = Path("resultados/experimento_1_mascara_v3/baseline_v2_mascara_antiga")
 OUT_MD = Path("analysis/COMPARACAO_persensor_vs_multivar.md")
 
 MULTIVAR_TASKS = {
