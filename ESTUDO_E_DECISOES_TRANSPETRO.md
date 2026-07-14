@@ -192,3 +192,29 @@ pela supressão em si. Ver `EXPERIMENTOS.md` para o detalhe completo.
 devem se apoiar no padrão agregado (maioria estável/melhor) em vez de julgar por uma
 única célula que mudou — retreinamento sozinho já introduz variação mesmo sem mudar
 código.
+
+### 7.4 Novo achado: máscara sem persistência apaga precursores reais (2026-07-14)
+
+Inspecionando gráficos perto da falha (pedido do usuário: "persistência do MAE acima do
+limiar" como critério), achamos por acaso um problema mais urgente que os do §7.1-7.2: em
+alguns equipamentos, o **sensor de status oscila violentamente** perto da falha (liga/
+transiente/desliga a cada 1-2 min — plausivelmente a própria falha causando instabilidade
+elétrica). A máscara decide pelo estado no **minuto exato do fim de cada janela de 60min**,
+não pela maioria da janela — com o sensor piscando tanto, praticamente toda sequência cai
+num instante "não-ligado" por acaso, apagando uma detecção que deveria existir mesmo com
+o MAE do sinal-alvo sustentado e claramente elevado.
+
+**Varredura nos 24 modelos** (`scripts/scan_mask_erased_precursors.py`,
+`analysis/MASCARA_APAGA_PRECURSOR_SCAN.md`): bins de 2h dentro de −10d/+2d da falha com
+≥30% das sequências cruzando o threshold, ≤5% sobrevivendo à máscara, e ≥20% do tempo
+com sensor "presente" (on ou transiente, não genuinamente desligado). **6 equipamentos
+distintos afetados** (7 instâncias uni/mult): B-3403C, B-4064A (uni e mult), B-24001B,
+B-402E, B-8801C — vários deles hoje classificados FRACO/PARCIAL justamente por causa
+disso, não por falta de sinal real.
+
+**Causa raiz:** `mask_anomaly_seq_by_operational_state` (`scoring.py`) usa
+`state.reindex(seq_end_idx).eq("on")` — um único ponto no tempo, sem persistência. Direção
+proposta (a validar antes de implementar): trocar para "estado majoritário da janela"
+(ex.: ≥X% da janela em `on`+`transiente` conta como presente), na mesma linha da ideia do
+usuário de usar persistência como critério — só que aplicada na máscara, não (só) no
+score final.
