@@ -176,3 +176,19 @@ assinatura de glitch, mudança de regime, ou parada em seguida). Os demais mecan
 4. Gerar lista de `precursor_parada`/`sustentado_sem_causa` para revisão da manutenção —
    pendente. Achado bônus: se algum desses episódios for confirmado como evento real, ganhamos
    mais exemplos de falha para calibrar (quebra a limitação de "1 falha conhecida por equipamento").
+
+### 7.3 Resultado do experimento_2 (validação em produção, 2026-07-14)
+
+Rodou-se a pipeline v3.2 completa nos 12 equipamentos (uni + mult) e comparou-se contra
+o experimento_1 (`analysis/COMPARACAO_experimento_1_vs_experimento_2.md`,
+`scripts/compare_experiments.py`). De 24 comparações: **12 reduziram ruído sem mudar a
+classe de detecção**, 9 tiveram leve aumento de ruído (classe igual), 2 ficaram
+idênticas, e **1 mudou de classe** (B-4064A uni: PARCIAL→FRACO) — investigado a fundo e
+**confirmado como variância de retreinamento**, não efeito da supressão (os episódios
+suprimidos não têm relação com a janela da falha). Nenhuma detecção real foi perdida
+pela supressão em si. Ver `EXPERIMENTOS.md` para o detalhe completo.
+
+**Lição metodológica:** cada experimento re-treina do zero, então comparações futuras
+devem se apoiar no padrão agregado (maioria estável/melhor) em vez de julgar por uma
+única célula que mudou — retreinamento sozinho já introduz variação mesmo sem mudar
+código.

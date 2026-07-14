@@ -117,6 +117,8 @@ def rebuild_card(eq: str, eq_dir: Path) -> str | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--task-ids", default=str(TASK_IDS_JSON),
+                    help="JSON {equip: task_id} (default: task IDs do experimento_1).")
     ap.add_argument("--out", default="resultados/experimento_1_mascara_v3/Mult_sensor")
     ap.add_argument("--only", nargs="*", help="Subconjunto de equipamentos (default: todos).")
     args = ap.parse_args()
@@ -124,7 +126,7 @@ def main() -> None:
     _ensure_clearml_config()
     from clearml import Task
 
-    ids = json.loads(TASK_IDS_JSON.read_text(encoding="utf-8"))
+    ids = json.loads(Path(args.task_ids).read_text(encoding="utf-8"))
     wanted = args.only or list(ids.keys())
     out_root = Path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)

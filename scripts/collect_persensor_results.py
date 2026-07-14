@@ -10,7 +10,8 @@ disponíveis nos artefatos csv/.
 
 Uso:
     PYTHONPATH=. python scripts/collect_persensor_results.py \
-        --out resultados/experimento_1_mascara_v3/Uni_sensor
+        --task-ids analysis/experimento_2_uni_task_ids.json \
+        --out resultados/experimento_2_supressao_transiente/Uni_sensor
 """
 from __future__ import annotations
 
@@ -27,8 +28,10 @@ from src.cnn1d_ae.config import PipelineConfig, update_cfg_from_dict
 from src.cnn1d_ae.model_card import write_model_card
 from src.cnn1d_ae.pipeline import parse_failure_dates
 
-# EQUIP -> task_id (execução por-sensor de 10/07/2026)
-TASKS = {
+# Default: task IDs da execução por-sensor original (10/07/2026, experimento_1).
+# Para outros experimentos, passe --task-ids apontando pro JSON correspondente
+# (ex.: analysis/experimento_2_uni_task_ids.json).
+DEFAULT_TASKS = {
     "B-0302C": "135e8db1765a472186c97ed992aa1263",
     "B-24001B": "2f8dfd667cad4da993aee2d5c82a0182",
     "B-3403C": "52199deb9d3a4fdabde4e6fbad354044",
@@ -136,9 +139,13 @@ def _rebuild_card(eq: str, eq_dir: Path) -> str | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--task-ids", default=None,
+                    help="JSON {equip: task_id} (default: task IDs do experimento_1, hardcoded).")
     ap.add_argument("--out", default="resultados/experimento_1_mascara_v3/Uni_sensor")
     ap.add_argument("--only", nargs="*", help="Subconjunto de equipamentos (default: todos concluídos).")
     args = ap.parse_args()
+
+    TASKS = json.loads(Path(args.task_ids).read_text(encoding="utf-8")) if args.task_ids else DEFAULT_TASKS
 
     _ensure_clearml_config()
     from clearml import Task
