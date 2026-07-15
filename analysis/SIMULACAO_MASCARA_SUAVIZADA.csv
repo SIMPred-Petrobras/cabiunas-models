@@ -1,0 +1,7 @@
+mode,equip,rate_atual,sm0_recuperados_near,sm0_rate_sim,sm5_recuperados_near,sm5_rate_sim,sm15_recuperados_near,sm15_rate_sim,sm30_recuperados_near,sm30_rate_sim
+uni,B-3403C,2.77,0,5.71,0,6.31,0,7.56,0,8.7
+uni,B-4064A,1.71,0,2.1,0,2.65,0,3.17,0,3.17
+mult,B-4064A,27.31,1632,28.2,1632,28.06,1744,31.01,1816,33.64
+uni,B-24001B,18.04,1536,18.71,1537,18.78,1550,18.98,1553,18.78
+uni,B-402E,0.74,0,0.8,0,1.01,0,7.66,0,11.8
+mult,B-8801C,11.3,721,12.1,710,11.78,700,12.3,749,12.64

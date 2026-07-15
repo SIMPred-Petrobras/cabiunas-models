@@ -146,6 +146,37 @@ configs (`OUTPUT_ROOT`) já apontam para `experimento_2_supressao_transiente/`.
 
 ---
 
+## v3.2 → v3.3: máscara aceita "transiente" — só onde é seguro
+
+**Motivação:** ao inspecionar gráficos perto da falha (persistência do MAE, a pedido do
+usuário), achamos que a máscara operacional apaga precursores reais em 6 equipamentos —
+`mask_anomaly_seq_by_operational_state` decide pelo estado num único ponto no tempo (fim
+da janela de 60min), e quando o sensor de referência oscila (rampa de liga/desliga perto
+da falha), a detecção some. Testamos 3 correções por simulação (janela majoritária,
+suavizar o sensor, aceitar `transiente`) — **todas recuperam o sinal, mas só "aceitar
+transiente" é segura, e só em 2 dos 6 equipamentos** (os outros 4 têm sensor de
+referência cronicamente instável; qualquer afrouxamento explode ruído 7-44x). Ver
+`ESTUDO_E_DECISOES_TRANSPETRO.md` §7.4-7.6 para o detalhe completo dos 3 testes.
+
+**Implementação:**
+- `scoring.py::mask_anomaly_seq_by_operational_state` ganha parâmetro
+  `allow_transiente` (default `False` — comportamento inalterado).
+- Novo campo `PipelineConfig.MASK_ALLOW_TRANSIENTE` (default `False`), repassado nas
+  duas chamadas em `pipeline.py` (`run_one_sensor` e `run_one_group`).
+- **Ativado só em** `B-4064A_mult_v3.json` e `B-8801C_mult_v3.json` (únicos validados
+  seguros por simulação) — `OUTPUT_ROOT` apontando para
+  `resultados/experimento_3_mask_transiente/`. Os outros 22 configs não mudam.
+- Validado: a função real (`scoring.py`) reproduz exatamente o resultado da simulação
+  (mesma taxa de anomalia/dia, testado em B-8801C).
+
+**Lição geral desta investigação:** todo "ajuste único aplicado a todos os
+equipamentos" que testamos nesta pipeline — threshold de máscara fixo, corte de
+duração/magnitude, e agora persistência da máscara — falha pelo mesmo motivo: os 12
+equipamentos têm regimes de ruído muito diferentes entre si. A correção que funciona é
+sempre calibrada (ou pelo menos validada) por equipamento, nunca um número global.
+
+---
+
 ## Histórico de versões
 
 | Versão | Data | Mudança principal |
@@ -154,4 +185,5 @@ configs (`OUTPUT_ROOT`) já apontam para `experimento_2_supressao_transiente/`.
 | v2 | 2026-07-10 | rodada por-sensor e multivariada nos 12 equipamentos (ClearML) |
 | v3 | 2026-07-11 | máscara por equipamento (sensor+limiar+transiente=0), plot duplo-eixo, organização `resultados/` |
 | v3.1 | 2026-07-12 | plots do grupo: alvo em destaque (`TARGET_`) vs contexto (`figs/contexto/`) |
-| **v3.2** | **2026-07-12** | supressão de episódios `transiente_curto` + convenção de `experimento_N/` |
+| v3.2 | 2026-07-12 | supressão de episódios `transiente_curto` + convenção de `experimento_N/` |
+| **v3.3** | **2026-07-14** | máscara aceita `transiente` (só B-4064A mult e B-8801C mult, validado por simulação) |

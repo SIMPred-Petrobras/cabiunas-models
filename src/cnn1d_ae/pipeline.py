@@ -200,6 +200,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             index=df_all_z.index,
             time_steps=cfg.TIME_STEPS,
             state=state,
+            allow_transiente=cfg.MASK_ALLOW_TRANSIENTE,
         )
 
     all_index = df_all_z.index
@@ -514,6 +515,7 @@ def run_one_group(
             index=df_all_z.index,
             time_steps=effective_cfg.TIME_STEPS,
             state=state,
+            allow_transiente=cfg.MASK_ALLOW_TRANSIENTE,
         )
 
     all_index = df_all_z.index

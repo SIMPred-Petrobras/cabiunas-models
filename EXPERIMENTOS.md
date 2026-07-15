@@ -58,9 +58,27 @@ re-treina os modelos do zero, então a comparação mistura o efeito da mudança
 com ruído de retreinamento. Considerar, se possível, reaproveitar pesos já treinados ao
 isolar mudanças futuras de pós-processamento (que não afetam o treino em si).
 
-- **O que NÃO mudou ainda (fica para o experimento_3):** threshold por regime
-  (`mudanca_regime`, maior bucket), filtro de glitch de sensor no dado bruto,
-  revisão manual de `precursor_parada`/`sustentado_sem_causa`.
+- **O que NÃO mudou ainda:** threshold por regime (`mudanca_regime`, maior bucket),
+  filtro de glitch de sensor no dado bruto, revisão manual de
+  `precursor_parada`/`sustentado_sem_causa`.
+
+## experimento_3_mask_transiente (preparado, aguardando decisão de rodar)
+
+- **O que muda:** `MASK_ALLOW_TRANSIENTE=True` — máscara aceita `transiente` como
+  válido (não só `on`). Motivado por: gráficos perto da falha mostrando MAE sustentado
+  sendo apagado pela máscara em rampas de liga/desliga (ver
+  `ESTUDO_E_DECISOES_TRANSPETRO.md` §7.4-7.6).
+- **Testado por simulação em 6 equipamentos** (`scripts/simulate_allow_transiente.py`,
+  `scripts/simulate_majority_mask.py`, `scripts/simulate_smoothed_mask.py`) — só
+  **B-4064A (mult)** e **B-8801C (mult)** recuperam detecção sem explodir ruído; os
+  outros 4 (B-3403C, B-4064A uni, B-402E, B-24001B uni) têm sensor de referência
+  cronicamente instável e pioram com qualquer afrouxamento — **não ativado neles**.
+- **Escopo:** só 2 configs mudaram (`B-4064A_mult_v3.json`, `B-8801C_mult_v3.json`),
+  `OUTPUT_ROOT` apontando para `resultados/experimento_3_mask_transiente/Mult_sensor/`.
+  Os outros 22 modelos ficam idênticos ao experimento_2 (não precisam re-rodar).
+- **Como comparar:** `scripts/compare_experiments.py` entre experimento_2 e
+  experimento_3, só nesses 2 equipamentos (mult) — esperado: hit_rate igual ou melhor,
+  rate/dia com aumento pequeno (<5%, validado por simulação).
 
 ## Convenção para os próximos
 

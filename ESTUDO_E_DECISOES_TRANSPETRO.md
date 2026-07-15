@@ -213,8 +213,46 @@ B-402E, B-8801C — vários deles hoje classificados FRACO/PARCIAL justamente po
 disso, não por falta de sinal real.
 
 **Causa raiz:** `mask_anomaly_seq_by_operational_state` (`scoring.py`) usa
-`state.reindex(seq_end_idx).eq("on")` — um único ponto no tempo, sem persistência. Direção
-proposta (a validar antes de implementar): trocar para "estado majoritário da janela"
-(ex.: ≥X% da janela em `on`+`transiente` conta como presente), na mesma linha da ideia do
-usuário de usar persistência como critério — só que aplicada na máscara, não (só) no
-score final.
+`state.reindex(seq_end_idx).eq("on")` — um único ponto no tempo, sem persistência.
+
+### 7.5 Três correções testadas por simulação — só uma é segura, e não é global
+
+Testamos 3 formas de "dar persistência" à máscara, todas por simulação (reprocessando
+`mae_seq` já salvo, sem re-treinar) nos 6 casos afetados:
+
+1. **Janela majoritária** (`scripts/simulate_majority_mask.py`): trocar "estado no ponto
+   final" por "≥X% da janela em on+transiente" (X=30/50/70%). **Recupera detecção em
+   todos os 6 casos**, mas **explode o ruído geral** em B-3403C (7-9x), B-4064A uni
+   (25-28x) e B-402E (35-44x) — equipamentos cujo sensor de referência é instável o ano
+   inteiro, não só perto da falha.
+2. **Suavizar o sensor de referência** (`scripts/simulate_smoothed_mask.py`, mediana
+   móvel de 5/15/30min antes de classificar estado): **não recupera nada** em B-3403C,
+   B-4064A uni e B-402E — nesses casos o MAE elevado coincide com uma **rampa real de
+   desligamento** (corrente caindo de ~100A pra 0), não com ruído de medição; suavizar
+   não muda a classificação porque a queda é genuína.
+3. **Aceitar "transiente" como válido** (`scripts/simulate_allow_transiente.py`, mesma
+   checagem em 1 ponto, só troca `eq("on")` por `isin(["on","transiente"])`): recupera
+   detecção nos 6 casos, mas **também explode ruído** nos mesmos 4 equipamentos
+   (B-3403C, B-4064A uni, B-402E, B-24001B uni) — e fica **seguro e efetivo** em
+   **B-4064A (mult) e B-8801C (mult)** (ruído sobe <5%, detecção recuperada).
+
+**Conclusão: não existe correção global segura.** Os equipamentos que explodem são os
+mesmos em todo teste — não é a forma da correção que falha, é que o sensor de referência
+deles é cronicamente instável (liga/desliga o tempo todo, o ano inteiro), então qualquer
+afrouxamento da máscara libera ruído histórico, não só o precursor da falha. Isso **bate
+com o que o time PdM já sabia** (`DOC/`): B-4064A é o caso "multi-regime" que eles tratam
+à parte (resíduo de carga), e B-402E foi **descartado** por eles por instrumentação
+insuficiente — a varredura redescobriu, por outro ângulo, os mesmos equipamentos
+problemáticos.
+
+### 7.6 Decisão implementada
+
+`MASK_ALLOW_TRANSIENTE` (novo campo em `PipelineConfig`, default `False`): aceita
+`transiente` como válido na máscara. Implementado em `scoring.py::mask_anomaly_seq_by_
+operational_state` (parâmetro `allow_transiente`), passado pelas duas chamadas em
+`pipeline.py`. **Ativado só onde a simulação validou como seguro:**
+`B-4064A_mult_v3.json` e `B-8801C_mult_v3.json` (`OUTPUT_ROOT` já apontando para
+`resultados/experimento_3_mask_transiente/`). Os outros 22 configs ficam com o
+comportamento atual (default `False`), incluindo os 4 equipamentos onde a correção
+comprovadamente piora (B-3403C, B-4064A uni, B-402E, B-24001B uni) — ficam como
+limitação conhecida, não como bug a perseguir com mais uma tentativa de regra universal.

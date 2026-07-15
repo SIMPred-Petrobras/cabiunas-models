@@ -81,6 +81,13 @@ class PipelineConfig:
     OFF_LONG_MIN_HOURS: float = 24.0
     TRANSIENT_PADDING_MINUTES: int = 20
     TRANSIENT_DIFF_QUANTILE: float = 0.99
+    # Aceita "transiente" (não só "on") como válido na máscara — recupera MAE
+    # sustentado durante rampas de liga/desliga perto da falha real. Validado
+    # (simulação) como seguro só em equipamentos cujo sensor de referência não
+    # é cronicamente instável fora da falha (senão explode falso positivo) —
+    # ver ESTUDO_E_DECISOES_TRANSPETRO.md §7.5. Default False: não muda nada
+    # nos equipamentos onde isso não foi validado.
+    MASK_ALLOW_TRANSIENTE: bool = False
 
     # Triagem de episódios de anomalia (pós point_rule) — suprime só
     # "transiente_curto" (curto, fraco, sem glitch/regime/parada em seguida).

@@ -143,14 +143,21 @@ def mask_anomaly_seq_by_operational_state(
     index: pd.DatetimeIndex,
     time_steps: int,
     state: pd.Series,
+    allow_transiente: bool = False,
 ) -> np.ndarray:
+    """allow_transiente=True aceita também o estado "transiente" (rampas de
+    liga/desliga) como válido, não só "on" — recupera MAE sustentado durante
+    a própria rampa de parada de uma falha. Só é seguro em equipamentos cujo
+    sensor de referência não é cronicamente instável (validado por
+    simulação caso a caso — ver ESTUDO_E_DECISOES_TRANSPETRO.md §7.5)."""
     seq_end_pos = np.arange(time_steps - 1, time_steps - 1 + len(anomaly_seq))
     valid = seq_end_pos < len(index)
     out = anomaly_seq.astype(bool).copy()
     if not valid.any():
         return out
     seq_end_idx = index[seq_end_pos[valid]]
-    allowed = state.reindex(seq_end_idx).fillna("on").eq("on").values
+    ok_states = ["on", "transiente"] if allow_transiente else ["on"]
+    allowed = state.reindex(seq_end_idx).fillna("on").isin(ok_states).values
     out_valid = out[valid] & allowed
     out[valid] = out_valid
     return out
