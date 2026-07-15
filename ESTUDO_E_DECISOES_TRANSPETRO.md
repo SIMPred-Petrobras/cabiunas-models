@@ -284,3 +284,46 @@ Re-simulando com a correção completa nos dados já treinados do experimento_3
 ClearML ainda** — os resultados do experimento_3 acima refletem o comportamento
 pré-bugfix (mais conservador), mas já positivos; o re-treino com a correção completa é
 opcional, pendente de decisão.
+
+### 7.8 B-8801C revertido: o "BOM" era coincidência, não detecção (2026-07-15)
+
+O usuário notou, olhando `TARGET_Vibração Bomba LA_series_with_anomalies.png` do
+experimento_3, que **quase toda partida do equipamento** (não só perto da falha) virou
+um cluster de anomalia — pediu pra quantificar a persistência do MAE acima do limiar
+pra investigar. Quantificação (episódios contínuos de `is_anom_point`, near vs far da
+falha):
+
+| Equip | Duração far (max) | Duração near_48h | Peak MAE far (max) | Peak MAE near_48h |
+|---|---|---|---|---|
+| B-4064A | 111 min | **355 min** | ~0,030 | **0,114** |
+| B-8801C | 223 min | 101-114 min | 0,040 | 0,009-0,023 |
+
+**B-4064A separa limpo** (episódio da falha é 3x mais longo e 3,8x mais forte que
+qualquer falso positivo histórico) — mantido. **B-8801C não separa nada** — os episódios
+perto da falha caem dentro da faixa normal dos 156 falsos positivos históricos (1 a cada
+5,5 dias). Estimativa: qualquer janela aleatória de 4 dias tem ~73% de chance de conter
+um evento parecido por puro acaso — o `hit_rate=1.0` não é evidência confiável de
+detecção real.
+
+**Causa raiz investigada** (pergunta do usuário: "presume-se que tudo antes da falha é
+normal, não deveria dar tantos falsos positivos — por quê dá?"): contei quantos ciclos
+liga/desliga do B-8801C (185 no total) disparam pelo menos 1 ponto de anomalia — **57,8%
+(107/185)**. Não é ~1-5% (coincidência rara) nem ~95-100% (todo transiente é sempre
+anômalo) — é "mais da metade, de forma consistente". Isso indica que **o autoencoder
+não aprendeu a reconstruir bem o regime de transiente como classe** (evento raro e
+rápido frente ao tempo dominante em regime estável), não que cada partida seja uma
+falha real. Máscara/threshold não resolvem isso — é um problema de cobertura do modelo,
+não de onde traçar a régua de decisão.
+
+**Decisão:** revertido `MASK_ALLOW_TRANSIENTE=False` em `B-8801C_mult_v3.json`
+(`OUTPUT_ROOT` de volta para `resultados/experimento_2_supressao_transiente/...` — não
+precisou re-treinar, o resultado do experimento_2 já é o válido). Dados do experimento_3
+para B-8801C preservados em
+`resultados/experimento_3_mask_transiente/Mult_sensor/B-8801C_REVERTIDO_falso_positivo/`
+como referência do problema (não usar como resultado). B-4064A mantém a correção ativa.
+
+**Próximo passo recomendado (ainda não implementado):** threshold/normalização **por
+regime** (transiente vs estável) — item já no backlog (§7.2), agora com evidência mais
+forte de que é a causa raiz, não só um "nice to have". Mais estrutural: dar ao modelo
+mais contexto pra reconstruir o transiente (ex.: sensor de status como feature de
+entrada do próprio autoencoder, não só da máscara).

@@ -91,6 +91,21 @@ na máscara de sequência. Corrigido nos dois pontos do arquivo. Resimulado nos 
 treinados: correção completa traria ganho adicional modesto (B-4064A +1,4% rate,
 B-8801C +10% rate na janela de falha) — **não re-treinado ainda**, opcional.
 
+### ⚠️ B-8801C revertido (2026-07-15)
+
+Usuário notou visualmente que quase toda partida do equipamento virava anomalia, não só
+perto da falha. Quantificação de persistência confirmou: os 156 falsos positivos
+históricos têm a MESMA duração/magnitude dos episódios perto da falha — sem separação.
+`hit_rate=1.0` era coincidência estatística (janela de 4 dias tem ~73% de chance de
+pegar um evento parecido por acaso), não detecção real. Causa raiz: o modelo reconstrói
+mal ~58% de TODOS os ciclos liga/desliga do equipamento (cobertura insuficiente de
+transientes no treino), não é sinal de falha. **Revertido `MASK_ALLOW_TRANSIENTE=False`**
+— config volta a apontar para `resultados/experimento_2_supressao_transiente/...` (não
+precisou re-treinar). Dados do experimento_3 preservados em
+`Mult_sensor/B-8801C_REVERTIDO_falso_positivo/` como referência do problema.
+**B-4064A separa limpo (355min/0,114 vs máx 111min/0,030 histórico) — mantido.**
+Detalhe completo: `ESTUDO_E_DECISOES_TRANSPETRO.md` §7.8.
+
 ## Convenção para os próximos
 
 1. Nomeie a pasta `experimento_N_<apelido-curto-da-mudança>`.

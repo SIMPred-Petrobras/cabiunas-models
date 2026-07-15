@@ -14,7 +14,7 @@
   "APPLY_HOUR_SHIFT": false,
   "SHIFT_HOURS": 0,
   "LOG_TIME_AUDIT_SAMPLES": 3,
-  "OUTPUT_ROOT": "resultados/experimento_3_mask_transiente/Mult_sensor/B-8801C",
+  "OUTPUT_ROOT": "resultados/experimento_2_supressao_transiente/Mult_sensor/B-8801C",
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
   "TRAIN_SOURCE": "raw",
   "SENSOR_LIST": null,
@@ -75,5 +75,5 @@
   "REMOTE_QUEUE": "default",
   "CLEARML_DOCKER_IMAGE": "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime",
   "FAILURE_ZOOM_DAYS": 10,
-  "MASK_ALLOW_TRANSIENTE": true
+  "MASK_ALLOW_TRANSIENTE": false
 }
