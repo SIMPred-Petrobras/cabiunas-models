@@ -256,3 +256,31 @@ operational_state` (parâmetro `allow_transiente`), passado pelas duas chamadas 
 comportamento atual (default `False`), incluindo os 4 equipamentos onde a correção
 comprovadamente piora (B-3403C, B-4064A uni, B-402E, B-24001B uni) — ficam como
 limitação conhecida, não como bug a perseguir com mais uma tentativa de regra universal.
+
+### 7.7 Resultado real do experimento_3 (2 tasks, ClearML) + bugfix encontrado
+
+Rodou-se de fato (não só simulação) `B-4064A_mult_v3.json` e `B-8801C_mult_v3.json` com
+`MASK_ALLOW_TRANSIENTE=True`. Comparado ao experimento_2
+(`analysis/COMPARACAO_experimento_2_vs_experimento_3.md`):
+
+| Equip | Classe (exp2→exp3) | rate/dia (exp2→exp3) |
+|---|---|---|
+| B-4064A (mult) | BOM → BOM | 27,31 → 22,54 (**-17%**) |
+| B-8801C (mult) | BOM → BOM | 11,30 → 10,60 (**-6%**) |
+
+**Detecção mantida (BOM), ruído caiu nos dois** — resultado positivo, sem regressão.
+
+**Bug encontrado ao investigar por que nenhum ponto anômalo aparecia com
+`operational_state=="transiente"`** (esperava alguns, já que a máscara deveria aceitá-los):
+`pipeline.py` tem um **segundo filtro**, no nível de PONTO (após `map_seq_to_point_
+anomalies`), que zerava `is_anom_point` para qualquer estado diferente de `"on"` —
+**sem checar `MASK_ALLOW_TRANSIENTE`**. Ou seja, a config valia só na máscara de
+sequência; o filtro de ponto reforçava a regra antiga por cima, agindo como uma segunda
+trava. Corrigido (mesma condição `ok_states` nos dois pontos de `pipeline.py`).
+
+Re-simulando com a correção completa nos dados já treinados do experimento_3
+(`scripts/simulate_allow_transiente.py`): ganho adicional modesto — B-4064A +2 pontos
+(+1,4% rate), B-8801C +11 pontos (+10% rate) na janela de avaliação. **Não re-rodado no
+ClearML ainda** — os resultados do experimento_3 acima refletem o comportamento
+pré-bugfix (mais conservador), mas já positivos; o re-treino com a correção completa é
+opcional, pendente de decisão.

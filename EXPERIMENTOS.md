@@ -62,23 +62,34 @@ isolar mudanças futuras de pós-processamento (que não afetam o treino em si).
   filtro de glitch de sensor no dado bruto, revisão manual de
   `precursor_parada`/`sustentado_sem_causa`.
 
-## experimento_3_mask_transiente (preparado, aguardando decisão de rodar)
+## experimento_3_mask_transiente (concluído 2026-07-15)
 
-- **O que muda:** `MASK_ALLOW_TRANSIENTE=True` — máscara aceita `transiente` como
+- **O que mudou:** `MASK_ALLOW_TRANSIENTE=True` — máscara aceita `transiente` como
   válido (não só `on`). Motivado por: gráficos perto da falha mostrando MAE sustentado
   sendo apagado pela máscara em rampas de liga/desliga (ver
-  `ESTUDO_E_DECISOES_TRANSPETRO.md` §7.4-7.6).
+  `ESTUDO_E_DECISOES_TRANSPETRO.md` §7.4-7.7).
 - **Testado por simulação em 6 equipamentos** (`scripts/simulate_allow_transiente.py`,
   `scripts/simulate_majority_mask.py`, `scripts/simulate_smoothed_mask.py`) — só
   **B-4064A (mult)** e **B-8801C (mult)** recuperam detecção sem explodir ruído; os
   outros 4 (B-3403C, B-4064A uni, B-402E, B-24001B uni) têm sensor de referência
   cronicamente instável e pioram com qualquer afrouxamento — **não ativado neles**.
 - **Escopo:** só 2 configs mudaram (`B-4064A_mult_v3.json`, `B-8801C_mult_v3.json`),
-  `OUTPUT_ROOT` apontando para `resultados/experimento_3_mask_transiente/Mult_sensor/`.
-  Os outros 22 modelos ficam idênticos ao experimento_2 (não precisam re-rodar).
-- **Como comparar:** `scripts/compare_experiments.py` entre experimento_2 e
-  experimento_3, só nesses 2 equipamentos (mult) — esperado: hit_rate igual ou melhor,
-  rate/dia com aumento pequeno (<5%, validado por simulação).
+  `OUTPUT_ROOT` em `resultados/experimento_3_mask_transiente/Mult_sensor/`. Os outros 22
+  modelos ficam idênticos ao experimento_2 (não precisaram re-rodar).
+
+### Resultado (2 tasks reais, `analysis/COMPARACAO_experimento_2_vs_experimento_3.md`)
+
+| Equip | Classe (exp2→exp3) | rate/dia (exp2→exp3) |
+|---|---|---|
+| B-4064A (mult) | BOM → BOM | 27,31 → 22,54 (-17%) |
+| B-8801C (mult) | BOM → BOM | 11,30 → 10,60 (-6%) |
+
+Detecção mantida, ruído caiu nos dois. **Bug encontrado e corrigido no meio do caminho:**
+`pipeline.py` tinha um segundo filtro (nível de ponto, pós point-rule) que ainda exigia
+`operational_state=="on"` estrito, ignorando `MASK_ALLOW_TRANSIENTE` — a config só valia
+na máscara de sequência. Corrigido nos dois pontos do arquivo. Resimulado nos dados já
+treinados: correção completa traria ganho adicional modesto (B-4064A +1,4% rate,
+B-8801C +10% rate na janela de falha) — **não re-treinado ainda**, opcional.
 
 ## Convenção para os próximos
 

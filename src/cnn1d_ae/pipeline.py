@@ -217,7 +217,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     )
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
-        df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+        ok_states = ["on", "transiente"] if cfg.MASK_ALLOW_TRANSIENTE else ["on"]
+        df_point.loc[~df_point["operational_state"].isin(ok_states), "is_anom_point"] = 0
 
     suppressed_episodes = []
     if cfg.SUPPRESS_SHORT_TRANSIENT_EPISODES:
@@ -534,7 +535,8 @@ def run_one_group(
     )
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
-        df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+        ok_states = ["on", "transiente"] if cfg.MASK_ALLOW_TRANSIENTE else ["on"]
+        df_point.loc[~df_point["operational_state"].isin(ok_states), "is_anom_point"] = 0
 
     suppressed_episodes = []
     if cfg.SUPPRESS_SHORT_TRANSIENT_EPISODES:

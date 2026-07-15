@@ -75,7 +75,14 @@ def run_case(mode: str, eq: str) -> dict:
     t48 = seq_end_times[np.isin(seq_end_pos[valid], np.where(near48_mask)[0])]
     t10 = seq_end_times[np.isin(seq_end_pos[valid], np.where(near10_mask)[0])]
 
-    def eval_point_df(df_point):
+    def eval_point_df(df_point, allow_transiente: bool):
+        # replica o SEGUNDO filtro (nível de ponto) que pipeline.py aplica após
+        # map_seq_to_point_anomalies — precisa respeitar o mesmo allow_transiente,
+        # senão a simulação fica mais otimista que a produção (bug já corrigido).
+        st_pt = state.reindex(df_point.index).fillna("on")
+        ok = ["on", "transiente"] if allow_transiente else ["on"]
+        df_point = df_point.copy()
+        df_point.loc[~st_pt.isin(ok), "is_anom_point"] = 0
         return (int(df_point.reindex(t48)["is_anom_point"].fillna(0).sum()),
                 int(df_point.reindex(t10)["is_anom_point"].fillna(0).sum()),
                 float(df_point["is_anom_point"].sum()) / n_days)
@@ -88,12 +95,12 @@ def run_case(mode: str, eq: str) -> dict:
     allowed_atual[valid2] = state.reindex(pt_idx[seq_end_pos2[valid2]]).fillna("on").eq("on").values
     anomaly_seq_atual = anomaly_seq_raw & allowed_atual
     df_atual = map_seq_to_point_anomalies(anomaly_seq_atual, pt_idx, time_steps, point_rule, point_window, point_min_count)
-    hit48_atual, hit10_atual, rate_atual = eval_point_df(df_atual)
+    hit48_atual, hit10_atual, rate_atual = eval_point_df(df_atual, allow_transiente=False)
 
-    # candidato: aceita "transiente" também
+    # candidato: aceita "transiente" também (nos dois níveis, seq e ponto)
     anomaly_seq_cand = mask_allow_transiente(anomaly_seq_raw, pt_idx, time_steps, state)
     df_cand = map_seq_to_point_anomalies(anomaly_seq_cand, pt_idx, time_steps, point_rule, point_window, point_min_count)
-    hit48_cand, hit10_cand, rate_cand = eval_point_df(df_cand)
+    hit48_cand, hit10_cand, rate_cand = eval_point_df(df_cand, allow_transiente=True)
 
     return {
         "mode": mode, "equip": eq,
