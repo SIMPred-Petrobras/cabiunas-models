@@ -357,6 +357,28 @@ def apply_debounce(anomaly_seq: np.ndarray, n_points: int) -> np.ndarray:
     return (rolling >= n).fillna(False).to_numpy()
 
 
+def filter_short_anomaly_runs(anomaly_seq: np.ndarray, min_steps: int) -> np.ndarray:
+    """Remove runs consecutivos de anomaly_seq=True com comprimento < min_steps.
+    min_steps <= 1 é no-op. Reduz FP de curta duração sem afetar episódios sustentados.
+    """
+    if min_steps <= 1:
+        return np.asarray(anomaly_seq, dtype=bool)
+    arr = np.asarray(anomaly_seq, dtype=bool).copy()
+    i = 0
+    n = len(arr)
+    while i < n:
+        if arr[i]:
+            j = i
+            while j < n and arr[j]:
+                j += 1
+            if j - i < min_steps:
+                arr[i:j] = False
+            i = j
+        else:
+            i += 1
+    return arr
+
+
 def map_seq_to_point_anomalies(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,

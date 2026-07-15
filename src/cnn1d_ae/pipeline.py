@@ -45,6 +45,7 @@ from .scoring import (
     compute_anomaly_rate_per_day,
     evaluate_alarm_detection,
     compute_monthly_mae_drift,
+    filter_short_anomaly_runs,
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
 )
@@ -494,6 +495,11 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         if n_suppressed:
             print(f"[GRAD-SPIKE-SCORE] {sensor}: {n_suppressed} sequências suprimidas no scoring.")
         anomaly_seq = anomaly_seq & ~seq_spike
+
+    if getattr(cfg, "MIN_ANOMALY_RUN_STEPS", 0) > 1:
+        _before_run = int(np.asarray(anomaly_seq).sum())
+        anomaly_seq = filter_short_anomaly_runs(anomaly_seq, cfg.MIN_ANOMALY_RUN_STEPS)
+        print(f"[MIN-RUN] min_steps={cfg.MIN_ANOMALY_RUN_STEPS}: {_before_run} -> {int(np.asarray(anomaly_seq).sum())} sequências")
 
     all_index = df_all_z.index
     df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq, stride=cfg.STRIDE)
