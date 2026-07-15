@@ -1,0 +1,57 @@
+{
+  "sensors": [
+    "T5_AVG_A",
+    "TC382_01_A",
+    "TC382_02_A",
+    "TC382_03_A",
+    "TC382_04_A",
+    "TC382_05_A",
+    "TC382_06_A"
+  ],
+  "feature_columns": [
+    "T5_AVG_A",
+    "TC382_01_A",
+    "TC382_02_A",
+    "TC382_03_A",
+    "TC382_04_A",
+    "TC382_05_A",
+    "TC382_06_A"
+  ],
+  "model_file": "model.keras",
+  "model_arch": "dense",
+  "task_id": "8de61587255943d88b42a868d7acdc25",
+  "time_steps": 96,
+  "stride": 10,
+  "normalize_mode": "zscore",
+  "center": {
+    "T5_AVG_A": 629.1915280239522,
+    "TC382_01_A": 637.4258794178619,
+    "TC382_02_A": 640.4503208627672,
+    "TC382_03_A": 657.9005652096281,
+    "TC382_04_A": 591.0053880487087,
+    "TC382_05_A": 635.1685445103172,
+    "TC382_06_A": 613.7727904486699
+  },
+  "scale": {
+    "T5_AVG_A": 81.64441470366265,
+    "TC382_01_A": 81.7842532193032,
+    "TC382_02_A": 82.9081690946145,
+    "TC382_03_A": 85.35075340477671,
+    "TC382_04_A": 77.69735202203867,
+    "TC382_05_A": 83.13567363743503,
+    "TC382_06_A": 79.66493854556698
+  },
+  "clip_bounds": {},
+  "threshold": 2.282316323518753,
+  "thresh_mode": "target_rate",
+  "running_col": "NGP_A",
+  "running_threshold": 50.0,
+  "point_rule": "k_of_window",
+  "point_window": 60,
+  "point_min_count": 8,
+  "production_alerting": {
+    "half_life_hours": 4.0,
+    "ewma_abs_threshold": 0.07488948529756144,
+    "debounce_hours": 8.0
+  }
+}
