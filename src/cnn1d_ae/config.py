@@ -213,6 +213,10 @@ class PipelineConfig:
     # 0/1 = desligado. Aplicado depois da política de alarme, antes do mapeamento p/ ponto.
     DEBOUNCE_POINTS: int = 0
 
+    # Filtro de episódio curto: remove runs de anomaly_seq com duração < min_steps sequências.
+    # 0/1 = desligado. Exemplo: stride=10, 30s/step → 3 steps ≈ 10 min entre extremos do run.
+    MIN_ANOMALY_RUN_STEPS: int = 0
+
     # Threshold por banda de regime de carga. O erro de reconstrução do AE depende
     # da carga: regimes raros (ex: carga alta) têm baseline de erro maior, gerando
     # FP com um threshold global único. Calibra um threshold (THRESH_MODE) separado

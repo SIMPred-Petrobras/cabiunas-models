@@ -43,6 +43,7 @@ from .scoring import (
     apply_adaptive_monthly_threshold,
     apply_rolling_percentile_threshold,
     map_seq_to_point_anomalies,
+    filter_short_anomaly_runs,
     build_operational_state_from_running,
     mask_anomaly_seq_by_operational_state,
     build_sequence_scores_df,
@@ -422,6 +423,11 @@ def run_pipeline_multivariado(
         n_after = int(np.asarray(anomaly_seq).sum())
         print(f"[OP-MASK] {cfg.RUNNING_COL} (proxy NGP_A) buffer={cfg.TRANSIENT_PADDING_MINUTES}min: "
               f"anomalias {n_before} -> {n_after} (removidas {n_before - n_after})")
+
+    if getattr(cfg, "MIN_ANOMALY_RUN_STEPS", 0) > 1:
+        _before_run = int(np.asarray(anomaly_seq).sum())
+        anomaly_seq = filter_short_anomaly_runs(anomaly_seq, cfg.MIN_ANOMALY_RUN_STEPS)
+        print(f"[MIN-RUN] min_steps={cfg.MIN_ANOMALY_RUN_STEPS}: {_before_run} -> {int(np.asarray(anomaly_seq).sum())} sequências")
 
     # ------------------------------------------------------------------
     # 8c. Camada preditiva: health-index EWMA + curva lead-time × FA/dia
