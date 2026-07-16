@@ -274,6 +274,11 @@ class PipelineConfig:
     PREDICTIVE_EWMA_HALF_LIFE_HOURS_PER_SENSOR: dict = field(default_factory=dict)
     PREDICTIVE_ALERT_DEBOUNCE_HOURS: float = 8.0
     PREDICTIVE_FA_BUDGET_PER_DAY: float = 1.0
+    # Grade de thresholds mean+y·σ para a curva preditiva (SPC / Shewhart).
+    # y_min=0.5 → top ~31% do EWMA em ON; y_max=5 → top ~0.003%.
+    # O pipeline seleciona o y ótimo por recall máximo sob fa_budget.
+    PREDICTIVE_SIGMA_Y_MIN: float = 0.5
+    PREDICTIVE_SIGMA_Y_MAX: float = 5.0
 
     # Sistema tier de alertas (per_sensor mode): 3 niveis baseados em q e k votacao.
     # Calibrado por experimentacao (improve_voting_high_q.py): warn=monitoramento,
