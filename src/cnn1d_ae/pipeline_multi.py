@@ -193,8 +193,15 @@ def run_pipeline_multivariado(
     if df_all.isna().any().any():
         df_all = df_all.ffill().bfill().fillna(0.0)
 
+    # Restringe alarmes aos sensores do modelo: evita que alarmes de pressão/vibração/
+    # instrumentação contaminem a exclusão de treino e a métrica preditiva de temperatura.
+    if "Tag" in df_alarm.columns and sensors_ok:
+        _n_before = len(df_alarm)
+        df_alarm = df_alarm[df_alarm["Tag"].astype(str).isin(sensors_ok)].copy()
+        print(f"[ALARM-FILTER] {len(df_alarm)}/{_n_before} alarmes dos sensores do modelo")
+
     # ------------------------------------------------------------------
-    # 3. Máscara de exclusão combinada (alarmes de TODOS os sensores)
+    # 3. Máscara de exclusão combinada (alarmes dos sensores do modelo)
     # ------------------------------------------------------------------
     all_alarm_times = pd.to_datetime(
         df_alarm["Data da Ocorrencia"], errors="coerce"
