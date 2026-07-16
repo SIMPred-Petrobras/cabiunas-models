@@ -531,6 +531,8 @@ def run_pipeline_multivariado(
                     incident_seconds=inc_seconds.astype(float),
                     horizon_hours=float(h),
                     debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
+                    sigma_y_min=getattr(cfg, "PREDICTIVE_SIGMA_Y_MIN", 0.5),
+                    sigma_y_max=getattr(cfg, "PREDICTIVE_SIGMA_Y_MAX", 5.0),
                 )
             else:
                 curve = compute_predictive_curve(
@@ -540,6 +542,8 @@ def run_pipeline_multivariado(
                     incident_seconds=inc_seconds.astype(float),
                     horizon_hours=float(h),
                     debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
+                    sigma_y_min=getattr(cfg, "PREDICTIVE_SIGMA_Y_MIN", 0.5),
+                    sigma_y_max=getattr(cfg, "PREDICTIVE_SIGMA_Y_MAX", 5.0),
                 )
             curves[float(h)] = curve
             op = pick_operating_point(curve, cfg.PREDICTIVE_FA_BUDGET_PER_DAY)

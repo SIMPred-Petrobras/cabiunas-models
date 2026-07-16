@@ -101,8 +101,13 @@ def compute_predictive_curve(
     horizon_hours: float,
     debounce_hours: float = 8.0,
     n_threshold_steps: int = 40,
+    sigma_y_min: float = 0.5,
+    sigma_y_max: float = 5.0,
 ) -> pd.DataFrame:
-    """Para uma malha de thresholds, computa (recall, fa_per_day, lead_h, n_episodes).
+    """Para uma malha de thresholds mean+y·σ, computa (recall, fa_per_day, lead_h, n_episodes).
+
+    A grade varre y em [sigma_y_min, sigma_y_max]: threshold = μ + y·σ do EWMA em ON.
+    Interpretação direta (SPC / Shewhart): y=2 dispara no top ~2.3% do regime normal.
 
     - Incidente "pego" se ha alerta ATIVO em [t_inc - horizon, t_inc].
     - Lead = (t_inc - primeiro alerta na janela) em horas.
@@ -118,11 +123,15 @@ def compute_predictive_curve(
     valid_ew = ew[runfull]
     if valid_ew.size == 0:
         return pd.DataFrame()
-    grid = np.quantile(valid_ew, np.linspace(0.20, 0.999, int(n_threshold_steps)))
+    mu  = float(valid_ew.mean())
+    q25, q75 = np.percentile(valid_ew, [25, 75])
+    sig = max(float(q75 - q25) / 1.35, 1e-9)  # IQR-based σ robusto a outliers de anomalia
+    y_vals = np.linspace(float(sigma_y_min), float(sigma_y_max), int(n_threshold_steps))
+    grid   = mu + y_vals * sig
     H = float(horizon_hours) * 3600.0
     deb = float(debounce_hours) * 3600.0
     rows = []
-    for thr in grid:
+    for y, thr in zip(y_vals, grid):
         alert = (ew >= thr) & runfull
         idx = np.where(alert)[0]
         episodes = _detect_episodes(idx, t_s, deb)
@@ -142,6 +151,7 @@ def compute_predictive_curve(
                 fa += 1
         rows.append(dict(
             threshold=float(thr),
+            y_sigma=float(y),
             recall=float(recall),
             fa_per_day=float(fa / span_days),
             median_lead_hours=float(np.median(leads)) if leads else 0.0,
@@ -158,20 +168,18 @@ def compute_predictive_curve_per_sensor(
     horizon_hours: float,
     debounce_hours: float = 8.0,
     n_threshold_steps: int = 40,
+    sigma_y_min: float = 0.5,
+    sigma_y_max: float = 5.0,
 ) -> pd.DataFrame:
-    """Curva preditiva para o backend per_sensor (OR-de-quantile entre N sensores).
+    """Curva preditiva para o backend per_sensor (OR-de-sigma entre N sensores).
 
-    Diferenca do compute_predictive_curve (1 sinal escalar): aqui cada sensor tem
-    o SEU PROPRIO threshold no quantile q da SUA propria distribuicao (em running).
+    Cada sensor tem o SEU PROPRIO threshold = μ_j + y·σ_j (SPC / Shewhart).
     Alerta dispara se QUALQUER sensor cruzar o seu proprio threshold (operacao OR).
-
-    Replica a semantica do experimento local que validou per_sensor sobre multi
-    (+7pp recall a 8h, FA/dia 5x menor) — algo que MAX-combined nao captura
-    porque sensores tem escalas de MAE muito diferentes.
+    A grade varre y em [sigma_y_min, sigma_y_max]: interpretavel e escala-livre.
 
     per_sensor_health: shape (n_seq, n_sensors), ewma do MAE de cada sensor.
-    Retorna DataFrame com cols (threshold, recall, fa_per_day, median_lead_hours,
-    n_episodes). 'threshold' aqui e o quantile q usado por sensor.
+    Retorna DataFrame com cols (threshold, y_sigma, recall, fa_per_day,
+    median_lead_hours, n_episodes). 'threshold' = y usado (escala-livre p/ OR).
     """
     health = np.asarray(per_sensor_health, dtype=float)
     runfull = np.asarray(seq_running_full, dtype=bool)
@@ -182,16 +190,21 @@ def compute_predictive_curve_per_sensor(
     span_days = max((t_s.max() - t_s.min()) / 86400.0, 1e-9)
     n_seq, n_sens = health.shape
 
-    qs = np.linspace(0.20, 0.999, int(n_threshold_steps))
+    # μ e σ por sensor (calculados em running)
+    mu_per  = np.array([float(health[runfull, j].mean()) if runfull.any() else 0.0
+                        for j in range(n_sens)])
+    sig_per = np.array([
+        max(float(np.percentile(health[runfull, j], 75) - np.percentile(health[runfull, j], 25)) / 1.35, 1e-9)
+        if runfull.any() else 1e-9
+        for j in range(n_sens)
+    ])
+
+    y_vals = np.linspace(float(sigma_y_min), float(sigma_y_max), int(n_threshold_steps))
     H = float(horizon_hours) * 3600.0
     deb = float(debounce_hours) * 3600.0
     rows = []
-    for q in qs:
-        # threshold por sensor no q-esimo quantile do seu proprio EWMA em running
-        per_sensor_thr = np.empty(n_sens, dtype=float)
-        for j in range(n_sens):
-            valid = health[runfull, j]
-            per_sensor_thr[j] = float(np.quantile(valid, q)) if valid.size else float("inf")
+    for y in y_vals:
+        per_sensor_thr = mu_per + y * sig_per
         # alerta OR: qualquer sensor acima do seu threshold
         alert = ((health >= per_sensor_thr[None, :]).any(axis=1)) & runfull
         idx = np.where(alert)[0]
@@ -211,7 +224,8 @@ def compute_predictive_curve_per_sensor(
             if not useful:
                 fa += 1
         rows.append(dict(
-            threshold=float(q),         # ja em [0,1] (quantile global)
+            threshold=float(y),          # y é escala-livre; thresholds absolutos variam por sensor
+            y_sigma=float(y),
             recall=float(recall),
             fa_per_day=float(fa / span_days),
             median_lead_hours=float(np.median(leads)) if leads else 0.0,
