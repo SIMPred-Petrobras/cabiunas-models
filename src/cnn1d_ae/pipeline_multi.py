@@ -232,6 +232,13 @@ def run_pipeline_multivariado(
     print(f"[MULTI] Dados normais (treino): {len(df_normal):,} pts "
           f"({100*len(df_normal)/max(len(df_all),1):.1f}% do total)")
 
+    if cfg.TRAIN_END_DATE:
+        cutoff = pd.Timestamp(cfg.TRAIN_END_DATE, tz=df_normal.index.tz)
+        n_before = len(df_normal)
+        df_normal = df_normal[df_normal.index <= cutoff]
+        print(f"[TRAIN_END_DATE] treino restrito a ≤{cfg.TRAIN_END_DATE} "
+              f"({len(df_normal)}/{n_before} pts normais mantidos)")
+
     if len(df_normal) < cfg.TIME_STEPS + 10:
         return {"skipped": True, "reason": "poucos dados normais após exclusão"}
 
