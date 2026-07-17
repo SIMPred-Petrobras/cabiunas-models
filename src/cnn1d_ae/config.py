@@ -263,6 +263,10 @@ class PipelineConfig:
     # Lista vazia = todas as prioridades (todos os alarmes sao considerados reais
     # pela operacao). Filtre por prioridade so se houver uma curadoria explicita.
     PREDICTIVE_INCIDENT_PRIORITY: List[str] = field(default_factory=list)
+    # Lista de condições de alarme que contam como incidente (ex: ["HI","HIHI"]).
+    # Lista vazia = todas as condições não-OK. Use ["HI","HIHI"] para excluir UNDER
+    # (desligamentos globais) e avaliar apenas anomalias térmicas genuínas.
+    PREDICTIVE_INCIDENT_CONDITIONS: List[str] = field(default_factory=list)
     PREDICTIVE_HORIZONS_HOURS: List[float] = field(
         default_factory=lambda: [8.0, 24.0, 72.0]
     )
