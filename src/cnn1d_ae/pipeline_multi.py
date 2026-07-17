@@ -453,9 +453,11 @@ def run_pipeline_multivariado(
     # (para mapeamento sequencia->ponto e inclusao no df_point)
     tier_anomaly_seqs: dict = {}
     if cfg.ENABLE_PREDICTIVE_LAYER:
+        _inc_conditions = getattr(cfg, "PREDICTIVE_INCIDENT_CONDITIONS", []) or None
         incidents = extract_incidents(
             df_alarm,
             priorities=cfg.PREDICTIVE_INCIDENT_PRIORITY,
+            conditions=_inc_conditions,
             incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
         )
         # Filtra ao range dos dados dos sensores: incidentes fora dessa janela

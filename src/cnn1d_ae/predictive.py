@@ -16,17 +16,17 @@ import pandas as pd
 def extract_incidents(
     df_alarm: pd.DataFrame,
     priorities: Optional[Iterable[str]] = None,
+    conditions: Optional[Iterable[str]] = None,
     incident_gap_hours: float = 4.0,
 ) -> pd.DatetimeIndex:
     """Extrai timestamps de incidentes genuinos a partir do df_alarm.
 
     Filtros aplicados (em ordem):
     1. condicao do alarme != 'OK' (descarta clears que nao sao onsets reais);
-    2. opcionalmente filtra por prioridade (HIGH/MEDIUM/LOLO = falha genuina);
-    3. dedup: onsets separados por <= incident_gap_hours sao o mesmo incidente.
-
-    Quando a operacao entregar a lista curada de tags, basta usa-la como filtro
-    adicional (ou substituir priorities por uma whitelist de tags).
+    2. opcionalmente filtra por condicao (ex: ["HI","HIHI"] exclui UNDER que
+       sao desligamentos globais, nao anomalias termicas);
+    3. opcionalmente filtra por prioridade;
+    4. dedup: onsets separados por <= incident_gap_hours sao o mesmo incidente.
     """
     if "Data da Ocorrencia" not in df_alarm.columns:
         return pd.DatetimeIndex([])
@@ -34,6 +34,8 @@ def extract_incidents(
     mask = ts.notna()
     if "Condição do Alarme" in df_alarm.columns:
         mask &= df_alarm["Condição do Alarme"].astype(str) != "OK"
+    if conditions:
+        mask &= df_alarm["Condição do Alarme"].astype(str).isin(list(conditions))
     if priorities and "Prioridade" in df_alarm.columns:
         mask &= df_alarm["Prioridade"].astype(str).isin(list(priorities))
     sel = ts[mask].sort_values().reset_index(drop=True)
