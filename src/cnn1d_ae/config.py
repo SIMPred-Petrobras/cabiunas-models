@@ -135,6 +135,11 @@ class PipelineConfig:
     # garantindo que dados posteriores só entrem no scoring, nunca no treino.
     TRAIN_END_DATE: Optional[str] = None
 
+    # Corte inferior da janela de treino (backcast evaluation).
+    # Quando definido (ex: "2025-01-01"), df_normal é filtrado a partir dessa data;
+    # dados anteriores só entram no scoring, nunca no treino.
+    TRAIN_START_DATE: Optional[str] = None
+
     # Coluna de estado operacional direta (ex: "RUNNING_A").
     # Quando definida, substitui a detecção por limiar: ON = coluna > RUNNING_THRESHOLD.
     # Se None, usa OFF_ABS_THRESHOLD / OFF_VALUE_QUANTILE como antes.
