@@ -49,6 +49,12 @@ from .scoring import (
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
 )
+from .predictive import (
+    extract_incidents,
+    compute_health_index_ewma,
+    compute_predictive_curve,
+    pick_operating_point,
+)
 from .plots import (
     plot_loss,
     plot_hist_mae,
@@ -296,6 +302,13 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         n_before = len(df_normal)
         df_normal = df_normal[df_normal.index <= cutoff]
         print(f"[TRAIN_END_DATE] {sensor}: treino restrito a ≤{cfg.TRAIN_END_DATE} "
+              f"({len(df_normal)}/{n_before} pontos normais mantidos)")
+
+    if getattr(cfg, "TRAIN_START_DATE", None):
+        cutoff_lo = pd.Timestamp(cfg.TRAIN_START_DATE, tz=df_normal.index.tz)
+        n_before = len(df_normal)
+        df_normal = df_normal[df_normal.index >= cutoff_lo]
+        print(f"[TRAIN_START_DATE] {sensor}: treino restrito a ≥{cfg.TRAIN_START_DATE} "
               f"({len(df_normal)}/{n_before} pontos normais mantidos)")
 
     if len(df_normal) < cfg.TIME_STEPS + 10:
@@ -576,6 +589,89 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         operational_state=state,
     )
 
+    # ------------------------------------------------------------------
+    # Camada preditiva (métrica de produção): EWMA do MAE → episódios com
+    # debounce → recall sobre incidentes genuínos (PREDICTIVE_INCIDENT_CONDITIONS,
+    # gap 4h, onset em ON) no ponto de operação sob orçamento de FA/dia.
+    # É a métrica PRINCIPAL do summary; o hit_rate pontual abaixo é debug
+    # (threshold fixo, sem EWMA, denominador com todas as linhas de alarme).
+    # ------------------------------------------------------------------
+    predictive_summary: dict = {}
+    pred_headline: dict = {}
+    if cfg.ENABLE_PREDICTIVE_LAYER:
+        incidents = extract_incidents(
+            df_alarm_sensor,
+            priorities=cfg.PREDICTIVE_INCIDENT_PRIORITY,
+            conditions=getattr(cfg, "PREDICTIVE_INCIDENT_CONDITIONS", []) or None,
+            incident_gap_hours=cfg.ALARM_F2_INCIDENT_GAP_HOURS,
+        )
+        if len(incidents):
+            _idx_tz = getattr(all_index, "tz", None)
+            if incidents.tz is None and _idx_tz is not None:
+                incidents = incidents.tz_localize(_idx_tz)
+            elif incidents.tz is not None and _idx_tz is None:
+                incidents = incidents.tz_localize(None)
+            n_total = len(incidents)
+            incidents = incidents[(incidents >= all_index.min()) & (incidents <= all_index.max())]
+            n_range = len(incidents)
+            # Onset em OFF: fora do escopo do modelo (máscara operacional) — sai do denominador
+            if state is not None and len(incidents):
+                on_at_inc = state.reindex(incidents, method="nearest").eq("on").to_numpy()
+                incidents = incidents[on_at_inc]
+            print(f"[PRED] {sensor}: incidentes genuinos={n_total} no_range={n_range} ON={len(incidents)}")
+        if len(incidents):
+            stride_int = max(1, int(cfg.STRIDE))
+            seq_starts = np.arange(len(mae_seq_all)) * stride_int
+            seq_ends_pos = np.clip(seq_starts + cfg.TIME_STEPS - 1, 0, len(all_index) - 1)
+            seq_end_seconds = pd.DatetimeIndex(all_index[seq_ends_pos]).values.astype("datetime64[s]").astype("int64")
+            if state is not None:
+                rv = state.eq("on").to_numpy(dtype=float)
+                seq_run_frac = np.array([rv[s:s + cfg.TIME_STEPS].mean() for s in seq_starts])
+            else:
+                seq_run_frac = np.ones(len(mae_seq_all))
+            seq_run_full = seq_run_frac >= 0.999
+            dt_seconds = stride_int * _infer_sampling_interval_seconds(all_index)
+            _hl = (cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS_PER_SENSOR or {}).get(
+                sensor, cfg.PREDICTIVE_EWMA_HALF_LIFE_HOURS)
+            health_ewma = compute_health_index_ewma(
+                mae_seq_all, seq_run_frac, half_life_hours=float(_hl), dt_seconds=dt_seconds)
+            inc_seconds = pd.DatetimeIndex(incidents).values.astype("datetime64[s]").astype("int64").astype(float)
+            for h in cfg.PREDICTIVE_HORIZONS_HOURS:
+                curve = compute_predictive_curve(
+                    health_ewma=health_ewma,
+                    seq_running_full=seq_run_full,
+                    t_end_seconds=seq_end_seconds.astype(float),
+                    incident_seconds=inc_seconds,
+                    horizon_hours=float(h),
+                    debounce_hours=cfg.PREDICTIVE_ALERT_DEBOUNCE_HOURS,
+                    sigma_y_min=getattr(cfg, "PREDICTIVE_SIGMA_Y_MIN", 0.5),
+                    sigma_y_max=getattr(cfg, "PREDICTIVE_SIGMA_Y_MAX", 5.0),
+                )
+                if curve is not None and len(curve):
+                    curve.to_csv(os.path.join(out_dirs["csv"], f"predictive_curve_H{int(h)}h.csv"), index=False)
+                op = pick_operating_point(curve, cfg.PREDICTIVE_FA_BUDGET_PER_DAY)
+                if op:
+                    op["n_incidents_on"] = int(len(incidents))
+                    predictive_summary[f"H{int(h)}h"] = op
+                    print(f"[PRED] {sensor} H={int(h)}h | recall={op['recall']:.2f} "
+                          f"fa/dia={op['fa_per_day']:.3f} lead={op['median_lead_hours']:.1f}h "
+                          f"eps={int(op['n_episodes'])}")
+            _hs = [float(h) for h in cfg.PREDICTIVE_HORIZONS_HOURS]
+            _h_head = 8.0 if 8.0 in _hs else (_hs[0] if _hs else None)
+            _op_head = predictive_summary.get(f"H{int(_h_head)}h") if _h_head is not None else None
+            if _op_head:
+                pred_headline = {
+                    "pred_horizon_hours": float(_h_head),
+                    "pred_n_incidents_on": int(_op_head["n_incidents_on"]),
+                    "pred_recall": float(_op_head["recall"]),
+                    "pred_fa_per_day": float(_op_head["fa_per_day"]),
+                    "pred_median_lead_hours": float(_op_head["median_lead_hours"]),
+                }
+        else:
+            # Sem incidente genuíno ON na janela: não há denominador — recall
+            # indefinido (não zero). FP continua visível via fa_per_day do debug.
+            pred_headline = {"pred_n_incidents_on": 0}
+
     eval_window_minutes = (
         int(cfg.EVAL_WINDOW_MINUTES)
         if cfg.EVAL_WINDOW_MINUTES is not None
@@ -621,6 +717,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "time_steps_report": time_steps_report,
         "monthly_mae_drift_summary": drift_summary,
         "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
+        "predictive_operating_points": predictive_summary,
+        **pred_headline,
         **eval_stats,
         **warn_eval_stats,
     }
@@ -670,6 +768,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "model_path": model_path if arch != "isolation_forest" else None,
         "threshold": float(threshold),
         "THRESH_MODE": cfg.THRESH_MODE,
+        **pred_headline,
         **eval_stats,
         "skipped": False,
     }
