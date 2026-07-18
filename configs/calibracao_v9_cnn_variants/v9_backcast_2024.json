@@ -1,7 +1,7 @@
 {
   "MODE": "operacional",
   "N_WORKERS": 1,
-  "RAW_CSV": "sensores_2024_2025_2026_30s.csv",
+  "RAW_CSV": "sensores_2024h2_2025_2026_30s.csv",
   "ALARM_CSV": "alarmes_selecionados_turbina_a.csv",
   "TIME_COL": "data_datetime",
   "SOURCE_TZ": "UTC",
@@ -95,7 +95,7 @@
   "RANDOM_SEED": 42,
   "OVERWRITE": true,
   "CLEARML_PROJECT_NAME": "TesteMLCab",
-  "CLEARML_DATASET_ID": "74c88bf2336a45198db038d4e9329ba9",
+  "CLEARML_DATASET_ID": "d4c284df665e465d8492afd368837c8f",
   "USE_CLEARML_DATASET": true,
   "CLEARML_DOCKER_IMAGE": "tensorflow/tensorflow:2.16.1-gpu",
   "RUN_REMOTE": true,
