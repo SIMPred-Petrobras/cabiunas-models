@@ -24,6 +24,12 @@ OUT_DIR = "eval_predictive_out/transpetro"
 HALF_LIFE_HOURS = 4.0
 DEBOUNCE_HOURS = 2.0
 Y_SIGMA = 3.0
+# Teto de duty cycle (fração do tempo em alerta no período de teste) — mesmo valor usado
+# em eval_per_sensor_level.py::best_point_for_sensor (Cabiunas). Sem esse teto, a curva
+# oficial (que só reporta fa_per_day/n_episodes, não duty) pode escolher um threshold com
+# o alarme ligado 50-100% do tempo: poucos "episódios" longos (colapsados pelo debounce
+# de 8h) mascaram que não há separação normal/anomalia real naquele sensor.
+MAX_DUTY = 0.25
 
 EQUIPS = {
     "B-4064A": dict(
@@ -59,11 +65,14 @@ def load_mae(task: Task, sensor: str) -> pd.Series:
     return d.set_index("seq_start_time")["mae_seq"]
 
 
-def best_point_from_curve(task: Task, sensor: str, horizon_label: str) -> dict | None:
+def best_point_from_curve(task: Task, sensor: str, horizon_label: str,
+                          ew_test: pd.Series, max_duty: float = MAX_DUTY) -> dict | None:
     """Usa a curva sigma-sweep JÁ CALCULADA pelo pipeline (predictive.py::
     compute_predictive_curve, half-life/horizonte de produção) em vez de recalcular
     threshold ad-hoc: pega o y_sigma MAIS ALTO (mais estrito, mais defensável) que
-    ainda captura o único incidente (recall==1.0) e reporta FA/lead nesse ponto.
+    ainda captura o único incidente (recall==1.0) E cujo duty cycle (fração do tempo em
+    alerta no período de teste) fica <= max_duty. A curva não reporta duty (só
+    fa_per_day/n_episodes, que o debounce pode mascarar) — calculamos aqui por linha.
     Com N=1 incidente, FA/dia é descritiva (contra 1 evento), não uma métrica robusta.
     """
     key = next((k for k in task.artifacts
@@ -71,13 +80,17 @@ def best_point_from_curve(task: Task, sensor: str, horizon_label: str) -> dict |
     if key is None:
         return None
     d = pd.read_csv(task.artifacts[key].get_local_copy())
-    hit = d[d["recall"] >= 1.0]
+    hit = d[d["recall"] >= 1.0].copy()
+    if hit.empty:
+        return None
+    hit["duty"] = hit["threshold"].map(lambda thr: float((ew_test >= thr).mean()))
+    hit = hit[hit["duty"] <= max_duty]
     if hit.empty:
         return None
     row = hit.loc[hit["y_sigma"].idxmax()]
     return dict(y_sigma=float(row["y_sigma"]), threshold=float(row["threshold"]),
                fa_per_day=float(row["fa_per_day"]), median_lead_hours=float(row["median_lead_hours"]),
-               n_episodes=int(row["n_episodes"]))
+               n_episodes=int(row["n_episodes"]), duty=float(row["duty"]))
 
 
 def first_sustained_crossing(alert: pd.Series, debounce_hours: float) -> pd.Timestamp | None:
@@ -128,20 +141,24 @@ def main():
             if cross is not None:
                 lead_h = (cfg["detection_ts"] - cross).total_seconds() / 3600.0
 
-            best24 = best_point_from_curve(task, sensor, "H24h")
-            best72 = best_point_from_curve(task, sensor, "H72h")
+            best24 = best_point_from_curve(task, sensor, "H24h", test)
+            best72 = best_point_from_curve(task, sensor, "H72h", test)
 
             rows.append(dict(
                 equip=equip, sensor=sensor,
                 adhoc_first_crossing=cross, adhoc_lead_hours=lead_h,
                 lead24_hours=best24["median_lead_hours"] if best24 else None,
                 fa24_per_day=best24["fa_per_day"] if best24 else None,
+                duty24=best24["duty"] if best24 else None,
                 lead72_hours=best72["median_lead_hours"] if best72 else None,
                 fa72_per_day=best72["fa_per_day"] if best72 else None,
+                duty72=best72["duty"] if best72 else None,
             ))
-            l72 = f"{best72['median_lead_hours']:.1f}h @ FA={best72['fa_per_day']:.2f}/dia" if best72 else "sem captura"
-            l24 = f"{best24['median_lead_hours']:.1f}h @ FA={best24['fa_per_day']:.2f}/dia" if best24 else "sem captura"
-            print(f"  {sensor:22s} H24h: {l24:28s} | H72h: {l72}")
+            l72 = (f"{best72['median_lead_hours']:.1f}h @ FA={best72['fa_per_day']:.2f}/dia "
+                  f"duty={best72['duty']*100:.0f}%") if best72 else f"sem sinal confiável (duty<={MAX_DUTY*100:.0f}%)"
+            l24 = (f"{best24['median_lead_hours']:.1f}h @ FA={best24['fa_per_day']:.2f}/dia "
+                  f"duty={best24['duty']*100:.0f}%") if best24 else f"sem sinal confiável (duty<={MAX_DUTY*100:.0f}%)"
+            print(f"  {sensor:22s} H24h: {l24:38s} | H72h: {l72}")
 
             fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
             axes[0].plot(mae.index, mae.values, lw=0.4, alpha=0.6, color="steelblue")
@@ -152,10 +169,17 @@ def main():
             if best72 is not None:
                 thr_label = best72["threshold"]
                 axes[1].axhline(thr_label, color="red", ls="--", lw=1,
-                                label=f"threshold curva oficial H72h (y={best72['y_sigma']:.2f}σ)")
+                                label=f"threshold curva oficial H72h (y={best72['y_sigma']:.2f}σ, "
+                                      f"duty={best72['duty']*100:.0f}%)")
+                # sombra a região de alerta real (health>=threshold) — torna visível de cara
+                # quando o alarme fica ligado quase o tempo todo (o problema que motivou este fix)
+                axes[1].fill_between(ew.index, thr_label, ew.values,
+                                     where=(ew.values >= thr_label), color="red", alpha=0.15,
+                                     interpolate=True, label="região em alerta")
             else:
                 axes[1].axhline(thr_label, color="red", ls="--", lw=1,
-                                label=f"threshold (μ+{Y_SIGMA:g}σ treino, ad-hoc)")
+                                label=f"threshold (μ+{Y_SIGMA:g}σ treino, ad-hoc) — "
+                                      f"SEM ponto sob duty<={MAX_DUTY*100:.0f}%")
             axes[1].axvline(cfg["train_end"], color="gray", ls=":", lw=1, label="fim do treino")
             axes[1].axvline(cfg["detection_ts"], color="black", ls="-", lw=1.2, label="detecção formal")
             if cross is not None:
@@ -173,11 +197,14 @@ def main():
     out_csv = f"{OUT_DIR}/case_study_summary.csv"
     df.to_csv(out_csv, index=False)
     print(f"\ncsv: {out_csv}")
-    pd.set_option("display.width", 160, "display.max_columns", 20)
+    pd.set_option("display.width", 200, "display.max_columns", 20)
     out = df.copy()
-    for c in ["adhoc_lead_hours", "lead24_hours", "fa24_per_day", "lead72_hours", "fa72_per_day"]:
+    for c in ["adhoc_lead_hours", "lead24_hours", "fa24_per_day", "duty24",
+             "lead72_hours", "fa72_per_day", "duty72"]:
         out[c] = df[c].map(lambda x: f"{x:.1f}" if pd.notna(x) else "-")
     print(out.to_string(index=False))
+    n_sem_sinal = df["lead72_hours"].isna().sum()
+    print(f"\n{n_sem_sinal}/{len(df)} sensores sem sinal confiável sob duty<={MAX_DUTY*100:.0f}% (H72h)")
 
 
 if __name__ == "__main__":
