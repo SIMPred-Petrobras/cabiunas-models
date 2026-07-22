@@ -174,10 +174,18 @@ def main():
                 axes[1].plot(mae.index, health, lw=0.8, color="darkorange", label=f"health (EWMA hl={hl_used:g}h)")
                 if b72:
                     thr = b72["threshold"]
+                    alert_mask = health >= thr
                     axes[1].axhline(thr, color="red", ls="--", lw=1,
                                     label=f"threshold (y={b72['y_sigma']:.2f}σ, duty={b72['duty']*100:.0f}%)")
-                    axes[1].fill_between(mae.index, thr, health, where=(health >= thr),
+                    axes[1].fill_between(mae.index, thr, health, where=alert_mask,
                                          color="red", alpha=0.15, interpolate=True, label="região em alerta")
+                    # pontos discretos de deteccao (onde o alerta esta ativo), marcados nos
+                    # dois paineis para correlacionar visualmente com o dado bruto (MAE)
+                    axes[1].scatter(mae.index[alert_mask], health[alert_mask], s=10, color="crimson",
+                                    zorder=5, label="pontos em alerta")
+                    axes[0].scatter(mae.index[alert_mask], mae.values[alert_mask], s=10, color="crimson",
+                                    zorder=5, label="pontos em alerta")
+                    axes[0].legend(fontsize=7, loc="upper left")
                 axes[1].axvline(cfg["train_end"], color="gray", ls=":", lw=1, label="fim do treino")
                 axes[1].axvline(cfg["detection_ts"], color="black", ls="-", lw=1.2, label="detecção formal")
                 if cfg["outage_start"] is not None:
