@@ -31,10 +31,13 @@ def _resolve_path(config_path: Path, value: str) -> Path:
 def _input_files_from_config(config_path: Path) -> list[Path]:
     cfg = json.loads(config_path.read_text(encoding="utf-8"))
     files = [
-        _resolve_path(config_path, cfg["FEATURES_CSV"]),
         _resolve_path(config_path, cfg["RAW_CSV"]),
         _resolve_path(config_path, cfg["ALARM_CSV"]),
     ]
+    # FEATURES_CSV é opcional quando TRAIN_SOURCE=raw (mesma regra de io.py::load_data) —
+    # a maioria dos configs de produção usa TRAIN_SOURCE=raw e nunca teve esse arquivo.
+    if cfg.get("TRAIN_SOURCE", "raw").lower() != "raw" and "FEATURES_CSV" in cfg:
+        files.append(_resolve_path(config_path, cfg["FEATURES_CSV"]))
     missing = [str(path) for path in files if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"Arquivos de entrada ausentes: {missing}")
