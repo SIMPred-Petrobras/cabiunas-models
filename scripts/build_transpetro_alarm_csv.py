@@ -24,11 +24,23 @@ SENSOR_COLS = {
     "B-90001A": ["Pressão Descarga", "Pressão Sucção", "Vibração Motor LNA Y",
                 "Vibração Motor LA X", "Vibração Motor LA Y", "Vibração Bomba LA X",
                 "Vibração Bomba LA Y", "Vibração Bomba LNA X", "Vibração Bomba LNA Y"],
+    "B-8802B": ["Pressão Sucção", "Pressão Descarga", "Vibração Bomba LA",
+               "Vibração Bomba LNA", "Temperatura Bomba LA", "Temperatura Bomba LNA",
+               "Temperatura Motor LA", "Temperatura Motor LNA"],
+    "B-402E": ["Pressão Sucção", "Pressão Descarga", "Corrente", "Vazão",
+              "Vibração Bomba LA", "Temperatura Estator U", "Temperatura Estator V",
+              "Temperatura Estator Wa", "Temperatura Estator Wb",
+              "Temperatura Mancal LA Motor", "Temperatura Mancal LNA Motor",
+              "Temperatura Mancal Ext. Escora LNA Bomba",
+              "Temperatura Mancal Int. Escora LNA Bomba",
+              "Temperatura Mancal Radial LA Bomba", "Temperatura Mancal Radial LNA Bomba"],
 }
 
 DETECCAO = {
     "B-4064A": pd.Timestamp("2024-08-30 07:58:00"),
     "B-90001A": pd.Timestamp("2021-08-28 00:00:00"),
+    "B-8802B": pd.Timestamp("2022-07-06 10:00:00"),
+    "B-402E": pd.Timestamp("2019-10-30 11:06:00"),
 }
 
 
@@ -54,11 +66,12 @@ def main():
     print(f"B-4064A: {len(df_b4064a)} linhas -> {out} "
           f"(condições: {df_b4064a['Condição do Alarme'].value_counts().to_dict()})")
 
-    rows_90001a = rows_for_event("B-90001A", DETECCAO["B-90001A"], "HIHI")
-    df_b90001a = pd.DataFrame(rows_90001a).sort_values("Data da Ocorrência")
-    out2 = OUT_DIR / "B-90001A_alarme.csv"
-    df_b90001a.to_csv(out2, index=False)
-    print(f"B-90001A: {len(df_b90001a)} linhas -> {out2} (N=1 evento, sem log semanal)")
+    for equip in ["B-90001A", "B-8802B", "B-402E"]:
+        rows_e = rows_for_event(equip, DETECCAO[equip], "HIHI")
+        df_e = pd.DataFrame(rows_e).sort_values("Data da Ocorrência")
+        out_e = OUT_DIR / f"{equip}_alarme.csv"
+        df_e.to_csv(out_e, index=False)
+        print(f"{equip}: {len(df_e)} linhas -> {out_e} (N=1 evento, sem log semanal)")
 
 
 if __name__ == "__main__":
