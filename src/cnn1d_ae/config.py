@@ -97,6 +97,21 @@ class PipelineConfig:
     HAMPEL_WINDOW: int = 5     # pontos de cada lado da janela central
     HAMPEL_SIGMA: float = 3.0  # equivalente a 3σ
 
+    # Detecção de interpolação fabricada upstream (fora deste pipeline): um buraco real
+    # de arquivamento no histórico de origem pode chegar aqui já preenchido com uma reta
+    # linear contínua, sem NaN — invisível pro EXCLUDE_LONG_GAPS_FROM_TRAIN, que só
+    # enxerga NaN. Detecta trechos com curvatura (2a diferença) muito abaixo do normal do
+    # próprio sensor, sustentados por FABRICATED_GAP_MIN_MINUTES seguidos, e os marca como
+    # NaN ANTES do cálculo de long_gap_mask — reabre o buraco que a fonte upstream apagou,
+    # deixando a proteção que já existe (INTERPOLATE_LIMIT/EXCLUDE_LONG_GAPS_FROM_TRAIN)
+    # excluir do treino como faria com qualquer gap real. Validado contra dado gravado
+    # real (recorded values) de TC382_03_A: 1 gap de 8h10 confirmado em 2025 (ver memória
+    # tc382-03a-interpolacao-gap-janela6). Desligado por padrão — não muda configs já
+    # validados; ativar só onde o histórico de origem for conhecidamente sujeito a isso.
+    ENABLE_FABRICATED_GAP_DETECTION: bool = False
+    FABRICATED_GAP_MIN_MINUTES: float = 30.0
+    FABRICATED_GAP_CURVATURE_FRAC: float = 0.05  # fração da mediana de |diff2| do próprio sensor
+
     # Normalização somente sobre períodos de operação estável
     # Evita distorção do z-score pela distribuição bimodal ON/OFF
     NORMALIZE_ON_STABLE_ONLY: bool = False

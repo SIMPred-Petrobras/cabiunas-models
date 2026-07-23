@@ -20,6 +20,55 @@ def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     return missing & (run_len > int(interpolate_limit))
 
 
+def detect_fabricated_gap_mask(
+    series: pd.Series,
+    dt_seconds: float,
+    min_run_minutes: float,
+    curvature_frac: float,
+) -> pd.Series:
+    """Marca como suspeito (True) trechos com curvatura (2a diferença discreta) muito
+    abaixo do normal do próprio sensor, sustentados por >= min_run_minutes seguidos.
+
+    Assinatura de interpolação linear fabricada por um processo upstream cobrindo um
+    buraco real de arquivamento (chega aqui sem NaN, então _long_gap_mask não o vê).
+    Validado contra dado real gravado (PI recorded values) de TC382_03_A: um gap de 8h10
+    tem diff constante (std do diff ~0.003) contra ruído real de sensor várias ordens de
+    grandeza maior — ver memória tc382-03a-interpolacao-gap-janela6.
+
+    O limiar é relativo à mediana de |diff2| do próprio sensor (não um valor absoluto),
+    pra funcionar em qualquer unidade/faixa física sem precisar recalibrar por sensor.
+    """
+    v = series.to_numpy(dtype=float)
+    if len(v) < 3:
+        return pd.Series(False, index=series.index)
+
+    diff2 = np.diff(v, n=2)
+    diff2 = np.concatenate([[np.nan, np.nan], diff2])
+    baseline = np.nanmedian(np.abs(diff2))
+    if not np.isfinite(baseline) or baseline <= 0:
+        return pd.Series(False, index=series.index)
+
+    eps = float(curvature_frac) * baseline
+    suspect = np.abs(diff2) < eps
+    suspect[:2] = False
+
+    min_run_pts = max(1, int(round(float(min_run_minutes) * 60.0 / float(dt_seconds))))
+    mask = np.zeros(len(v), dtype=bool)
+    i, n = 0, len(suspect)
+    while i < n:
+        if suspect[i]:
+            j = i
+            while j < n and suspect[j]:
+                j += 1
+            if j - i >= min_run_pts:
+                mask[i:j] = True
+            i = j
+        else:
+            i += 1
+
+    return pd.Series(mask, index=series.index)
+
+
 # ---------------------------------------------------------------------------
 # 1. Detecção de valores sentinela
 # ---------------------------------------------------------------------------
@@ -303,6 +352,24 @@ def build_sensor_dataframe(
     for col in selected_cols:
         if col != cfg.TIME_COL:
             df_use[col] = pd.to_numeric(df_use[col], errors="coerce")
+
+    # --- Detecção de interpolação fabricada upstream (reabre buraco apagado na fonte) ---
+    if cfg.ENABLE_FABRICATED_GAP_DETECTION:
+        dt_deltas = df_use[cfg.TIME_COL].diff().dt.total_seconds().dropna()
+        dt_deltas = dt_deltas[dt_deltas > 0]
+        dt_seconds = float(dt_deltas.median()) if not dt_deltas.empty else 30.0
+        fabricated = detect_fabricated_gap_mask(
+            df_use[sensor], dt_seconds, cfg.FABRICATED_GAP_MIN_MINUTES, cfg.FABRICATED_GAP_CURVATURE_FRAC
+        )
+        n_fabricated = int(fabricated.sum())
+        if n_fabricated:
+            df_use.loc[fabricated, sensor] = np.nan
+            print(
+                f"[FABRICATED-GAP] sensor={sensor}: {n_fabricated} pontos "
+                f"({n_fabricated * dt_seconds / 60.0:.0f}min) marcados como NaN "
+                f"(curvatura sustentada abaixo de {cfg.FABRICATED_GAP_CURVATURE_FRAC:.0%} "
+                f"da mediana do sensor por >= {cfg.FABRICATED_GAP_MIN_MINUTES:.0f}min)."
+            )
 
     # --- Detecção de sentinelas (antes da interpolação para não propagar artefatos) ---
     if cfg.SENTINEL_MODE.lower() != "none":
