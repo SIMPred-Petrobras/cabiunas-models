@@ -25,8 +25,11 @@ class TestDutyCycleCeiling(unittest.TestCase):
         self.inc = sorted(top.tolist())
 
     def test_sem_teto_escolhe_piso(self):
+        # max_sticky_duty=1.0 desliga o teto novo — este teste é sobre
+        # max_duty_cycle especificamente, não sobre max_sticky_duty.
         r = best_point_for_sensor(self.health, self.inc, horizon_hours=8.0,
-                                  sticky_hours=0.0, fa_budget=10.0, n_thresholds=50)
+                                  sticky_hours=0.0, fa_budget=10.0, n_thresholds=50,
+                                  max_sticky_duty=1.0)
         # sem teto, a busca tende ao piso (q baixo) com duty alto
         self.assertLessEqual(r["threshold_q"], 0.6)
         self.assertGreater(r["duty_cycle"], 0.35)
@@ -34,15 +37,46 @@ class TestDutyCycleCeiling(unittest.TestCase):
     def test_com_teto_respeita_duty(self):
         r = best_point_for_sensor(self.health, self.inc, horizon_hours=8.0,
                                   sticky_hours=0.0, fa_budget=10.0, n_thresholds=50,
-                                  max_duty_cycle=0.2)
+                                  max_duty_cycle=0.2, max_sticky_duty=1.0)
         # com teto 0.2, o ponto escolhido tem duty <= 0.2 e q mais alto
         self.assertLessEqual(r["duty_cycle"], 0.2 + 1e-9)
         self.assertGreater(r["threshold_q"], 0.6)
 
     def test_default_backward_compativel(self):
         # default max_duty_cycle=1.0 não filtra nada (chave duty_cycle presente)
-        r = best_point_for_sensor(self.health, self.inc, horizon_hours=8.0, n_thresholds=20)
+        r = best_point_for_sensor(self.health, self.inc, horizon_hours=8.0, n_thresholds=20,
+                                  max_sticky_duty=1.0)
         self.assertIn("duty_cycle", r)
+
+
+class TestStickyDutyCeiling(unittest.TestCase):
+    """max_sticky_duty limita o duty PÓS-sticky, que pode ser bem maior que o
+    duty bruto pré-sticky quando sticky_hours é grande — é essa lacuna que o
+    teto de duty_cycle (pré-sticky) sozinho não cobre."""
+    def setUp(self):
+        self.health = _health()
+        top = self.health.sort_values().index[-5:]
+        self.inc = sorted(top.tolist())
+
+    def test_teto_sticky_rejeita_threshold_com_duty_bruto_baixo(self):
+        # sticky_hours alto infla duty_sticky bem acima do duty bruto; um teto
+        # de max_duty_cycle frouxo (bruto) não pega isso, só max_sticky_duty pega.
+        r = best_point_for_sensor(self.health, self.inc, horizon_hours=8.0,
+                                  sticky_hours=12.0, fa_budget=10.0, n_thresholds=50,
+                                  max_duty_cycle=1.0, max_sticky_duty=0.25)
+        self.assertIn("duty_sticky", r)
+        self.assertLessEqual(r["duty_sticky"], 0.25 + 1e-9)
+
+    def test_recall_raw_nunca_maior_que_recall_com_sticky(self):
+        # apply_sticky só ESTENDE o alerta bruto (nunca remove pontos), então o
+        # alerta final é superset do cruzamento bruto — logo recall_raw <= recall
+        # sempre. Se isso inverter é sinal de alerta "emprestando" cobertura da
+        # cauda do sticky de um incidente anterior sem que o dado bruto sustente.
+        r = best_point_for_sensor(self.health, self.inc, horizon_hours=8.0,
+                                  sticky_hours=12.0, fa_budget=10.0, n_thresholds=50,
+                                  max_sticky_duty=1.0)
+        self.assertIn("recall_raw", r)
+        self.assertLessEqual(r["recall_raw"], r["recall"] + 1e-9)
 
 
 if __name__ == "__main__":

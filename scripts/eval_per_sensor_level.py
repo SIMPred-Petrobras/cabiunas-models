@@ -257,15 +257,23 @@ def best_point_for_sensor(
     fa_budget: float = 1.0,
     min_duration_grid: "list | None" = None,
     max_duty_cycle: float = 1.0,
+    max_sticky_duty: float = 0.25,
 ) -> dict:
-    """Escolhe o ponto de operação que MAXIMIZA recall sob o teto de FA e, no
-    recall máximo, MINIMIZA a FA (desempate por menor FA → mínimo de FP sem perder
-    recall). Quando `min_duration_grid` é fornecido, varre debounce × threshold.
+    """Escolhe o ponto de operação que MAXIMIZA recall sob o teto de FA; no recall
+    máximo, desempata por MAIOR lead mediano (antecipação é o valor do preditivo;
+    FA é restrição via fa_budget, não critério) e, no empate de lead, por menor FA.
+    Quando `min_duration_grid` é fornecido, varre debounce × threshold.
 
     `max_duty_cycle` (default 1.0 = sem efeito) rejeita thresholds cujo duty-cycle
     bruto (fração do tempo com health>=q, antes do sticky) ultrapasse o teto. A
     FA-por-episódio não enxerga tempo-em-alerta, então sem esse teto a busca escolhe
     o piso q=0.5 (alarme ligado quase sempre). Com o teto, o ponto vira deployável.
+
+    `max_sticky_duty` (default 0.25) limita o tempo-em-alerta REAL (pós-sticky): o
+    sticky de 12h multiplica o duty bruto (ex.: 35%→76%) e a busca "compra" recall
+    com alerta quase-sempre-ligado sem que a FA-por-episódio denuncie. Também
+    devolve `recall_raw` (hits por cruzamento bruto de health>=q na janela, sem
+    sticky) — recall que não depende da cauda do sticky de um alerta anterior.
     """
     horizon_sec = horizon_hours * 3600.0
     total_days  = (health.index[-1] - health.index[0]).total_seconds() / 86400.0
@@ -277,6 +285,7 @@ def best_point_for_sensor(
             "min_duration_hours": float(md_candidates[0]), "n_incidents": len(incidents)}
     best_recall = -1.0
     best_fa = float("inf")
+    best_lead = -1.0
 
     for md in md_candidates:
         for q in np.linspace(0.50, 0.999, n_thresholds):
@@ -284,16 +293,24 @@ def best_point_for_sensor(
             if duty > max_duty_cycle:
                 continue
             alert    = apply_sticky(health, q, sticky_hours)
+            duty_sticky = float(alert.mean())
+            if duty_sticky > max_sticky_duty:
+                continue
             episodes = detect_episodes_gap(alert)
             alert, episodes = apply_min_duration(alert, episodes, md)
             alert_s  = np.array([t.timestamp() for t in health.index[alert]])
+            raw_s    = np.array([t.timestamp() for t in health.index[health >= q]])
 
-            n_hit = sum(
-                1 for ti in inc_s
-                if alert_s.size and np.any(
-                    (alert_s >= ti - horizon_sec) & (alert_s <= ti)
-                )
-            )
+            n_hit = 0
+            n_hit_raw = 0
+            leads = []
+            for ti in inc_s:
+                w = alert_s[(alert_s >= ti - horizon_sec) & (alert_s <= ti)] if alert_s.size else np.array([])
+                if w.size:
+                    n_hit += 1
+                    leads.append((ti - w.min()) / 3600.0)
+                if raw_s.size and np.any((raw_s >= ti - horizon_sec) & (raw_s <= ti)):
+                    n_hit_raw += 1
             n_fp = sum(
                 1 for (s0, s1) in episodes
                 if not (np.any(
@@ -304,28 +321,43 @@ def best_point_for_sensor(
 
             fa    = n_fp / max(total_days, 1.0)
             recall = n_hit / len(incidents) if incidents else 0.0
+            med_lead = float(np.median(leads)) if leads else 0.0
 
             if fa > fa_budget:
                 continue
             if incidents:
-                # max recall; no empate de recall, menor FA
-                better = (recall > best_recall) or (recall == best_recall and fa < best_fa)
+                # max recall; empate → maior lead mediano SE a diferença for material
+                # (>0.5h; o lead satura no horizonte, então diferenças de segundos
+                # são ruído e não justificam pagar mais FA); senão → menor FA
+                better = (recall > best_recall) or (
+                    recall == best_recall and (
+                        (med_lead > best_lead + 0.5) or
+                        (abs(med_lead - best_lead) <= 0.5 and fa < best_fa)
+                    )
+                )
             else:
                 # sem incidentes não há recall para satisfazer: preserva o legado
                 better = recall > best_recall
             if better:
                 best_recall = recall
                 best_fa = fa
+                best_lead = med_lead
                 best = {
                     "recall":      recall,
+                    "recall_raw":  n_hit_raw / len(incidents) if incidents else 0.0,
                     "fa_per_day":  fa,
                     "threshold_q": float(q),
                     "duty_cycle":  duty,
+                    "duty_sticky": duty_sticky,
                     "min_duration_hours": float(md),
                     "n_incidents": len(incidents),
                     "n_hit":       n_hit,
+                    "n_hit_raw":   n_hit_raw,
                     "n_fp":        n_fp,
                     "total_days":  total_days,
+                    "median_lead_hours": med_lead,
+                    "lead_p25_hours": float(np.percentile(leads, 25)) if leads else 0.0,
+                    "lead_p75_hours": float(np.percentile(leads, 75)) if leads else 0.0,
                 }
     return best
 
