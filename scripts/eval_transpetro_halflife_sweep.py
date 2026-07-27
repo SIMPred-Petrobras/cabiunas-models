@@ -54,6 +54,32 @@ EQUIPS = {
                 "Vibração Motor LA X", "Vibração Motor LA Y", "Vibração Bomba LA X",
                 "Vibração Bomba LA Y", "Vibração Bomba LNA X", "Vibração Bomba LNA Y"],
     ),
+    "B-8802B": dict(
+        task_id="6b6625bc03ba4236b69cd8dcfa3a0b33",
+        raw_csv="../dados/transpetro/B-8802B_1min.csv",
+        running_col=None, running_thr=None,  # sem coluna de corrente/vazão disponível
+        train_end=pd.Timestamp("2022-06-08"),
+        detection_ts=pd.Timestamp("2022-07-06 10:00:00"),
+        outage_start=None,
+        sensors=["Pressão Sucção", "Pressão Descarga", "Vibração Bomba LA",
+                "Vibração Bomba LNA", "Temperatura Bomba LA", "Temperatura Bomba LNA",
+                "Temperatura Motor LA", "Temperatura Motor LNA"],
+    ),
+    "B-402E": dict(
+        task_id="c5e0ec4603a349cc9d34fa390d9ce7d0",
+        raw_csv="../dados/transpetro/B-402E_1min.csv",
+        running_col="Corrente", running_thr=5.0,
+        train_end=pd.Timestamp("2019-08-01"),
+        detection_ts=pd.Timestamp("2019-10-30 11:06:00"),
+        outage_start=None,
+        sensors=["Pressão Sucção", "Pressão Descarga", "Corrente", "Vazão",
+                "Vibração Bomba LA", "Temperatura Estator U", "Temperatura Estator V",
+                "Temperatura Estator Wa", "Temperatura Estator Wb",
+                "Temperatura Mancal LA Motor", "Temperatura Mancal LNA Motor",
+                "Temperatura Mancal Ext. Escora LNA Bomba",
+                "Temperatura Mancal Int. Escora LNA Bomba",
+                "Temperatura Mancal Radial LA Bomba", "Temperatura Mancal Radial LNA Bomba"],
+    ),
 }
 
 
