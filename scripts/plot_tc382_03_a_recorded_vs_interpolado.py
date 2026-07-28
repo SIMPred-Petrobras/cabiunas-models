@@ -5,7 +5,9 @@ usado por configs/calibracao_v4_eq/record2025_tzm3_interpolado_v4_TC382_03_A.jso
 
 Eixo X em UTC (convenção confirmada empiricamente do arquivo interpolado — ver
 memória/justificativa na sessão). O trecho sem nenhum dado real dentro da janela nominal é
-sombreado em vermelho.
+sombreado em vermelho. Eventos de alarme reais do TC382_03_A (`alarmes_selecionados_
+turbina_a.csv`) que caem dentro da janela são marcados com linha vertical tracejada,
+colorida por condição (UNDER=laranja, HI/HIHI=vermelho, outras=cinza).
 
 Uso:
   PYTHONPATH=. python scripts/plot_tc382_03_a_recorded_vs_interpolado.py
@@ -15,12 +17,27 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from scripts.eval_per_sensor_level import _parse_alarm_df, ALARM_CSV_DEFAULT
+
 REC_XLSX = "../dados/TC382_03_A_recorded_janelas_2025.xlsx"
 INTERP_CSV = "/home/thallys/.clearml/cache/storage_manager/datasets/ds_e2765c3eef2349cda5f5cbcb0fcd5a40/sensores_filtrados_Interpolados_2025.csv"
 OUT_PNG = "eda_load_residual_out/tc382_03_a_gap_check/recorded_vs_interpolado.png"
+SENSOR = "TC382_03_A"
+
+ALARM_COLOR = {"UNDER": "#e67e22", "HI": "#c0392b", "HIHI": "#8e0000"}
 
 
-def _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc):
+def load_sensor_alarms() -> pd.DataFrame:
+    df, _, cond_col, tag_col = _parse_alarm_df(ALARM_CSV_DEFAULT)
+    sub = df[(df[tag_col] == SENSOR) & (df[cond_col].str.upper() != "OK")].copy()
+    sub["cond"] = sub[cond_col].str.upper()
+    # resto do script trabalha com timestamps naive (mesma convenção UTC, sem tzinfo) —
+    # remove o tz pra comparar/plotar junto com w.index/g["t_utc"] sem erro de mistura.
+    sub["_time"] = sub["_time"].dt.tz_localize(None)
+    return sub[["_time", "cond"]]
+
+
+def _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc, alarms):
     ax.plot(w.index, w.values, lw=1.2, color="steelblue", alpha=0.85,
            label="interpolado (produção, ClearML)", zorder=2)
     ax.scatter(g["t_utc"], g["value"], s=16, color="crimson", zorder=3,
@@ -35,6 +52,15 @@ def _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc):
     if trail_gap_min > 5:
         ax.axvspan(real_last, nom_fim_utc, color="red", alpha=0.08,
                   label=f"sem dado real ({trail_gap_min:.0f}min)")
+
+    win_alarms = alarms[(alarms["_time"] >= nom_ini_utc) & (alarms["_time"] <= nom_fim_utc)]
+    seen_conds = set()
+    for _, a in win_alarms.iterrows():
+        color = ALARM_COLOR.get(a["cond"], "#555555")
+        lbl = f"alarme {a['cond']}" if a["cond"] not in seen_conds else None
+        seen_conds.add(a["cond"])
+        ax.axvline(a["_time"], color=color, linestyle="--", linewidth=1.4, alpha=0.85,
+                   zorder=4, label=lbl)
 
     cov_pct = row["registros_unicos"] / len(w) * 100
     ax.set_title(f"{j} — {row['inicio']} → {row['fim']} (cobertura real: {cov_pct:.0f}%)", fontsize=11)
@@ -53,6 +79,8 @@ def main():
     interp["data_datetime"] = pd.to_datetime(interp["data_datetime"], errors="coerce")
     interp = interp.dropna(subset=["data_datetime"]).set_index("data_datetime").sort_index()["TC382_03_A"]
 
+    alarms = load_sensor_alarms()
+
     janelas = res["janela"].tolist()
 
     # grid resumo (como antes)
@@ -64,7 +92,7 @@ def main():
         nom_fim_utc = pd.Timestamp(row["fim"]) + pd.Timedelta(hours=3)
         g = rec[rec["janela"] == j].sort_values("t_utc")
         w = interp.loc[nom_ini_utc:nom_fim_utc]
-        _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc)
+        _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc, alarms)
     for ax in axes[len(janelas):]:
         ax.axis("off")
     fig.suptitle("TC382_03_A — dado real gravado (PI) vs. série interpolada de produção (eixo X em UTC)",
@@ -83,7 +111,7 @@ def main():
         w = interp.loc[nom_ini_utc:nom_fim_utc]
 
         fig, ax = plt.subplots(figsize=(13, 5))
-        _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc)
+        _plot_one(ax, j, row, g, w, nom_ini_utc, nom_fim_utc, alarms)
         fig.tight_layout()
         safe = j.replace(" ", "_")
         out = f"eda_load_residual_out/tc382_03_a_gap_check/{safe}.png"
