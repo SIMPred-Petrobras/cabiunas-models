@@ -31,9 +31,12 @@ def load_sensor_alarms() -> pd.DataFrame:
     df, _, cond_col, tag_col = _parse_alarm_df(ALARM_CSV_DEFAULT)
     sub = df[(df[tag_col] == SENSOR) & (df[cond_col].str.upper() != "OK")].copy()
     sub["cond"] = sub[cond_col].str.upper()
-    # resto do script trabalha com timestamps naive (mesma convenção UTC, sem tzinfo) —
-    # remove o tz pra comparar/plotar junto com w.index/g["t_utc"] sem erro de mistura.
-    sub["_time"] = sub["_time"].dt.tz_localize(None)
+    # "Data da Ocorrência" no CSV de alarmes é hora LOCAL (UTC-3), mesma convenção de
+    # resumo_janelas.inicio/fim — confirmado empiricamente batendo ao segundo os 3
+    # alarmes UNDER da Janela 4 (21:14/21:31/21:59 local) contra o crash real do sensor
+    # em UTC (00:14/00:32/01:01, coluna timestamp_utc do xlsx) somando 3h. O resto do
+    # script (w.index, g["t_utc"]) está em UTC — converte aqui pra bater no mesmo eixo.
+    sub["_time"] = sub["_time"].dt.tz_localize(None) + pd.Timedelta(hours=3)
     return sub[["_time", "cond"]]
 
 
