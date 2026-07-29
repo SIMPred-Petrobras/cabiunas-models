@@ -93,6 +93,9 @@ def main() -> None:
     p.add_argument("--horizon", type=float, default=8.0)
     p.add_argument("--fa_budget", type=float, default=1.0)
     p.add_argument("--eval_start", default=None)
+    p.add_argument("--eval_end", default=None,
+                   help="fecha a janela de avaliação — necessário pra comparar contra um "
+                        "modelo de cobertura de dado menor sem lhe dar miss automático")
     p.add_argument("--exclude_conditions", nargs="*", default=["UNDER", "OVER", "LOLO", "CFN"])
     p.add_argument("--n_thresholds", type=int, default=60)
     p.add_argument("--max_duty", type=float, default=0.25,
@@ -112,18 +115,23 @@ def main() -> None:
         return
 
     t0 = pd.Timestamp(args.eval_start, tz="UTC") if args.eval_start else None
+    t1 = pd.Timestamp(args.eval_end, tz="UTC") if args.eval_end else None
     healths = {}
     for s in TC_SENSORS:
         mae = mae_dict[s]
         if t0 is not None:
             mae = mae[mae.index >= t0]
+        if t1 is not None:
+            mae = mae[mae.index <= t1]
         healths[s] = ewma_quantile(mae, args.half_life)
 
     print(f"[3/4] Carregando incidentes de T5_AVG_A (HI/HIHI-only)...")
     raw_alarms = load_alarms_gap(args.alarm_csv, args.exclude_conditions)
     incidents = cluster_incidents(raw_alarms.get("T5_AVG_A", []))
     if t0 is not None:
-        incidents = [i for i in incidents if pd.Timestamp(i, tz="UTC" if pd.Timestamp(i).tz is None else None) >= t0]
+        incidents = [i for i in incidents if i >= t0]
+    if t1 is not None:
+        incidents = [i for i in incidents if i <= t1]
     print(f"  {len(incidents)} incidentes de T5_AVG_A na janela avaliada")
 
     print(f"[4/4] Varrendo quantil compartilhado entre os 6 canais...")
