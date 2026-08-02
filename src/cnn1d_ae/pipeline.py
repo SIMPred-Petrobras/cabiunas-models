@@ -407,7 +407,11 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             stride=cfg.STRIDE,
         )
     else:
-        threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
+        threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE,
+                                      std_mult=cfg.THRESH_STD_MULT)
+        if cfg.THRESH_MODE.lower() == "mean_std":
+            print(f"[THRESH] mean_std: mu={np.mean(train_mae_seq):.5f} sigma={np.std(train_mae_seq):.5f} "
+                  f"y={cfg.THRESH_STD_MULT} → threshold={threshold:.5f}")
 
     plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
@@ -440,7 +444,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     elif cfg.ENABLE_REGIME_BAND_THRESHOLD and _running_col_series is not None and cfg.REGIME_BANDS:
         train_bands = assign_regime_bands(len(train_mae_seq), df_normal_z.index, cfg.TIME_STEPS, cfg.STRIDE, _running_col_series, cfg.REGIME_BANDS)
         all_bands   = assign_regime_bands(len(mae_seq_all),  df_all_z.index,    cfg.TIME_STEPS, cfg.STRIDE, _running_col_series, cfg.REGIME_BANDS)
-        band_thr, gthr = compute_regime_band_thresholds(train_mae_seq, train_bands, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE, cfg.REGIME_BAND_MIN_SAMPLES)
+        band_thr, gthr = compute_regime_band_thresholds(train_mae_seq, train_bands, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE, cfg.REGIME_BAND_MIN_SAMPLES, cfg.THRESH_STD_MULT)
         anomaly_seq, _thr_seq = apply_regime_band_threshold(mae_seq_all, all_bands, band_thr, gthr)
         print(f"[REGIME-THR] col={cfg.RUNNING_COL} bands={cfg.REGIME_BANDS} thr_por_banda={ {k: round(v,4) for k,v in sorted(band_thr.items())} } global={gthr:.4f}")
     else:
@@ -747,6 +751,11 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "clip_bounds": clip_bounds,
         "threshold": float(threshold),
         "thresh_mode": cfg.THRESH_MODE,
+        "thresh_std_mult": float(cfg.THRESH_STD_MULT),
+        # mu/sigma do erro de TREINO: permitem recalcular o threshold como mu + y*sigma
+        # sem retreinar (ver scripts/set_bundle_threshold.py).
+        "train_mae_mean": float(np.mean(train_mae_seq)),
+        "train_mae_std": float(np.std(train_mae_seq)),
         "monthly_thresholds": {str(k): float(v) for k, v in monthly_thresholds.items()},
         "running_col": cfg.RUNNING_COL,
         "running_threshold": float(cfg.RUNNING_THRESHOLD),

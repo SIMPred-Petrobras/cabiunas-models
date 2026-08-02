@@ -196,8 +196,13 @@ class PipelineConfig:
     PATIENCE: int = 6
 
     # Threshold
-    THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate" | "alarm_f2"
+    THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate" | "mean_std" | "alarm_f2"
     TARGET_ANOMALY_RATE: float = 0.01
+    # THRESH_MODE="mean_std": threshold = media + THRESH_STD_MULT * desvio do erro de treino.
+    # Botão direto de sensibilidade (subir y = alarme mais conservador). Cuidado: o erro do
+    # AE tem cauda pesada, y=2..3 costuma ser conservador DEMAIS — calibre com
+    # scripts/sweep_threshold_mean_std.py em vez de assumir a régua gaussiana.
+    THRESH_STD_MULT: float = 3.0
 
     # Threshold semi-supervisionado (THRESH_MODE="alarm_f2")
     ALARM_F2_TARGET_RECALL: float = 0.65   # meta mínima de recall por incidente (gap > ALARM_F2_INCIDENT_GAP_HOURS)

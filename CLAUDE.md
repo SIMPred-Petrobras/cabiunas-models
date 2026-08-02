@@ -71,6 +71,13 @@ Production JSON configs, one per sensor/equipment variant. Key parameters to kno
 - `SENTINEL_MODE`, `INTERPOLATE_LIMIT`, `HAMPEL_FILTER`, `NORMALIZE_MODE` — preprocessing behavior
 - `TIME_STEPS` (default 60), `STRIDE`, `VAL_FRAC` — sequence construction
 - `THRESH_MODE` (default `p99`), `POINT_RULE`, `POINT_WINDOW` — anomaly detection logic
+  - `THRESH_MODE="mean_std"` + `THRESH_STD_MULT` (y) gives an operator-facing sensitivity
+    knob (`threshold = mean + y·std` of the training MAE). Calibrate y with
+    `scripts/sweep_threshold_mean_std.py` — the reconstruction error has a heavy right
+    tail, so the textbook y=2–3 is far too conservative (y=3 detected nothing on
+    TC382_03_A/2025, where the calibrated point sits at y≈0.2).
+  - To retune a **deployed** bundle without retraining:
+    `scripts/set_bundle_threshold.py <bundle.json> --std_mult Y | --scale F | --abs V`
 - `CLEARML_DATASET_ID`, `RUN_REMOTE`, `REMOTE_QUEUE` — ClearML integration
 
 ## Key Design Decisions

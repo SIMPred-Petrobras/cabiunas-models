@@ -384,7 +384,8 @@ def run_pipeline_multivariado(
             stride=cfg.STRIDE,
         )
     else:
-        threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE)
+        threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, cfg.TARGET_ANOMALY_RATE,
+                                      cfg.THRESH_STD_MULT)
 
     plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
