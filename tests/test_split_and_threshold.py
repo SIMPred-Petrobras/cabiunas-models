@@ -29,6 +29,23 @@ class TestSplitAndThreshold(unittest.TestCase):
         self.assertAlmostEqual(compute_threshold(arr, "p99_5"), np.percentile(arr, 99.5))
         self.assertAlmostEqual(compute_threshold(arr, "target_rate", target_rate=0.2), np.quantile(arr, 0.8))
 
+    def test_mean_std_mode(self):
+        arr = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        mu, sigma = float(np.mean(arr)), float(np.std(arr))
+        self.assertAlmostEqual(compute_threshold(arr, "mean_std", std_mult=3.0), mu + 3.0 * sigma)
+        self.assertAlmostEqual(compute_threshold(arr, "mean_std", std_mult=0.5), mu + 0.5 * sigma)
+        # y maior => threshold maior (é o botão de sensibilidade que o operador gira)
+        self.assertGreater(compute_threshold(arr, "mean_std", std_mult=3.0),
+                           compute_threshold(arr, "mean_std", std_mult=1.0))
+
+    def test_mean_std_handles_zero_variance(self):
+        arr = np.full(10, 7.0)
+        self.assertAlmostEqual(compute_threshold(arr, "mean_std", std_mult=3.0), 7.0, places=6)
+
+    def test_unknown_mode_raises(self):
+        with self.assertRaises(ValueError):
+            compute_threshold(np.array([1.0, 2.0]), "nao_existe")
+
     def test_alarm_detection_metrics_include_precision_f1_and_lead_time(self):
         idx = pd.date_range("2025-04-01 00:00:00", periods=12, freq="h")
         df_point = pd.DataFrame({"is_anom_point": [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0]}, index=idx)

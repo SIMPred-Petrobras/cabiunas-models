@@ -44,6 +44,11 @@ def main() -> None:
     p.add_argument("--eval_start", default=None)
     p.add_argument("--eval_end", default=None)
     p.add_argument("--out_dir", default="production_bundles")
+    p.add_argument("--thresh_rule", choices=["quantile", "mean_std"], default="quantile",
+                   help="Como derivar o ewma_abs_threshold: quantil do threshold_q calibrado "
+                        "(default) ou media + y*desvio da EWMA na janela de calibração")
+    p.add_argument("--std_mult", type=float, default=3.0,
+                   help="y de mu + y*sigma quando --thresh_rule mean_std")
     p.add_argument("--upload", action="store_true", help="Re-upload do bundle finalizado como artefato")
     args = p.parse_args()
 
@@ -81,7 +86,17 @@ def main() -> None:
             mae = mae[mae.index >= t0]
         if t1 is not None:
             mae = mae[mae.index <= t1]
-        abs_thr = float(smoothed_mae(mae, hl).quantile(thr_q))
+        sm = smoothed_mae(mae, hl)
+        mu, sigma = float(sm.mean()), float(sm.std(ddof=0))
+        if not (sigma > 0):
+            sigma = 1e-9
+        if args.thresh_rule == "mean_std":
+            abs_thr = mu + args.std_mult * sigma
+        else:
+            abs_thr = float(sm.quantile(thr_q))
+        # y equivalente do ponto gravado: dá ao operador a régua para subir/descer
+        # o threshold em unidades de sigma sem recalibrar nada.
+        y_eq = (abs_thr - mu) / sigma
 
         bkey = next((k for k in arts if "inference_bundle" in k and sensor in k), None)
         if bkey is None:
@@ -92,6 +107,10 @@ def main() -> None:
             "half_life_hours": hl,
             "threshold_q": thr_q,
             "ewma_abs_threshold": abs_thr,
+            "thresh_rule": args.thresh_rule,
+            "ewma_mean": mu,
+            "ewma_std": sigma,
+            "std_mult": float(y_eq),
             "sticky_hours": float(args.sticky_hours),
             "debounce_hours": debounce,
             "recall_at_op": float(row.get("recall", float("nan"))),
@@ -100,7 +119,8 @@ def main() -> None:
         out_path = os.path.join(args.out_dir, f"{sensor}_inference_bundle.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(bundle, f, indent=2, ensure_ascii=False)
-        print(f"  {sensor}: hl={hl}h thr_q={thr_q:.3f} → ewma_abs={abs_thr:.5f} debounce={debounce:.1f}h")
+        print(f"  {sensor}: hl={hl}h thr_q={thr_q:.3f} → ewma_abs={abs_thr:.5f} "
+              f"(regra={args.thresh_rule}, y={y_eq:+.2f}) debounce={debounce:.1f}h")
         if args.upload:
             task.upload_artifact(name=f"{sensor}_inference_bundle_final_json", artifact_object=out_path)
         n_done += 1

@@ -42,8 +42,21 @@ def reconstruction_mae_and_per_sensor(
     return mae_seq, mae_sensor
 
 
-def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float = 0.01) -> float:
+def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float = 0.01,
+                      std_mult: float = 3.0) -> float:
     mode = mode.lower()
+    if mode == "mean_std":
+        # media + y*desvio sobre o erro de TREINO. Botão interpretável para o
+        # operador ("subir y = alarme mais conservador"), mas ATENÇÃO: o erro de
+        # reconstrução tem cauda direita pesada e os próprios eventos inflam sigma,
+        # então os valores clássicos (y=2..3) ficam acima de quase tudo. No
+        # TC382_03_A/2025 o ponto calibrado equivale a y≈0,2 e y=3 zera o recall.
+        # Calibre y com scripts/sweep_threshold_mean_std.py antes de usar.
+        mu = float(np.mean(train_mae_seq))
+        sigma = float(np.std(train_mae_seq))
+        if not np.isfinite(sigma) or sigma <= 0:
+            sigma = 1e-9
+        return mu + float(std_mult) * sigma
     if mode == "max_train":
         return float(np.max(train_mae_seq))
     if mode == "p95":
@@ -60,7 +73,7 @@ def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float =
     if mode == "alarm_f2":
         # Handled externally via compute_threshold_alarm_optimized; fallback to p99.
         return float(np.percentile(train_mae_seq, 99))
-    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/alarm_f2.")
+    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/mean_std/alarm_f2.")
 
 
 def _deduplicate_alarm_incidents(alarm_ts: pd.Series, incident_gap_hours: float = 4.0) -> pd.Series:
@@ -322,15 +335,16 @@ def compute_regime_band_thresholds(
     mode: str,
     target_rate: float,
     min_samples: int = 150,
+    std_mult: float = 3.0,
 ) -> tuple[dict, float]:
     """Calibra um threshold por banda no erro de TREINO. Bandas com menos de
     `min_samples` sequências caem para o threshold global (robustez em regimes raros)."""
-    global_thr = compute_threshold(train_mae_seq, mode, target_rate)
+    global_thr = compute_threshold(train_mae_seq, mode, target_rate, std_mult)
     thr: dict = {}
     for b in np.unique(train_bands):
         m = train_mae_seq[train_bands == b]
         thr[int(b)] = (
-            compute_threshold(m, mode, target_rate) if len(m) >= min_samples else float(global_thr)
+            compute_threshold(m, mode, target_rate, std_mult) if len(m) >= min_samples else float(global_thr)
         )
     return thr, float(global_thr)
 
