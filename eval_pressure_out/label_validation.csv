@@ -1,0 +1,28 @@
+tag,coluna,tipo,direcao_esperada,onsets_total,onsets_curva,onsets_ON,dev_mediano_mad,raridade,frac_excursao,frac_direcao_ok,dur_mediana_min,frac_chatter,veredito,descricao
+PI_6240319_AL,954005_624_PI_0319,falha,—,218,218,131,-0.64,0.4436,0.229,,908.5,0.092,sem_excursao,TC_33003A - Falha PI Gás Motor p/Partida
+PDIT_6240305_AL,954005_624_PDIT_0305,falha,—,8,7,7,-8.83,0.0,1.0,,11.3,0.375,APROVADA,TC_33003A - Falha PDI Vazam. Selo Prim.
+PDI_6240302_AL,954005_624_PDI_0302,falha,—,1,1,1,-83.88,0.0,1.0,,9.1,0.0,poucos_eventos,TC_33003A - Falha no PDI de Gas Selagem
+PDT_6240301F,954005_624_PDI_0301,falha,—,2,2,0,,,,,826.3,0.0,mascarado_RUNNING_A,TC_33003A - Falha PDT Filtro Gás Selagem
+PI_6240307_AL,954005_624_PI_0307,falha,—,3,3,0,,,,,1052.0,0.0,mascarado_RUNNING_A,TC_33003A - Falha PI Gás Selag. Balanc.
+FL_PT6240308,954005_624_PI_0308,falha,—,2,2,0,,,,,2777.4,0.0,mascarado_RUNNING_A,TC_33003A Falha PT-308 Óleo Lub. Comp.
+FL_PT6240339,954005_624_PI_0339,falha,—,2,1,0,,,,,2265.0,0.0,mascarado_RUNNING_A,TC_33003A - Falha PT-339 Óleo Lubrif.
+PDI_6240338_AL,954005_624_PDI_0338,falha,—,2,1,0,,,,,831.6,0.0,mascarado_RUNNING_A,TC_33003A - Falha no PDI Filt. Óleo Lub.
+PDT_6240317,954005_624_PDI_0317,falha,—,2,2,0,,,,,2945.0,0.0,mascarado_RUNNING_A,TC_33003A - Falha no PDT Gás Combustível
+PAL_6240315,954005_624_PI_0315,processo,desce,195,195,83,-1.45,0.1106,0.133,0.892,293.0,0.185,sem_excursao,TC_33003A - Pressão Baixa Gás Comb.
+PDAL_6240302,954005_624_PDI_0302,processo,desce,44,44,41,-6.56,0.017,0.634,0.902,128.4,0.364,APROVADA,TC_33003A - PrDif.Bx.Gás Linha Balanc.
+PAH_6240319,954005_624_PI_0319,processo,sobe,23,23,15,-0.18,0.5273,0.333,0.467,1291.0,0.13,sem_excursao,TC_33003A - Pr.Alta Gás p/ Motor Partida
+TI_6240315,954005_624_TI_0315,processo,—,18,18,10,1.12,0.1561,0.0,,0.8,0.944,chatter,TC_33003A - Temperatura Ar de Exaustão
+TI_6240317,954005_624_TI_0317,processo,—,17,17,10,1.11,0.1662,0.0,,1.0,0.941,chatter,TC_33003A - Temperatura Ar de Exaustão
+TAHH_6240305,954005_624_TI_0305,processo,sobe,14,14,7,11.48,0.0,1.0,1.0,547.7,0.143,APROVADA,TC_33003A - Temp.Mt.Alta Manc.Rad.LNA CP
+PAL_6240339,954005_624_PI_0339,processo,desce,82,82,6,-1.01,0.0215,0.0,1.0,1.2,0.646,chatter,TC_33003A - Pressão Bx. Header Óleo Lub.
+TAH_6240305,954005_624_TI_0305,processo,sobe,25,25,6,10.19,0.0019,1.0,1.0,267.4,0.04,APROVADA,TC_33003A - Temp.Alta Mancal Rad.LNA CP
+PDAH_6240305,954005_624_PDIT_0305,processo,sobe,6,6,3,15.57,0.0006,1.0,1.0,172.2,0.167,poucos_eventos,TC_33003A -Pr.Dif.Alta Vaz.Selo Primário
+PDAHH6240305,954005_624_PDIT_0305,processo,sobe,4,4,3,101.02,0.0,1.0,1.0,43.7,0.25,poucos_eventos,TC_33003A Pr.Dif.Mt.Alta Vaz. Selo Prim.
+PALL_6240340,954005_624_PI_0340,processo,desce,68,68,2,-1.03,0.0174,0.0,1.0,1.5,0.647,poucos_eventos,TC_33003A - TRIP-Pr.Mt.Bx. Hd. Óleo Lub.
+TAL_6240325,954005_624_TI_0325,processo,desce,11,11,0,,,,,1092.1,0.273,mascarado_RUNNING_A,TC_33003A - Temp. Baixa Tanque Óleo Lub.
+TALL_6240325,954005_624_TI_0325,processo,desce,11,11,0,,,,,1061.7,0.182,mascarado_RUNNING_A,TC_33003A -TRIP -Temp.Mt.Bx.TQ Óleo Lub.
+TAH_6240303,954005_624_TI_0303,processo,sobe,6,6,0,,,,,149.2,0.0,mascarado_RUNNING_A,TC_33003A - Temp.Alta Mancal Esc.Inativo
+TAHH_6240303,954005_624_TI_0303,processo,sobe,5,5,0,,,,,665.4,0.0,mascarado_RUNNING_A,TC_33003A -Temp.Mt.Alta Manc.Esc.Inativo
+TAH_6240307,954005_624_TI_0307,processo,sobe,3,3,0,,,,,166.9,0.0,mascarado_RUNNING_A,TC_33003A - Temp.Alta Mancal Rad.LA CP
+TAH_6240301,954005_624_TI_0301,processo,sobe,1,1,0,,,,,166.9,0.0,mascarado_RUNNING_A,TC_33003A - Temp.Alta Mancal Esc. Ativo
+TAHH_6240307,954005_624_TI_0307,processo,sobe,2,2,0,,,,,542.9,0.0,mascarado_RUNNING_A,TC_33003A - Temp.Mt.Alta Manc.Rad.LA CP
