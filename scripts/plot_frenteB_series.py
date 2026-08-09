@@ -133,17 +133,12 @@ def main() -> None:
     temp, on_p = tc03.iloc[::step], on_full.iloc[::step]
     inc_all = arms["b2024"]["inc"]
 
-    fig, axes = plt.subplots(3, 1, figsize=(13.5, 8.6), sharex=True,
-                             gridspec_kw={"height_ratios": [0.9, 1, 1]})
+    fig, axes = plt.subplots(4, 1, figsize=(13.5, 9.2), sharex=True,
+                             gridspec_kw={"height_ratios": [0.85, 0.12, 1, 1]})
     fig.patch.set_facecolor("white")
 
     ax = axes[0]
     shade_off(ax, on_p)
-    spans = alarm_active_spans(temp.index.min(), temp.index.max())
-    for a, b in spans:
-        # alarme curto vira invisível num eixo de 23 meses — largura mínima de 12h
-        b_draw = max(b, a + pd.Timedelta(hours=12))
-        ax.axvspan(a, b_draw, color=MISS, alpha=0.22, lw=0, zorder=1)
     ax.plot(temp.index, temp.values, lw=0.55, color=INK, alpha=0.85, zorder=2)
     for t in inc_all:
         ax.axvline(t, color=MISS, lw=0.7, alpha=0.45, zorder=2)
@@ -152,7 +147,24 @@ def main() -> None:
     ax.set_title("Frente B — janela FULL jun/2024 → abr/2026, um único ponto de operação por braço "
                  f"({len(inc_all)} incidentes HI/HIHI)", fontsize=11, color=INK, loc="left")
 
-    for ax, name in zip(axes[1:], ["b2024", "rerun"]):
+    # pista dedicada: blocos sólidos = alarme HI/HIHI ativo no DCS (onset→OK)
+    lane = axes[1]
+    spans = alarm_active_spans(temp.index.min(), temp.index.max())
+    for a, b in spans:
+        b_draw = max(b, a + pd.Timedelta(hours=24))   # largura mínima p/ 23 meses de eixo
+        lane.axvspan(a, b_draw, ymin=0.15, ymax=0.85, color=MISS, alpha=0.9, lw=0)
+    lane.set_ylim(0, 1)
+    lane.set_yticks([])
+    lane.set_ylabel("alarme\nDCS", fontsize=8, color=MISS, rotation=0,
+                    ha="right", va="center", labelpad=12)
+    for s in ("top", "right", "left"):
+        lane.spines[s].set_visible(False)
+    lane.spines["bottom"].set_color(GRID)
+    lane.tick_params(colors=INK_MUTED, labelsize=8, length=3)
+    lane.text(0.999, 0.5, f"{len(spans)} eventos HI/HIHI (onset→OK)", transform=lane.transAxes,
+              fontsize=7.5, color=INK_MUTED, ha="right", va="center")
+
+    for ax, name in zip(axes[2:], ["b2024", "rerun"]):
         a = arms[name]
         shade_off(ax, on_p)
         blk = (a["alert"] != a["alert"].shift()).cumsum()
@@ -179,7 +191,7 @@ def main() -> None:
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
     axes[-1].legend(handles=[
-        Patch(facecolor=MISS, alpha=0.22, label="alarme HI/HIHI ativo no DCS (onset→OK)"),
+        Patch(facecolor=MISS, alpha=0.9, label="alarme HI/HIHI ativo no DCS (pista própria)"),
         Line2D([], [], color=HIT, lw=1.4, label="incidente detectado (cruzamento bruto, 8h)"),
         Line2D([], [], color=MISS, lw=1.4, label="incidente perdido"),
         Line2D([], [], color=THR, lw=1.1, ls="--", label="threshold (1 por braço)"),
