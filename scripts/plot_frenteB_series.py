@@ -57,6 +57,7 @@ INK, INK_MUTED, GRID = "#0b0b0b", "#52514e", "#e3e2df"
 SERIES, OFF_BAND = "#2a78d6", "#d8d7d2"
 ALERT, THR = "#f6e3b4", "#b3541e"
 HIT, MISS = "#0ca30c", "#d03b3b"
+FP = "#ec835a"   # falso positivo: alerta sem incidente no horizonte (status 'serious')
 
 
 def style(ax):
@@ -106,6 +107,20 @@ def raw_hits(h: pd.Series, q: float, incidents: list) -> tuple[list, list]:
     return hits, [t for t in incidents if t not in hits]
 
 
+def classify_episodes(alert: pd.Series, incidents: list):
+    """Separa episódios de alerta em (casados, falsos positivos) — MESMA regra do
+    n_fp de best_point_for_sensor: episódio [s0,s1] casa se algum incidente cai em
+    [s0, s1+horizonte]."""
+    inc_s = np.array([t.timestamp() for t in incidents])
+    hs = sw.HORIZON * 3600.0
+    matched, fps = [], []
+    for s0, s1 in ev.detect_episodes_gap(alert):
+        ok = bool(np.any((inc_s - hs <= s1.timestamp()) & (inc_s >= s0.timestamp()))) \
+            if inc_s.size else False
+        (matched if ok else fps).append((s0, s1))
+    return matched, fps
+
+
 def main() -> None:
     running, tc03, _ = sw.load_raw()
     on_full = running > 0.5
@@ -126,7 +141,12 @@ def main() -> None:
             raise SystemExit(f"{name}: ponto de operação não reproduz a auditoria — abortando.")
         hits, misses = raw_hits(h, q, inc)
         alert = ev.apply_sticky(h, q, sw.STICKY)
+        matched_eps, fp_eps = classify_episodes(alert, inc)
+        total_days = (h.index[-1] - h.index[0]).total_seconds() / 86400.0
+        assert abs(len(fp_eps) / total_days - fa) < 0.005, \
+            f"{name}: contagem de FP ({len(fp_eps)}) não bate com a FA auditada"
         arms[name] = dict(h=h, q=q, inc=inc, hits=hits, misses=misses, alert=alert,
+                          matched_eps=matched_eps, fp_eps=fp_eps,
                           label=label, rr=rr, fa=fa)
 
     step = max(1, len(tc03) // 20000)
@@ -167,10 +187,11 @@ def main() -> None:
     for ax, name in zip(axes[2:], ["b2024", "rerun"]):
         a = arms[name]
         shade_off(ax, on_p)
-        blk = (a["alert"] != a["alert"].shift()).cumsum()
-        for _, g in a["alert"].groupby(blk):
-            if bool(g.iloc[0]):
-                ax.axvspan(g.index[0], g.index[-1], color=ALERT, alpha=0.8, lw=0, zorder=1)
+        min_w = pd.Timedelta(hours=24)   # legibilidade em 23 meses de eixo
+        for s0, s1 in a["matched_eps"]:
+            ax.axvspan(s0, max(s1, s0 + min_w), color=ALERT, alpha=0.8, lw=0, zorder=1)
+        for s0, s1 in a["fp_eps"]:
+            ax.axvspan(s0, max(s1, s0 + min_w), color=FP, alpha=0.55, lw=0, zorder=1)
         ax.plot(a["h"].index, a["h"].values, lw=0.6, color=SERIES)
         ax.axhline(a["q"], color=THR, lw=1.1, ls="--")
         for t in a["hits"]:
@@ -181,7 +202,8 @@ def main() -> None:
         ax.set_ylim(0, 1.02)
         ax.set_ylabel("health index", fontsize=9, color=INK)
         ax.text(0.005, 0.96, f"{a['label']}  —  raw {a['rr']:.1%} "
-                f"({len(a['hits'])}/{len(a['inc'])})  ·  FA {a['fa']:.3f}/dia",
+                f"({len(a['hits'])}/{len(a['inc'])})  ·  FA {a['fa']:.3f}/dia "
+                f"({len(a['fp_eps'])} episódios FP)",
                 transform=ax.transAxes, fontsize=9, color=INK, va="top",
                 bbox=dict(facecolor="white", edgecolor=GRID, boxstyle="round,pad=0.25", alpha=0.9))
 
@@ -195,7 +217,8 @@ def main() -> None:
         Line2D([], [], color=HIT, lw=1.4, label="incidente detectado (cruzamento bruto, 8h)"),
         Line2D([], [], color=MISS, lw=1.4, label="incidente perdido"),
         Line2D([], [], color=THR, lw=1.1, ls="--", label="threshold (1 por braço)"),
-        Patch(facecolor=ALERT, label="alerta ativo (sticky 12h)"),
+        Patch(facecolor=ALERT, label="alerta que antecede incidente"),
+        Patch(facecolor=FP, alpha=0.55, label="alerta FALSO POSITIVO"),
         Patch(facecolor=OFF_BAND, alpha=0.6, label="equipamento OFF"),
     ], loc="lower right", fontsize=7.5, framealpha=0.95, ncol=3)
 
