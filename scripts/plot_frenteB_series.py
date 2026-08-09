@@ -76,6 +76,28 @@ def shade_off(ax, on: pd.Series):
             ax.axvspan(g.index[0], g.index[-1], color=OFF_BAND, alpha=0.5, lw=0, zorder=0)
 
 
+def alarm_active_spans(t_lo, t_hi) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Janelas onset→OK do alarme HI/HIHI real do DCS — 'quando o alarme existiu'.
+
+    Um onset HI/HIHI abre a janela; o próximo OK fecha. Sem OK registrado, fecha no
+    fim do recorte (alarme ficou pendente)."""
+    df = pd.read_csv(sw.ALARM_CSV)
+    df = df[df["Tag Alarme"] == SENSOR].copy()
+    df["_t"] = pd.to_datetime(df["Data da Ocorrência"], errors="coerce", utc=True)
+    df = df.dropna(subset=["_t"]).sort_values("_t")
+    spans, onset = [], None
+    for _, r in df.iterrows():
+        cond = str(r["Condição do Alarme"]).upper()
+        if cond in ("HI", "HIHI") and onset is None:
+            onset = r["_t"]
+        elif cond == "OK" and onset is not None:
+            spans.append((onset, r["_t"]))
+            onset = None
+    if onset is not None:
+        spans.append((onset, t_hi))
+    return [(a, b) for a, b in spans if b >= t_lo and a <= t_hi]
+
+
 def raw_hits(h: pd.Series, q: float, incidents: list) -> tuple[list, list]:
     raw_s = np.array([t.timestamp() for t in h.index[h >= q]])
     hs = sw.HORIZON * 3600.0
@@ -117,9 +139,14 @@ def main() -> None:
 
     ax = axes[0]
     shade_off(ax, on_p)
-    ax.plot(temp.index, temp.values, lw=0.55, color=INK, alpha=0.85)
+    spans = alarm_active_spans(temp.index.min(), temp.index.max())
+    for a, b in spans:
+        # alarme curto vira invisível num eixo de 23 meses — largura mínima de 12h
+        b_draw = max(b, a + pd.Timedelta(hours=12))
+        ax.axvspan(a, b_draw, color=MISS, alpha=0.22, lw=0, zorder=1)
+    ax.plot(temp.index, temp.values, lw=0.55, color=INK, alpha=0.85, zorder=2)
     for t in inc_all:
-        ax.axvline(t, color=MISS, lw=0.7, alpha=0.45)
+        ax.axvline(t, color=MISS, lw=0.7, alpha=0.45, zorder=2)
     style(ax)
     ax.set_ylabel("TC382_03_A (°C)", fontsize=9, color=INK)
     ax.set_title("Frente B — janela FULL jun/2024 → abr/2026, um único ponto de operação por braço "
@@ -152,6 +179,7 @@ def main() -> None:
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
     axes[-1].legend(handles=[
+        Patch(facecolor=MISS, alpha=0.22, label="alarme HI/HIHI ativo no DCS (onset→OK)"),
         Line2D([], [], color=HIT, lw=1.4, label="incidente detectado (cruzamento bruto, 8h)"),
         Line2D([], [], color=MISS, lw=1.4, label="incidente perdido"),
         Line2D([], [], color=THR, lw=1.1, ls="--", label="threshold (1 por braço)"),
