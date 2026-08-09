@@ -73,6 +73,10 @@ class PipelineConfig:
     SENSOR_TYPE: str = "temperature"  # "temperature" | "pressure" | "vibration"
     ENABLE_CONTEXT_FEATURES: bool = False
     CONTEXT_COLS: List[str] = field(default_factory=list)
+    # O canal de ratio (sensor/ctx) explode quando o ctx passa perto de zero (ex.:
+    # PDI_0317≈0 com máquina parada → erro 80x maior em ~22% do tempo). False gera
+    # só o residual, que não tem divisão.
+    CONTEXT_INCLUDE_RATIO: bool = True
 
     # Features de tendência: slope + desvio do baseline de longo prazo
     # Captura deriva direcional que rolling mean/std não vê.

@@ -371,6 +371,9 @@ def main() -> None:
     parser.add_argument("--task_id",      required=True)
     parser.add_argument("--label",        default="eval")
     parser.add_argument("--alarm_csv",    default=ALARM_CSV_DEFAULT)
+    parser.add_argument("--sensors", nargs="*", default=None,
+                        help="Sensores a avaliar (default: os 17 da frota). Necessário p/ "
+                             "colunas fora da lista, ex.: 954005_624_TI_0305")
     parser.add_argument("--half_life",    type=float, default=4.0,
                         help="Half-life da EWMA (h) — default global")
     parser.add_argument("--half_life_overrides", nargs="*", default=[],
@@ -403,6 +406,12 @@ def main() -> None:
                              "(operational_state != 'on'), ex: UNDER de termopar frio em turbina desligada")
     parser.add_argument("--out_dir",      default="eval_predictive_out/per_sensor_level")
     args = parser.parse_args()
+
+    if args.sensors:
+        # load_alarms_* e load_mae_series leem o global — sobrescrever aqui cobre tudo
+        global SENSORS
+        SENSORS = list(args.sensors)
+        print(f"[SENSORS] Avaliando lista customizada: {SENSORS}")
 
     os.makedirs(args.out_dir, exist_ok=True)
 

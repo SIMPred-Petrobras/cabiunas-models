@@ -166,7 +166,8 @@ def _add_context_features(out: pd.DataFrame, sensor: str, cfg: PipelineConfig) -
             ctx_mean = 1.0
 
         ctx_normalized_by_mean = (ctx_series / ctx_mean) * sensor_mean
-        out[f"{sensor}_ratio_{ctx}"] = (sensor_series / denom).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        if getattr(cfg, "CONTEXT_INCLUDE_RATIO", True):
+            out[f"{sensor}_ratio_{ctx}"] = (sensor_series / denom).replace([np.inf, -np.inf], np.nan).fillna(0.0)
         out[f"{sensor}_residual_{ctx}"] = (
             sensor_series - ctx_normalized_by_mean
         ).replace([np.inf, -np.inf], np.nan).fillna(0.0)

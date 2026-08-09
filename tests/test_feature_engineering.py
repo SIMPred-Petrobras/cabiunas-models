@@ -54,6 +54,33 @@ class TestFeatureEngineering(unittest.TestCase):
         self.assertTrue(np.isfinite(crest).all())
         self.assertFalse(crest.isna().any())
 
+    def _ctx_df(self):
+        return pd.DataFrame(
+            {
+                "T5_AVG_A": [600.0, 610.0, 620.0, 640.0, 660.0, 680.0],
+                "PDI_CTX": [1.0, 1.1, 1.2, 1.4, 1.6, 1.8],
+            },
+            index=pd.date_range("2025-04-01 00:00:00", periods=6, freq="30s"),
+        )
+
+    def test_context_features_generate_ratio_and_residual_by_default(self):
+        cfg = PipelineConfig(ENABLE_CONTEXT_FEATURES=True, CONTEXT_COLS=["PDI_CTX"])
+
+        out = generate_features(self._ctx_df(), "T5_AVG_A", cfg)
+
+        self.assertIn("T5_AVG_A_ratio_PDI_CTX", out.columns)
+        self.assertIn("T5_AVG_A_residual_PDI_CTX", out.columns)
+
+    def test_context_include_ratio_false_generates_residual_only(self):
+        cfg = PipelineConfig(ENABLE_CONTEXT_FEATURES=True, CONTEXT_COLS=["PDI_CTX"],
+                             CONTEXT_INCLUDE_RATIO=False)
+
+        out = generate_features(self._ctx_df(), "T5_AVG_A", cfg)
+
+        self.assertNotIn("T5_AVG_A_ratio_PDI_CTX", out.columns)
+        self.assertIn("T5_AVG_A_residual_PDI_CTX", out.columns)
+        self.assertFalse(out.isna().any().any())
+
     def test_all_feature_flags_disabled_returns_dataframe_without_changes(self):
         cfg = PipelineConfig(
             ENABLE_ROLLING_FEATURES=False,
