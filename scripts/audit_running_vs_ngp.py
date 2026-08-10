@@ -13,6 +13,13 @@ Cobertura: o NGP_A existe em `sensores_filtrados_Interpolados_2024.csv`
 (jun–dez/2024, 98,3% preenchido, 30s) e esparso em `record_2025` (jan–ago/2025).
 NÃO existe de set/2025 em diante — limitação registrada.
 
+⚠️ DEFASAGEM DE FUSO: os exports `sensores_filtrados_record_*.csv` estão em UTC-3,
+enquanto `sensores_brutos_*` / `sensores_2024h2_*` estão em UTC. Medido com o TC03 como
+sonda: erro absoluto mediano 2,32°C em offset 0 contra 0,09°C em −180min. Cruzar as duas
+famílias sem `index -= Timedelta(hours=3)` FABRICA discordâncias (foi o que produziu uma
+leitura inicial errada de "o NGP erra em 98% dos casos"). O arquivo Interpolados_2024
+traz NGP e RUNNING_A na MESMA linha, então a comparação de 2024 é imune a isso.
+
 Saídas: tabela de concordância + `eval_predictive_out/fig_audit_running_vs_ngp.png`.
 
 Uso:
