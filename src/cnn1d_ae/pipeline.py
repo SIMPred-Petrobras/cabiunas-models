@@ -151,7 +151,9 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     plot_loss(history, os.path.join(out_dirs["figs"], "loss_curve.png"))
 
     train_mae_seq = reconstruction_mae_per_seq(best_model, x_train_full, cfg.BATCH_SIZE)
-    threshold = compute_threshold(train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE)
+    threshold = compute_threshold(
+        train_mae_seq, cfg.THRESH_MODE, target_rate=cfg.TARGET_ANOMALY_RATE, std_k=cfg.THRESH_STD_K
+    )
 
     plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
@@ -223,6 +225,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "threshold": float(threshold),
         "THRESH_MODE": cfg.THRESH_MODE,
         "TARGET_ANOMALY_RATE": float(cfg.TARGET_ANOMALY_RATE),
+        "THRESH_STD_K": float(cfg.THRESH_STD_K),
         "POINT_RULE": cfg.POINT_RULE,
         "POINT_WINDOW": int(cfg.POINT_WINDOW),
         "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
@@ -273,6 +276,7 @@ def run_one_group(
         "stride": "STRIDE",
         "thresh_mode": "THRESH_MODE",
         "target_anomaly_rate": "TARGET_ANOMALY_RATE",
+        "thresh_std_k": "THRESH_STD_K",
         "point_window": "POINT_WINDOW",
         "point_min_count": "POINT_MIN_COUNT",
     }
@@ -385,7 +389,8 @@ def run_one_group(
     train_mae_thresh = (np.mean(train_abs_err[:, :, target_idx], axis=1)
                         if target_idx is not None else train_mae_seq)
     threshold = compute_threshold(train_mae_thresh, effective_cfg.THRESH_MODE,
-                                  target_rate=effective_cfg.TARGET_ANOMALY_RATE)
+                                  target_rate=effective_cfg.TARGET_ANOMALY_RATE,
+                                  std_k=effective_cfg.THRESH_STD_K)
     plot_hist_mae(train_mae_thresh, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
     x_all = make_sequences(values_all, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
@@ -481,6 +486,7 @@ def run_one_group(
         "THRESH_MODE": effective_cfg.THRESH_MODE,
         "TIME_STEPS": int(effective_cfg.TIME_STEPS),
         "TARGET_ANOMALY_RATE": float(effective_cfg.TARGET_ANOMALY_RATE),
+        "THRESH_STD_K": float(effective_cfg.THRESH_STD_K),
         "POINT_RULE": cfg.POINT_RULE,
         "POINT_WINDOW": int(effective_cfg.POINT_WINDOW),
         "POINT_MIN_COUNT": int(effective_cfg.POINT_MIN_COUNT),

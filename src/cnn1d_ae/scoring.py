@@ -13,7 +13,9 @@ def reconstruction_mae_per_seq(model: "keras.Model", x: np.ndarray, batch_size: 
     return np.mean(np.abs(x_pred - x), axis=(1, 2))
 
 
-def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float = 0.01) -> float:
+def compute_threshold(
+    train_mae_seq: np.ndarray, mode: str, target_rate: float = 0.01, std_k: float = 3.0
+) -> float:
     mode = mode.lower()
     if mode == "max_train":
         return float(np.max(train_mae_seq))
@@ -28,7 +30,9 @@ def compute_threshold(train_mae_seq: np.ndarray, mode: str, target_rate: float =
     if mode == "target_rate":
         rate = float(np.clip(target_rate, 1e-6, 0.5))
         return float(np.quantile(train_mae_seq, 1.0 - rate))
-    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate.")
+    if mode == "mean_std":
+        return float(np.mean(train_mae_seq) + float(std_k) * np.std(train_mae_seq))
+    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/mean_std.")
 
 
 def map_seq_to_point_anomalies(

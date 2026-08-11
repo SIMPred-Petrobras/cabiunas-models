@@ -219,8 +219,9 @@ Agrupa sensores **fisicamente conectados** para treinar um único autoencoder mu
 
 | Campo | O que faz |
 |---|---|
-| `THRESH_MODE` | Como calcular o limiar sobre o erro de reconstrução (MAE) do treino: `"p99"` = percentil 99; `"p99_5"` = percentil 99,5; `"max_train"` = máximo do treino; `"target_rate"` = ajusta o limiar para que exatamente a fração `TARGET_ANOMALY_RATE` dos dados de treino seja marcada como anômala |
+| `THRESH_MODE` | Como calcular o limiar sobre o erro de reconstrução (MAE) do treino: `"p99"` = percentil 99; `"p99_5"` = percentil 99,5; `"max_train"` = máximo do treino; `"target_rate"` = ajusta o limiar para que exatamente a fração `TARGET_ANOMALY_RATE` dos dados de treino seja marcada como anômala; `"mean_std"` = `média(MAE_treino) + THRESH_STD_K × desvio_padrão(MAE_treino)` |
 | `TARGET_ANOMALY_RATE` | Taxa alvo. `0.003` = 0,3% das janelas de treino — usado apenas quando `THRESH_MODE: "target_rate"` |
+| `THRESH_STD_K` | Multiplicador do desvio-padrão (ex. `2`, `3`, `4`, `5`) — usado apenas quando `THRESH_MODE: "mean_std"`. Quanto maior, mais permissivo (menos anomalias) |
 
 ---
 
