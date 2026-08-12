@@ -30,6 +30,7 @@ from .scoring import (
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
     apply_load_gate,
+    eval_alarm_hit_rate,
 )
 from .plots import (
     plot_loss,
@@ -37,6 +38,7 @@ from .plots import (
     plot_series_with_anomalies,
     plot_series_alarm_anomaly_subplots,
 )
+from .automl_pipeline import run_automl_group
 
 
 def discover_sensors(cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.DataFrame) -> List[str]:
@@ -57,24 +59,6 @@ def discover_sensors(cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.Data
         cols = [c for c in cols if c not in bad]
 
     return sorted(cols)
-
-
-def eval_alarm_hit_rate(df_alarm: pd.DataFrame, df_point: pd.DataFrame, minutes: int) -> Dict:
-    win = pd.Timedelta(minutes=minutes)
-    hits = 0
-    for t in df_alarm["Data da Ocorrencia"]:
-        t0 = t - win
-        t1 = t + win
-        if df_point.loc[(df_point.index >= t0) & (df_point.index <= t1), "is_anom_point"].sum() > 0:
-            hits += 1
-
-    total = len(df_alarm)
-    hit_rate = hits / total if total > 0 else np.nan
-    return {
-        "n_alarms": int(total),
-        "alarms_with_detected_anomaly_in_window": int(hits),
-        "hit_rate": float(hit_rate) if np.isfinite(hit_rate) else None,
-    }
 
 
 def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.DataFrame, df_raw: pd.DataFrame, sensor: str) -> Dict:
@@ -589,6 +573,28 @@ def run(cfg: PipelineConfig) -> Dict[str, Any]:
     time_report_path = os.path.join(summary_out_root, "time_integrity_report.json")
     with open(time_report_path, "w", encoding="utf-8") as f:
         json.dump(time_report, f, indent=2, ensure_ascii=False)
+
+    if cfg.ENABLE_AUTOML:
+        if not cfg.SENSOR_GROUPS:
+            raise ValueError("ENABLE_AUTOML=true exige SENSOR_GROUPS definido.")
+        rows = []
+        for group in cfg.SENSOR_GROUPS:
+            try:
+                rows.append(run_automl_group(cfg, df_alarm, df_feat, df_raw, group))
+            except Exception as e:
+                print(f"[ERROR] automl group={group.get('name')} -> {e}")
+                rows.append({"group": group.get("name"), "sensors": group.get("sensors", []),
+                             "skipped": True, "reason": f"exception: {e}"})
+        df_summary = pd.DataFrame(rows).sort_values("skipped", ascending=True)
+        df_summary.to_csv(summary_path, index=False)
+        print(f"\n[DONE] Summary AutoML salvo em: {summary_path}")
+        return {
+            "summary_path": summary_path,
+            "time_report_path": time_report_path,
+            "sensor_outputs": rows,
+            "sensors": [],
+            "groups": [g["name"] for g in cfg.SENSOR_GROUPS],
+        }
 
     rows: List[Dict] = []
     grouped_sensors: Set[str] = set()

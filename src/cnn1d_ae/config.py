@@ -126,6 +126,35 @@ class PipelineConfig:
     # Exemplos: "RUNNING_A" (arquivo novo) ou "NGP_A" (arquivo antigo via EXTRA_RAW_CSV).
     OPERATIONAL_REF_SENSOR: Optional[str] = None
 
+    # =========================
+    # AUTOML (busca de modelo, adaptado da pipeline transpetro_modelos da Lara
+    # — ver analise_automl_lara.md). Quando ENABLE_AUTOML=true, roda um search
+    # sobre AUTOML_MODELS x AUTOML_THRESHOLD_PERCENTILES x AUTOML_DEBOUNCE_GRID
+    # para cada grupo de SENSOR_GROUPS, ranqueado por composite_score
+    # (deteccao de alarme real, na nossa propria janela — nao os 30 dias/
+    # eventos nao curados da pipeline original). Substitui o caminho CNN-1D;
+    # nao roda sensores individuais fora de SENSOR_GROUPS.
+    # =========================
+    ENABLE_AUTOML: bool = False
+    AUTOML_MODELS: Optional[List[str]] = None  # default: ["dense", "ocsvm", "iforest"]
+    AUTOML_THRESHOLD_PERCENTILES: Optional[List[float]] = None  # default: [95, 97, 99, 99.5]
+    AUTOML_DEBOUNCE_GRID: Optional[List[int]] = None  # pontos consecutivos exigidos; default: [1]
+    AUTOML_FP_PENALTY: float = 2.0
+    AUTOML_MIN_DETECTION_RATE: float = 0.3
+
+    AUTOML_DENSE_LAYERS: Optional[List[int]] = None  # default: [256, 128]
+    AUTOML_DENSE_DROPOUT: float = 0.0
+    AUTOML_DENSE_LR: float = 1e-3
+    AUTOML_DENSE_EPOCHS: int = 50
+    AUTOML_DENSE_BATCH_SIZE: int = 256
+    AUTOML_DENSE_PATIENCE: int = 10
+
+    AUTOML_OCSVM_NU: float = 0.05
+    AUTOML_OCSVM_GAMMA: str = "scale"
+
+    AUTOML_IFOREST_CONTAMINATION: float = 0.05
+    AUTOML_IFOREST_N_ESTIMATORS: int = 100
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

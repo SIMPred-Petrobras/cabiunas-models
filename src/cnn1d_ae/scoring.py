@@ -90,6 +90,63 @@ def compute_anomaly_rate_per_day(df_point: pd.DataFrame) -> float:
     return float(n_anom / n_days)
 
 
+def eval_alarm_hit_rate(df_alarm: pd.DataFrame, df_point: pd.DataFrame, minutes: int) -> dict:
+    win = pd.Timedelta(minutes=minutes)
+    hits = 0
+    for t in df_alarm["Data da Ocorrencia"]:
+        t0 = t - win
+        t1 = t + win
+        if df_point.loc[(df_point.index >= t0) & (df_point.index <= t1), "is_anom_point"].sum() > 0:
+            hits += 1
+
+    total = len(df_alarm)
+    hit_rate = hits / total if total > 0 else np.nan
+    return {
+        "n_alarms": int(total),
+        "alarms_with_detected_anomaly_in_window": int(hits),
+        "hit_rate": float(hit_rate) if np.isfinite(hit_rate) else None,
+    }
+
+
+def compute_normal_alert_rate(df_point: pd.DataFrame, near_alarm_mask: pd.Series) -> float:
+    """Fracao de pontos operacionais ('on'), fora de qualquer janela de alarme, marcados como anomalia.
+
+    Equivalente ao 'normal_alert_rate' da pipeline de AutoML, mas calculado
+    sobre a nossa propria mascara de alarmes/estado operacional.
+    """
+    normal_mask = ~near_alarm_mask.reindex(df_point.index).fillna(False)
+    if "operational_state" in df_point.columns:
+        normal_mask &= df_point["operational_state"] == "on"
+    normal = df_point.loc[normal_mask]
+    if normal.empty:
+        return 0.0
+    return float(normal["is_anom_point"].mean())
+
+
+def compute_composite_score(
+    detection_rate: float,
+    normal_alert_rate: float,
+    fp_penalty: float = 2.0,
+    min_detection_rate: float = 0.0,
+) -> dict:
+    """Score que balanceia deteccao de alarme x falso positivo (mesma forma da
+    pipeline de AutoML da Lara, mas alimentado com detection_rate/normal_alert_rate
+    calculados na nossa propria regua de avaliacao — ver analise_automl_lara.md).
+    """
+    detection_rate = float(detection_rate)
+    normal_alert_rate = float(normal_alert_rate)
+    balanced_score = detection_rate - float(fp_penalty) * (normal_alert_rate ** 2)
+    if detection_rate < min_detection_rate:
+        balanced_score -= (min_detection_rate - detection_rate) * 2.0
+    composite_score = float(np.clip((balanced_score + fp_penalty) / (1.0 + fp_penalty), 0.0, 1.0))
+    return {
+        "composite_score": composite_score,
+        "balanced_score": float(balanced_score),
+        "detection_rate": detection_rate,
+        "normal_alert_rate": normal_alert_rate,
+    }
+
+
 def build_operational_state(
     index: pd.DatetimeIndex,
     sensor_series: pd.Series,
