@@ -33,7 +33,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 SRC = "eval_predictive_out/forecast_crossing_horizon.csv"
+FLOOR = "eval_predictive_out/forecast_crossing_chancefloor.csv"
 OUT = "eval_predictive_out/fig_horizon_frontier_TC382_03_A.png"
+FLOOR_C = "#c0392b"
 
 INK, INK_MUTED, GRID = "#0b0b0b", "#52514e", "#e3e2df"
 
@@ -87,6 +89,7 @@ def style(ax):
 
 def main() -> None:
     df = pd.read_csv(SRC)
+    floor = pd.read_csv(FLOOR) if os.path.exists(FLOOR) else None
     janelas = list(dict.fromkeys(df.janela))
     hs = sorted(df.H.unique())
 
@@ -102,6 +105,21 @@ def main() -> None:
         for row, (col, ylab, pct) in enumerate(
                 [("recall_raw", "recall_raw", True), ("fa_per_day", "falsos alarmes / dia", False)]):
             ax = axes[row, j]
+            # O PISO DO ACASO, onde foi medido. Sem esta faixa a figura mente: a 72 h a
+            # curva sobe, mas o chão sobe junto — um modelo com rótulo embaralhado chega
+            # a empatar com o limiar. Só o que passa do topo da faixa é habilidade.
+            if row == 0 and floor is not None and wlab in set(floor.janela):
+                fw = floor[floor.janela == wlab].set_index("H").reindex(hs)
+                ax.fill_between(hs, 0, fw.rotulo_embaralhado.values * 100,
+                                color=FLOOR_C, alpha=0.09, lw=0, zorder=0)
+                ax.plot(hs, fw.rotulo_embaralhado.values * 100, color=FLOOR_C, lw=1.1,
+                        ls=(0, (2, 2)), alpha=0.75, zorder=1)
+                ax.plot(hs, fw.piso_ruido.values * 100, color=FLOOR_C, lw=0.9,
+                        ls=(0, (1, 2.5)), alpha=0.6, zorder=1)
+                ax.annotate("piso do acaso\n(rótulo embaralhado)",
+                            xy=(hs[0], fw.rotulo_embaralhado.values[0] * 100),
+                            xytext=(3, -13), textcoords="offset points",
+                            fontsize=6.8, color=FLOOR_C, va="top", zorder=6)
             marcas = []
             for name, st in ARMS.items():
                 s = d[d.braco == name].set_index("H")[col].reindex(hs)
@@ -125,12 +143,13 @@ def main() -> None:
             ax.set_xticklabels([f"{int(h)}h" for h in hs])
             ax.margins(x=0.12)
 
-    fig.suptitle("Onde o limiar trivial quebra — TC382_03_A, previsão de cruzamento de 760 °C",
+    fig.suptitle("O limiar trivial não quebra — TC382_03_A, previsão de cruzamento de 760 °C",
                  fontsize=12.5, color=INK, x=0.012, ha="left", y=0.985)
     fig.text(0.012, 0.938,
-             "Cada painel compara os braços DENTRO de um horizonte. A curva subir com H não é o modelo "
-             "melhorando — a janela de crédito é maior.\nO que importa é a distância vertical até a linha "
-             "tracejada (A0, o limiar trivial), e se ela se abre à direita.",
+             "A aposta era que o limiar (linha tracejada preta) degradaria no horizonte longo e o modelo "
+             "seguraria. Não acontece: as curvas CONVERGEM à direita.\nE o piso do acaso sobe junto — a 72 h "
+             "um modelo com o rótulo embaralhado já empata com o limiar, então recall alto ali é aritmética "
+             "da janela de crédito, não habilidade.",
              fontsize=8.4, color=INK_MUTED, ha="left", va="top")
 
     fig.tight_layout(rect=[0, 0, 0.965, 0.925])

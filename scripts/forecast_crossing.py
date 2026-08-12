@@ -500,12 +500,16 @@ def stage_leakprobe(X: pd.DataFrame) -> pd.DataFrame:
             s = sc[(sc.index >= t0) & (sc.index < t1)].dropna()
             rs = best_over_hl(s, inc, running, H)
             shuf = rs.get("recall_raw") or 0.0
+            shuf_fa = rs.get("fa_per_day") or float("nan")
             rows.append(dict(janela=wlab, H=H, n_inc=len(inc), piso_ruido=piso,
                              piso_sd=piso_sd, piso_fa=float(np.nanmean(fas)),
-                             rotulo_embaralhado=shuf))
+                             rotulo_embaralhado=shuf, embaralhado_fa=shuf_fa))
             print(f"  ruído puro (5 sementes)   recall_raw={piso:.1%} ± {piso_sd:.1%}"
                   f"   FA={np.nanmean(fas):.3f}")
-            print(f"  rótulo EMBARALHADO        recall_raw={shuf:.1%}", flush=True)
+            print(f"  rótulo EMBARALHADO        recall_raw={shuf:.1%}   FA={shuf_fa:.3f}",
+                  flush=True)
+            # a FA dos nulos costuma ser 4–6x a dos braços reais: eles compram recall com
+            # alarme ligado. O piso a FA EQUIPARADA é mais baixo — não confundir os dois.
 
     df = pd.DataFrame(rows)
     df.to_csv(f"{OUTDIR}/forecast_crossing_chancefloor.csv", index=False)
