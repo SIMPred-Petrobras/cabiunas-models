@@ -29,6 +29,7 @@ from .scoring import (
     compute_anomaly_rate_per_day,
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
+    apply_load_gate,
 )
 from .plots import (
     plot_loss,
@@ -199,6 +200,23 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+
+    if cfg.ENABLE_LOAD_GATE:
+        if not cfg.LOAD_GATE_SENSOR:
+            raise ValueError("ENABLE_LOAD_GATE=true exige LOAD_GATE_SENSOR definido.")
+        if cfg.LOAD_GATE_SENSOR == sensor:
+            gate_series = df_all[sensor]
+        else:
+            df_gate, _ = build_sensor_dataframe(cfg, df_feat, df_raw, cfg.LOAD_GATE_SENSOR)
+            gate_series = df_gate[cfg.LOAD_GATE_SENSOR]
+        df_point = apply_load_gate(
+            df_point, gate_series,
+            ramp_max=cfg.LOAD_GATE_RAMP_MAX,
+            level_min=cfg.LOAD_GATE_LEVEL_MIN,
+            ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
+            window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
+        )
+
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -231,11 +249,17 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        "load_gate_enabled": bool(cfg.ENABLE_LOAD_GATE),
         **eval_stats,
     }
     if state is not None:
         counts = state.value_counts().to_dict()
         calibration_report["operational_state_counts"] = {str(k): int(v) for k, v in counts.items()}
+    if cfg.ENABLE_LOAD_GATE:
+        calibration_report["load_gate_sensor"] = cfg.LOAD_GATE_SENSOR
+        calibration_report["load_gate_ramp_max"] = float(cfg.LOAD_GATE_RAMP_MAX)
+        calibration_report["load_gate_level_min"] = float(cfg.LOAD_GATE_LEVEL_MIN)
+        calibration_report["load_gate_points_blocked"] = int(df_point["load_gate_blocked"].sum())
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
 
@@ -279,6 +303,12 @@ def run_one_group(
         "thresh_std_k": "THRESH_STD_K",
         "point_window": "POINT_WINDOW",
         "point_min_count": "POINT_MIN_COUNT",
+        "enable_load_gate": "ENABLE_LOAD_GATE",
+        "load_gate_sensor": "LOAD_GATE_SENSOR",
+        "load_gate_ramp_max": "LOAD_GATE_RAMP_MAX",
+        "load_gate_level_min": "LOAD_GATE_LEVEL_MIN",
+        "load_gate_ramp_halflife_minutes": "LOAD_GATE_RAMP_HALFLIFE_MINUTES",
+        "load_gate_window_minutes": "LOAD_GATE_WINDOW_MINUTES",
     }
     overrides = {cfg_key: group[json_key]
                  for json_key, cfg_key in _OVERRIDE_KEYS.items()
@@ -445,6 +475,24 @@ def run_one_group(
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+
+    if effective_cfg.ENABLE_LOAD_GATE:
+        gate_sensor = effective_cfg.LOAD_GATE_SENSOR
+        if not gate_sensor:
+            raise ValueError("ENABLE_LOAD_GATE=true exige LOAD_GATE_SENSOR (ou load_gate_sensor no grupo).")
+        if gate_sensor in df_all.columns:
+            gate_series = df_all[gate_sensor]
+        else:
+            df_gate, _ = build_sensor_dataframe(cfg, df_feat, df_raw, gate_sensor)
+            gate_series = df_gate[gate_sensor]
+        df_point = apply_load_gate(
+            df_point, gate_series,
+            ramp_max=effective_cfg.LOAD_GATE_RAMP_MAX,
+            level_min=effective_cfg.LOAD_GATE_LEVEL_MIN,
+            ramp_halflife_minutes=effective_cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
+            window_minutes=effective_cfg.LOAD_GATE_WINDOW_MINUTES,
+        )
+
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -492,12 +540,18 @@ def run_one_group(
         "POINT_MIN_COUNT": int(effective_cfg.POINT_MIN_COUNT),
         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
+        "load_gate_enabled": bool(effective_cfg.ENABLE_LOAD_GATE),
         **eval_stats,
     }
     if state is not None:
         calibration_report["operational_state_counts"] = {
             str(k): int(v) for k, v in state.value_counts().to_dict().items()
         }
+    if effective_cfg.ENABLE_LOAD_GATE:
+        calibration_report["load_gate_sensor"] = effective_cfg.LOAD_GATE_SENSOR
+        calibration_report["load_gate_ramp_max"] = float(effective_cfg.LOAD_GATE_RAMP_MAX)
+        calibration_report["load_gate_level_min"] = float(effective_cfg.LOAD_GATE_LEVEL_MIN)
+        calibration_report["load_gate_points_blocked"] = int(df_point["load_gate_blocked"].sum())
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
 

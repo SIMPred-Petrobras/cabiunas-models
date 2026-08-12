@@ -201,22 +201,43 @@ def _plot_summary(summary: pd.DataFrame, out_path: Path) -> None:
     plt.close(fig)
 
 
-def generate_plots(task_id: str, out_dir: Path, include_raw: bool = False) -> None:
-    _ensure_clearml_config()
-    task = Task.get_task(task_id=task_id)
-    cfg = _pipeline_params(task)
+def _resolve_artifact_prefix(cfg: dict) -> tuple[str, str]:
+    """Retorna (prefixo_do_artifact, sensor_para_serie_bruta).
+
+    Para runs de sensor individual os dois coincidem. Para runs de grupo
+    (SENSOR_GROUPS), os artifacts sao publicados sob o nome do grupo, mas a
+    serie bruta/alarmes devem ser carregados para o target_sensor (ou o
+    primeiro sensor do grupo, se nao houver target_sensor).
+    """
+    groups = cfg.get("SENSOR_GROUPS") or []
+    if isinstance(groups, str):
+        groups = json.loads(groups)
+    if groups:
+        group = groups[0]
+        prefix = group["name"]
+        label_sensor = group.get("target_sensor") or group["sensors"][0]
+        return prefix, label_sensor
+
     sensor_list = cfg.get("SENSOR_LIST") or []
     if isinstance(sensor_list, str):
         sensor_list = json.loads(sensor_list)
     if not sensor_list:
-        raise ValueError("Nao foi possivel inferir SENSOR_LIST dos parametros da task.")
+        raise ValueError("Nao foi possivel inferir SENSOR_LIST/SENSOR_GROUPS dos parametros da task.")
     sensor = sensor_list[0]
+    return sensor, sensor
+
+
+def generate_plots(task_id: str, out_dir: Path, include_raw: bool = False) -> None:
+    _ensure_clearml_config()
+    task = Task.get_task(task_id=task_id)
+    cfg = _pipeline_params(task)
+    prefix, sensor = _resolve_artifact_prefix(cfg)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    point_path = _copy_artifact(task, f"{sensor}/csv/point_anomalies_all.csv", out_dir)
-    seq_path = _copy_artifact(task, f"{sensor}/csv/sequence_scores_all.csv", out_dir)
-    trials_path = _copy_artifact(task, f"{sensor}/csv/trials_ranking.csv", out_dir)
-    calibration_path = _copy_artifact(task, f"{sensor}/csv/calibration_report.json", out_dir)
+    point_path = _copy_artifact(task, f"{prefix}/csv/point_anomalies_all.csv", out_dir)
+    seq_path = _copy_artifact(task, f"{prefix}/csv/sequence_scores_all.csv", out_dir)
+    trials_path = _copy_artifact(task, f"{prefix}/csv/trials_ranking.csv", out_dir)
+    calibration_path = _copy_artifact(task, f"{prefix}/csv/calibration_report.json", out_dir)
     summary_path = _copy_artifact(task, "summary_all_sensors_csv", out_dir)
     _copy_artifact(task, "time_integrity_report_json", out_dir)
 

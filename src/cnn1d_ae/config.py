@@ -83,6 +83,19 @@ class PipelineConfig:
     TRANSIENT_PADDING_MINUTES: int = 20
     TRANSIENT_DIFF_QUANTILE: float = 0.99
 
+    # Portao de rampa de carga (suprime falso positivo durante manobra, sem
+    # mexer no threshold). LOAD_GATE_SENSOR e a coluna raw usada como proxy de
+    # carga (ex: "T5_AVG_A"); bloqueia is_anom_point quando a rampa desse
+    # sensor ultrapassa LOAD_GATE_RAMP_MAX (unidade/hora) numa janela trailing
+    # de LOAD_GATE_WINDOW_MINUTES. LOAD_GATE_LEVEL_MIN=0 desativa a condicao
+    # de nivel minimo.
+    ENABLE_LOAD_GATE: bool = False
+    LOAD_GATE_SENSOR: Optional[str] = None
+    LOAD_GATE_RAMP_HALFLIFE_MINUTES: float = 120.0
+    LOAD_GATE_WINDOW_MINUTES: float = 360.0
+    LOAD_GATE_RAMP_MAX: float = 80.0
+    LOAD_GATE_LEVEL_MIN: float = 0.0
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 

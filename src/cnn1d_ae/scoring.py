@@ -142,6 +142,61 @@ def build_operational_state(
     return state
 
 
+def compute_load_ramp_gate(
+    load_series: pd.Series,
+    ramp_halflife_minutes: float = 120.0,
+    window_minutes: float = 360.0,
+) -> tuple[pd.Series, pd.Series]:
+    """Rampa causal de um sensor-proxy de carga e seu maximo trailing.
+
+    smoothed = EWMA(load_series, half-life=ramp_halflife_minutes)
+    ramp     = |d(smoothed)/dt| em unidades/hora
+    gate     = ramp.rolling(window_minutes, trailing).max()
+
+    Retorna (gate, smoothed) alinhados ao index de load_series.
+    """
+    s = pd.to_numeric(load_series, errors="coerce").sort_index()
+    dt_seconds = s.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    halflife_periods = max(1.0, (float(ramp_halflife_minutes) * 60.0) / dt_seconds)
+    smoothed = s.ewm(halflife=halflife_periods).mean()
+
+    dt_hours = s.index.to_series().diff().dt.total_seconds() / 3600.0
+    ramp = (smoothed.diff() / dt_hours).abs()
+    gate = ramp.rolling(f"{int(window_minutes)}min", min_periods=1).max()
+    return gate, smoothed
+
+
+def apply_load_gate(
+    df_point: pd.DataFrame,
+    load_series: pd.Series,
+    ramp_max: float,
+    level_min: float = 0.0,
+    ramp_halflife_minutes: float = 120.0,
+    window_minutes: float = 360.0,
+) -> pd.DataFrame:
+    """Suprime is_anom_point durante manobra de carga (rampa alta) do proxy informado.
+
+    Causal: usa reindex(method='ffill') para nunca olhar o futuro. Regra:
+    bloqueia quando ramp >= ramp_max, ou (se level_min > 0) quando o nivel
+    suavizado do proxy fica abaixo de level_min.
+    """
+    gate, smoothed = compute_load_ramp_gate(load_series, ramp_halflife_minutes, window_minutes)
+    gate_at_point = gate.reindex(df_point.index, method="ffill")
+    level_at_point = smoothed.reindex(df_point.index, method="ffill")
+
+    blocked = gate_at_point >= ramp_max
+    if level_min > 0:
+        blocked = blocked | (level_at_point < level_min)
+    blocked = blocked.fillna(False)
+
+    df_point = df_point.copy()
+    df_point["load_gate_blocked"] = blocked.values
+    df_point.loc[blocked.values, "is_anom_point"] = 0
+    return df_point
+
+
 def mask_anomaly_seq_by_operational_state(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,
