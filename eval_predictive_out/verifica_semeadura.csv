@@ -1,0 +1,3 @@
+par,n,max_abs,media_abs,corr,identico,d_recall_pp
+A (seed 42) × B (seed 42),201267,0.0,0.0,1.0,True,0.0
+A (seed 42) × C (seed 07),201267,0.28949528999999996,0.023906658942826692,0.9718525994783618,False,10.344827586206895
