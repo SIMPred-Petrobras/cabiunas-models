@@ -27,6 +27,16 @@
       "name": "T5_temperatura",
       "sensors": ["T5_AVG_A", "TC382_03_A"],
       "target_sensor": "T5_AVG_A"
+    },
+    {
+      "name": "T5_AVG_A_univariado",
+      "sensors": ["T5_AVG_A"],
+      "target_sensor": "T5_AVG_A"
+    },
+    {
+      "name": "TC382_03_A_univariado",
+      "sensors": ["TC382_03_A"],
+      "target_sensor": "TC382_03_A"
     }
   ],
 
@@ -36,7 +46,7 @@
   "AUTOML_DEBOUNCE_GRID": [1, 3, 6, 12],
   "AUTOML_FP_PENALTY": 2.0,
   "AUTOML_MIN_DETECTION_RATE": 0.3,
-  "AUTOML_DENSE_LAYERS": [64, 32],
+  "AUTOML_DENSE_LAYERS": [256, 128],
   "AUTOML_DENSE_DROPOUT": 0.0,
   "AUTOML_DENSE_LR": 0.001,
   "AUTOML_DENSE_EPOCHS": 50,
@@ -47,7 +57,7 @@
   "AUTOML_IFOREST_CONTAMINATION": 0.05,
   "AUTOML_IFOREST_N_ESTIMATORS": 100,
 
-  "AUTOML_OOS_SPLIT_DATE": "2025-05-01",
+  "AUTOML_OOS_SPLIT_DATE": null,
 
   "OPERATIONAL_REF_SENSOR": "NGP_A",
 

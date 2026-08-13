@@ -82,6 +82,14 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
                     artifact_name = f"{sensor}/csv/{name}"
                     _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
 
+        figs_dir = os.path.join(output_dir, "figs")
+        if os.path.isdir(figs_dir):
+            for name in sorted(os.listdir(figs_dir)):
+                file_path = os.path.join(figs_dir, name)
+                if os.path.isfile(file_path):
+                    artifact_name = f"{sensor}/figs/{name}"
+                    _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
+
         hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
         _publish_artifact(task, f"{sensor}/best_hyperparameters_json", hp_path, local_task_dir / sensor)
 
