@@ -92,3 +92,35 @@ reavaliado com amostra de alarmes maior antes de tirar qualquer conclusão.
    (`analise_automl_lara.md`, seção 1.2). Nossa pipeline é ponto-a-ponto (sem
    `seq_len`/janelamento como a dela), então não é uma reprodução exata, mas
    testa se a capacidade extra ajuda no nosso regime também.
+
+---
+
+## EXP5-v3 — sem split OOS, 3 grupos, dense [256,128] (in-sample)
+
+**Task ClearML:** `789ab54015e34bca9f2c1739bb16bec3`
+
+| Grupo | Melhor modelo | Hit rate | composite_score | normal_alert_rate |
+|---|---|---|---|---|
+| TC382_03_A univariado | **iforest** | 81,6% (62/76) | 0,938 | 2,42% |
+| T5_temperatura (combinado) | dense | 78,3% (94/120) | 0,927 | 3,28% |
+| T5_AVG_A univariado | dense | 59,1% (26/44) | 0,864 | 0,45% |
+
+Salto grande sobre o EXP5 (57,1%), mas com uma ressalva séria: **o `dense`
+venceu com threshold na ordem de 1e-9** (praticamente zero) em dois dos três
+grupos. Com 256→128 neurônios reconstruindo um vetor de 1-2 features
+contínuas sobre ~720 mil pontos de treino, o autoencoder tem capacidade de
+sobra para memorizar os dados normais quase perfeitamente, em vez de
+aprender um padrão generalizável — é o mesmo padrão de "resultado sedutor
+mas otimizado no mesmo ponto" que a seção 3.4 de `analise_automl_lara.md`
+identificou no notebook da própria Lara.
+
+O resultado do **TC382_03_A univariado é o mais confiável dos três**: quem
+venceu ali foi o `iforest` (threshold em escala normal, 0,64), não o dense —
+consistente com o indício já visto no EXP5-v2 (agora com amostra completa de
+76 alarmes em vez de 4).
+
+**Decisão:** nenhum desses candidatos pode ser promovido sem validação fora
+da amostra. Próximo passo: restaurar `AUTOML_OOS_SPLIT_DATE: "2025-05-01"`
+(preserva ~70+ alarmes na avaliação, ver tabela de distribuição no topo deste
+documento) e rodar os mesmos 3 grupos de novo para confirmar se os resultados
+se sustentam.
