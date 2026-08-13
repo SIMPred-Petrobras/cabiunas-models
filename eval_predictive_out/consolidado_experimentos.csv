@@ -1,0 +1,27 @@
+painel,n_inc,experimento,familia,recall,fa,nota
+jan/24→abr/26,79,limiar trivial,limiar trivial,81.0126582278481,0.0465091241858211,
+jan/24→abr/26,79,AE v14-control,autoencoder,62.0253164556962,0.1144835239459714,
+jan/24→abr/26,79,só tendência (dT/dt),limiar trivial,40.50632911392405,0.1812663301601235,
+jan/24→abr/26,79,fusão consenso,fusão,83.54430379746836,0.0572419989979337,
+jan/24→abr/26,79,fusão OR,fusão,70.88607594936708,0.12521687280798,
+jan/24→abr/26,79,GBM 30 features,supervisionado,93.67088607594935,0.0286207624750003,ponto buscado na janela
+jan/24→abr/26,79,logística,supervisionado,83.54430379746836,0.0441236754822921,ponto buscado na janela
+jan/24→abr/26,79,piso do acaso,acaso,19.24050632911392,0.189612551396877,
+jun/24→abr/26,58,limiar trivial,limiar trivial,84.48275862068965,0.0262052440818307,
+jun/24→abr/26,58,AE b2024 (melhor sorteio),autoencoder,86.20689655172413,0.1033646069233257,1 de 5 execuções idênticas
+jun/24→abr/26,58,,autoencoder,81.03448275862068,0.0917178906502749,1 de 5 execuções idênticas
+jun/24→abr/26,58,,autoencoder,58.620689655172406,0.125202199935296,1 de 5 execuções idênticas
+jun/24→abr/26,58,,autoencoder,81.03448275862068,0.096085409252669,1 de 5 execuções idênticas
+jun/24→abr/26,58,,autoencoder,77.58620689655173,0.1077321255257198,1 de 5 execuções idênticas
+jan/25→abr/26,30,AutoML Transpetro,externo,73.33333333333333,0.0534227670025375,
+jan/25→abr/26,30,AE b2024,autoencoder,100.0,0.1025717126448721,
+jan/25→abr/26,30,limiar trivial,limiar trivial,80.0,0.042738530714609,
+jan/25→abr/26,30,piso do acaso,acaso,23.333333333333332,0.2243756214106578,
+walk-forward jul/24→abr/26,58,limiar trivial,limiar trivial,86.20689655172413,0.0364592624134696,
+walk-forward jul/24→abr/26,58,logística,supervisionado,86.20689655172413,0.0480596602679187,
+walk-forward jul/24→abr/26,58,GBM 30 features,supervisionado,82.75862068965517,0.0762325645629056,
+walk-forward jul/24→abr/26,58,GBM + erro do AE,supervisionado,82.75862068965517,0.0729181052340837,
+walk-forward jul/24→abr/26,58,AE v14-control,autoencoder,77.58620689655173,0.1193205358375915,
+OOS congelado jul/25→abr/26,17,limiar trivial,limiar trivial,58.82352941176471,0.0306086299331617,threshold fixado no treino
+OOS congelado jul/25→abr/26,17,GBM 30 features,supervisionado,58.82352941176471,0.0204055123224259,threshold fixado no treino
+OOS congelado jul/25→abr/26,17,AE v14-control,autoencoder,64.70588235294117,0.0850229680101082,threshold fixado no treino
