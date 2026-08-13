@@ -155,6 +155,14 @@ class PipelineConfig:
     AUTOML_IFOREST_CONTAMINATION: float = 0.05
     AUTOML_IFOREST_N_ESTIMATORS: int = 100
 
+    # Validacao out-of-sample: quando definido (ex: "2025-05-01"), o treino
+    # (ajuste do modelo, estatisticas de normalizacao e percentil de threshold)
+    # usa APENAS dados com timestamp anterior a essa data; hit_rate,
+    # normal_alert_rate e composite_score sao calculados so no periodo >= essa
+    # data (alarmes e pontos que o modelo nunca viu). None = sem split, avalia
+    # no mesmo periodo do treino (numero apenas indicativo, nao validado).
+    AUTOML_OOS_SPLIT_DATE: Optional[str] = None
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

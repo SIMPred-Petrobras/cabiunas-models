@@ -1,0 +1,84 @@
+{
+  "MODE": "local",
+  "N_WORKERS": 1,
+
+  "FEATURES_CSV": "features_record_2025_tzm3.csv",
+  "RAW_CSV": "serie_consolidada_2025_interpolated_antigo.csv",
+  "ALARM_CSV": "alarmes_record_2025_tags_modelo.csv",
+  "EXTRA_RAW_CSV": null,
+
+  "TIME_COL": "data_datetime",
+  "SOURCE_TZ": "UTC",
+  "TARGET_TZ": "UTC",
+  "APPLY_HOUR_SHIFT": false,
+  "SHIFT_HOURS": 0,
+  "LOG_TIME_AUDIT_SAMPLES": 3,
+
+  "OUTPUT_ROOT": "runs_test_grupo_T5_automl_exp5_oos",
+  "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
+  "TRAIN_SOURCE": "raw",
+
+  "SENSOR_LIST": ["T5_AVG_A", "TC382_03_A"],
+  "SENSOR_EXCLUDE": null,
+  "SENSOR_REGEX": null,
+
+  "SENSOR_GROUPS": [
+    {
+      "name": "T5_temperatura",
+      "sensors": ["T5_AVG_A", "TC382_03_A"],
+      "target_sensor": "T5_AVG_A"
+    }
+  ],
+
+  "ENABLE_AUTOML": true,
+  "AUTOML_MODELS": ["dense", "ocsvm", "iforest"],
+  "AUTOML_THRESHOLD_PERCENTILES": [95.0, 97.0, 99.0, 99.5],
+  "AUTOML_DEBOUNCE_GRID": [1, 3, 6, 12],
+  "AUTOML_FP_PENALTY": 2.0,
+  "AUTOML_MIN_DETECTION_RATE": 0.3,
+  "AUTOML_DENSE_LAYERS": [64, 32],
+  "AUTOML_DENSE_DROPOUT": 0.0,
+  "AUTOML_DENSE_LR": 0.001,
+  "AUTOML_DENSE_EPOCHS": 50,
+  "AUTOML_DENSE_BATCH_SIZE": 256,
+  "AUTOML_DENSE_PATIENCE": 10,
+  "AUTOML_OCSVM_NU": 0.05,
+  "AUTOML_OCSVM_GAMMA": "scale",
+  "AUTOML_IFOREST_CONTAMINATION": 0.05,
+  "AUTOML_IFOREST_N_ESTIMATORS": 100,
+
+  "AUTOML_OOS_SPLIT_DATE": "2025-05-01",
+
+  "OPERATIONAL_REF_SENSOR": "NGP_A",
+
+  "EXCLUDE_MINUTES_AROUND_ALARM": 1440,
+  "INTERPOLATE_LIMIT": 3,
+  "EXCLUDE_LONG_GAPS_FROM_TRAIN": true,
+  "ENABLE_DERIVED_FEATURES": false,
+  "DERIVED_ROLLING_WINDOW": 12,
+  "OUTLIER_MODE": "quantile",
+  "OUTLIER_Q_LOW": 0.001,
+  "OUTLIER_Q_HIGH": 0.999,
+  "OUTLIER_MAD_K": 6.0,
+  "NORMALIZE_MODE": "zscore",
+
+  "VAL_FRAC": 0.1,
+  "SHUFFLE_TRAIN": false,
+  "SPLIT_MODE": "temporal",
+
+  "ENABLE_OPERATIONAL_MASK": true,
+  "OFF_VALUE_QUANTILE": 0.05,
+  "OFF_ABS_THRESHOLD": 5.0,
+  "OFF_LONG_MIN_HOURS": 4.0,
+  "TRANSIENT_PADDING_MINUTES": 60,
+  "TRANSIENT_DIFF_QUANTILE": 0.99,
+
+  "RANDOM_SEED": 42,
+  "OVERWRITE": true,
+
+  "RUN_REMOTE": true,
+  "REMOTE_QUEUE": "default",
+  "CLEARML_PROJECT_NAME": "TesteMLCab",
+  "CLEARML_DATASET_ID": "424e5b589e13402d9d95371a317e85c9",
+  "USE_CLEARML_DATASET": true
+}

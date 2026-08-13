@@ -155,12 +155,26 @@ def run_automl_group(
 
     df_normal = clip_outliers(df_normal, cfg)
     df_all = clip_outliers(df_all, cfg)
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all)
+
+    # Split OOS: se definido, treino (modelo + normalizacao + percentil de
+    # threshold) so enxerga dados anteriores a AUTOML_OOS_SPLIT_DATE; a
+    # avaliacao (hit_rate/normal_alert_rate/composite_score) so considera o
+    # periodo posterior — alarmes e pontos que o modelo nunca viu.
+    oos_start = pd.Timestamp(cfg.AUTOML_OOS_SPLIT_DATE) if cfg.AUTOML_OOS_SPLIT_DATE else None
+    df_normal_fit = df_normal.loc[df_normal.index < oos_start] if oos_start is not None else df_normal
+    if len(df_normal_fit) < 10:
+        return {"group": group_name, "sensors": sensors, "skipped": True, "reason": "few_normal_points_before_oos_split"}
+
+    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all)
 
     x_normal = df_normal_z.values.astype(np.float32)
     x_all = df_all_z.values.astype(np.float32)
     n_features = x_normal.shape[1]
     all_index = df_all_z.index
+    if oos_start is not None:
+        eval_mask = pd.Series(all_index >= oos_start, index=all_index)
+    else:
+        eval_mask = pd.Series(True, index=all_index)
 
     # Estado operacional: nunca via RUNNING_A (nao confiavel/indisponivel na
     # nossa fonte de dados) — usa o mesmo mecanismo do CNN-1D (OPERATIONAL_REF_SENSOR,
@@ -184,6 +198,13 @@ def run_automl_group(
         )
 
     near_alarm_mask = build_exclusion_mask(all_index, alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+
+    # Alarmes usados na avaliacao: so os do periodo OOS, se houver split.
+    if oos_start is not None:
+        df_alarm_eval = df_alarm_group.loc[df_alarm_group["Data da Ocorrencia"] >= oos_start]
+    else:
+        df_alarm_eval = df_alarm_group
+    df_point_eval_idx = all_index[eval_mask.values]
 
     model_types = cfg.AUTOML_MODELS or _DEFAULT_MODELS
     percentiles = cfg.AUTOML_THRESHOLD_PERCENTILES or _DEFAULT_PERCENTILES
@@ -217,8 +238,14 @@ def run_automl_group(
                     df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
                     df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
 
-                eval_stats = eval_alarm_hit_rate(df_alarm_group, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
-                normal_rate = compute_normal_alert_rate(df_point, near_alarm_mask)
+                # Janela de match do hit_rate usa o df_point inteiro (um alarme
+                # OOS perto do corte ainda pode casar com pontos um pouco antes
+                # dele); o que garante a disciplina OOS e o modelo/threshold so
+                # terem visto dados antes do corte, e so contar alarmes OOS.
+                eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+                normal_rate = compute_normal_alert_rate(
+                    df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
+                )
                 score = compute_composite_score(
                     detection_rate=eval_stats["hit_rate"] or 0.0,
                     normal_alert_rate=normal_rate,
@@ -230,7 +257,7 @@ def run_automl_group(
                     "threshold_percentile": pct,
                     "debounce": int(debounce),
                     "threshold": threshold,
-                    "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
+                    "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point.loc[df_point_eval_idx]),
                     **model_params,
                     **eval_stats,
                     **score,
@@ -292,6 +319,9 @@ def run_automl_group(
         "anomaly_rate_points_per_day": best_trial["anomaly_rate_points_per_day"],
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
         "operational_ref_sensor": cfg.OPERATIONAL_REF_SENSOR,
+        "oos_split_date": cfg.AUTOML_OOS_SPLIT_DATE,
+        "oos_validated": oos_start is not None,
+        "n_normal_points_used_for_fit": int(len(df_normal_fit)),
         **{k: best_trial[k] for k in ("n_alarms", "alarms_with_detected_anomaly_in_window", "hit_rate",
                                        "composite_score", "balanced_score", "detection_rate", "normal_alert_rate")},
     }
