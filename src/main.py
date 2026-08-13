@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, List
 
 from clearml import Task
+from tensorflow import keras
+
 from src.cnn1d_ae.config import PipelineConfig, cfg_to_dict, update_cfg_from_dict
 from src.cnn1d_ae.pipeline import run
 from src.cnn1d_ae.pipeline_multi import run_pipeline_multivariado
@@ -159,6 +161,15 @@ def main():
             f"Enqueuing task for remote execution on queue: {cfg.REMOTE_QUEUE}"
         )
         task.execute_remotely(queue_name=cfg.REMOTE_QUEUE, exit_process=True)
+
+    # Semeadura GLOBAL — depois do execute_remotely, para valer na execução que treina.
+    # `RANDOM_SEED` era config morta: o split é temporal (ignora o seed) e nada em src/
+    # semeava TF/Keras. Consequência medida em 5 réplicas idênticas do b2024: amplitude de
+    # 27,6pp de recall na janela FULL, com a mediana caindo abaixo do limiar trivial.
+    # `set_random_seed` cobre random, numpy e TF de uma vez.
+    seed = int(getattr(cfg, "RANDOM_SEED", 42))
+    keras.utils.set_random_seed(seed)
+    print(f"[SEED] semeadura global aplicada: RANDOM_SEED={seed}")
 
     try:
         if cfg.MULTIVARIATE_JOINT:

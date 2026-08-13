@@ -42,11 +42,16 @@ def run_tuner(
     def hypermodel(hp: kt.HyperParameters):
         return builder(hp, cfg.TIME_STEPS, n_features)
 
+    # `seed` fixa a SEQUÊNCIA DE HIPERPARÂMETROS sorteada pelo RandomSearch. Sem ele cada
+    # execução explorava 20 arquiteturas diferentes e reportava a melhor por val_loss —
+    # medimos 27,6pp de amplitude entre execuções da MESMA config por causa disso
+    # (5 réplicas do b2024). Não era ruído de inicialização: era loteria de arquitetura.
     tuner = kt.RandomSearch(
         hypermodel=hypermodel,
         objective=kt.Objective("val_loss", direction="min"),
         max_trials=cfg.MAX_TRIALS,
         executions_per_trial=cfg.EXECUTIONS_PER_TRIAL,
+        seed=getattr(cfg, "RANDOM_SEED", 42),
         directory=out_dirs["tuner"],
         project_name="cnn1d_ae_trials",
         overwrite=True,
