@@ -1,0 +1,17 @@
+conjunto,janela,braco,n_inc,recall_raw,fa_per_day,duty,hl
+incidentes do TC382_03_A,interseção completa,"AutoML Transpetro (Dense, 36 sensores)",30,0.7333333333333333,0.053422767002537584,0.2489945155393053,4.0
+incidentes do TC382_03_A,interseção completa,AE b2024 (nosso melhor),30,1.0,0.10257171264487215,0.23177237144330382,4.0
+incidentes do TC382_03_A,interseção completa,limiar trivial (TC382_03_A),30,0.8,0.04273853071460901,0.24775218218809478,1.0
+incidentes do TC382_03_A,interseção completa,PISO DO ACASO (5 sementes),30,0.23333333333333334,0.22437562141065787,,
+incidentes do TC382_03_A,OOS jul/25→abr/26,"AutoML Transpetro (Dense, 36 sensores)",17,0.8235294117647058,0.04761286208566064,0.2375385210673963,2.0
+incidentes do TC382_03_A,OOS jul/25→abr/26,AE b2024 (nosso melhor),17,1.0,0.08502296801010828,0.20207841023727596,4.0
+incidentes do TC382_03_A,OOS jul/25→abr/26,limiar trivial (TC382_03_A),17,0.8823529411764706,0.054415342103398594,0.24949556372481274,1.0
+incidentes do TC382_03_A,OOS jul/25→abr/26,PISO DO ACASO (5 sementes),17,0.23529411764705882,0.2380643104283032,,
+incidentes de QUALQUER térmico,interseção completa,"AutoML Transpetro (Dense, 36 sensores)",31,0.7419354838709677,0.053422767002537584,0.2489945155393053,4.0
+incidentes de QUALQUER térmico,interseção completa,AE b2024 (nosso melhor),31,1.0,0.10257171264487215,0.23177237144330382,4.0
+incidentes de QUALQUER térmico,interseção completa,limiar trivial (TC382_03_A),31,0.8064516129032258,0.04273853071460901,0.24775218218809478,1.0
+incidentes de QUALQUER térmico,interseção completa,PISO DO ACASO (5 sementes),31,0.23870967741935484,0.22394823927463756,,
+incidentes de QUALQUER térmico,OOS jul/25→abr/26,"AutoML Transpetro (Dense, 36 sensores)",17,0.8235294117647058,0.04761286208566064,0.2375385210673963,2.0
+incidentes de QUALQUER térmico,OOS jul/25→abr/26,AE b2024 (nosso melhor),17,1.0,0.08502296801010828,0.20207841023727596,4.0
+incidentes de QUALQUER térmico,OOS jul/25→abr/26,limiar trivial (TC382_03_A),17,0.8823529411764706,0.054415342103398594,0.24949556372481274,1.0
+incidentes de QUALQUER térmico,OOS jul/25→abr/26,PISO DO ACASO (5 sementes),17,0.23529411764705882,0.2380643104283032,,
