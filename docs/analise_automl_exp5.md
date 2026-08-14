@@ -124,3 +124,48 @@ da amostra. Próximo passo: restaurar `AUTOML_OOS_SPLIT_DATE: "2025-05-01"`
 (preserva ~70+ alarmes na avaliação, ver tabela de distribuição no topo deste
 documento) e rodar os mesmos 3 grupos de novo para confirmar se os resultados
 se sustentam.
+
+---
+
+## EXP5-v4 — OOS restaurado (2025-05-01), 3 grupos, dense [256,128]
+
+**Task ClearML:** `47cfd36f910340e1bea61c8716253791`
+
+| Grupo | Melhor modelo | Hit rate OOS | composite_score | normal_alert_rate |
+|---|---|---|---|---|
+| **TC382_03_A univariado** | **iforest** | **65,0% (26/40)** | **0,883** | 2,43% |
+| T5_temperatura (combinado) | dense | 57,1% (40/70) | 0,857 | 1,70% |
+| T5_AVG_A univariado | dense | 53,3% (16/30) | 0,844 | 3,06% |
+
+**A suspeita de overfitting do EXP5-v3 se confirmou.** Melhor por modelo em
+cada grupo, agora OOS:
+
+| Grupo | dense | iforest | ocsvm |
+|---|---|---|---|
+| T5_temperatura | 0,857 (57,1%) | 0,857 (57,1%) | 0,838 (51,4%) |
+| T5_AVG_A univariado | 0,844 (53,3%) | 0,822 (46,7%) | 0,822 (46,7%) |
+| TC382_03_A univariado | 0,866 (60,0%) | **0,883 (65,0%)** | 0,850 (55,0%) |
+
+Em `T5_temperatura`, dense e iforest empataram tecnicamente (mesmo
+`hit_rate`, composite quase idêntico) — o salto de 78,3% visto no EXP5-v3
+in-sample **evaporou quase por completo** assim que validado fora da
+amostra. Isso confirma que a maior parte daquele ganho era memorização, não
+capacidade real de generalização da arquitetura maior. O resultado OOS do
+`T5_temperatura` (57,1%/70 alarmes) ficou, na prática, **idêntico ao EXP5
+original** (mesmo split, mesmo hit_rate, mesmo `n_alarms`) — a troca do
+dense [64,32]→[256,128] não trouxe ganho real nesse grupo.
+
+**TC382_03_A univariado/iforest é o único candidato que se sustentou nos
+dois regimes** (in-sample 81,6% → OOS 65,0%, sempre vencendo com `iforest`,
+nunca com `dense`) e é hoje **o melhor resultado validado desta série de
+experimentos AutoML** — acima do EXP5 combinado original (57,1%).
+
+**Conclusão prática:**
+- `AUTOML_DENSE_LAYERS=[256,128]` não se justifica neste pipeline
+  ponto-a-ponto (sem `seq_len`) — não bateu o `iforest`/`ocsvm` de forma
+  consistente fora da amostra, apesar de parecer vencedor claro in-sample.
+- O grupo **univariado TC382_03_A + iforest** é o candidato a levar adiante.
+- Antes de promover, falta checar **variância de semente** — a própria
+  análise da pipeline da Lara (`analise_automl_lara.md`, seção 2) mostrou
+  ~±27pp de variação entre seeds com os mesmos hiperparâmetros; um único run
+  não é prova de estabilidade.

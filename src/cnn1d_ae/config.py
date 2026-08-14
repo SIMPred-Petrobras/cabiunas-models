@@ -163,6 +163,14 @@ class PipelineConfig:
     # no mesmo periodo do treino (numero apenas indicativo, nao validado).
     AUTOML_OOS_SPLIT_DATE: Optional[str] = None
 
+    # Checagem de variancia de semente: apos escolher o melhor trial, se o
+    # modelo vencedor for "iforest" (unico com randomness controlada
+    # diretamente por RANDOM_SEED nesta pipeline), re-treina o mesmo
+    # model_type/threshold_percentile/debounce com N seeds extras
+    # (RANDOM_SEED+1 .. RANDOM_SEED+N) e registra hit_rate/normal_alert_rate
+    # de cada um em calibration_report.json["seed_sweep"]. 0/None = desliga.
+    AUTOML_SEED_SWEEP_N: int = 0
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

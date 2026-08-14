@@ -83,6 +83,39 @@ def _fit_score_iforest(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndar
 _FITTERS = {"dense": _fit_score_dense, "ocsvm": _fit_score_ocsvm, "iforest": _fit_score_iforest}
 
 
+def _seed_sweep_iforest(
+    cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, all_index: pd.Index,
+    state: pd.Series | None, df_alarm_eval: pd.DataFrame, df_point_eval_idx: pd.Index,
+    near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
+) -> List[Dict[str, Any]]:
+    """Re-treina o mesmo iforest (mesmo threshold_percentile/debounce do
+    melhor trial) com N seeds extras, pra medir o quanto hit_rate/
+    normal_alert_rate variam so por causa da aleatoriedade da floresta —
+    ver analise_automl_lara.md secao 2 (~+-27pp de ruido de semente na
+    pipeline da Lara)."""
+    results = []
+    for i in range(1, n_seeds + 1):
+        seed = cfg.RANDOM_SEED + i
+        model = fit_isolation_forest(x_normal, cfg.AUTOML_IFOREST_CONTAMINATION, cfg.AUTOML_IFOREST_N_ESTIMATORS, seed)
+        train_err = isolation_forest_error(model, x_normal)
+        all_err = isolation_forest_error(model, x_all)
+        threshold = float(np.percentile(train_err, pct))
+        anomaly_flags = (all_err > threshold).astype(int)
+        df_point = map_seq_to_point_anomalies(
+            anomaly_flags, all_index, time_steps=1,
+            point_rule="all_of_window", point_window=int(debounce), point_min_count=int(debounce),
+        )
+        if state is not None:
+            df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
+            df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+        eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+        normal_rate = compute_normal_alert_rate(
+            df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
+        )
+        results.append({"seed": seed, "hit_rate": eval_stats["hit_rate"], "normal_alert_rate": normal_rate})
+    return results
+
+
 def _save_model(model_type: str, model_obj: Any, out_dirs: Dict[str, str]) -> str:
     if model_type == "dense":
         path = os.path.join(out_dirs["best_model"], "model.keras")
@@ -276,6 +309,28 @@ def run_automl_group(
     df_ranking = pd.DataFrame(trials).sort_values("composite_score", ascending=False).reset_index(drop=True)
     df_ranking.to_csv(os.path.join(out_dirs["csv"], "automl_ranking.csv"), index=False)
 
+    seed_sweep = None
+    if cfg.AUTOML_SEED_SWEEP_N and best_model_type == "iforest":
+        extra = _seed_sweep_iforest(
+            cfg, x_normal, x_all, all_index, state, df_alarm_eval, df_point_eval_idx, near_alarm_mask,
+            best_trial["threshold_percentile"], best_trial["debounce"], cfg.AUTOML_SEED_SWEEP_N,
+        )
+        runs = [{"seed": cfg.RANDOM_SEED, "hit_rate": best_trial["hit_rate"],
+                 "normal_alert_rate": best_trial["normal_alert_rate"]}] + extra
+        hit_rates = [r["hit_rate"] for r in runs]
+        normal_rates = [r["normal_alert_rate"] for r in runs]
+        seed_sweep = {
+            "runs": runs,
+            "hit_rate_mean": float(np.mean(hit_rates)),
+            "hit_rate_std": float(np.std(hit_rates)),
+            "hit_rate_min": float(np.min(hit_rates)),
+            "hit_rate_max": float(np.max(hit_rates)),
+            "normal_alert_rate_mean": float(np.mean(normal_rates)),
+            "normal_alert_rate_std": float(np.std(normal_rates)),
+        }
+        with open(os.path.join(out_dirs["csv"], "seed_sweep.json"), "w", encoding="utf-8") as f:
+            json.dump(seed_sweep, f, indent=2, ensure_ascii=False)
+
     model_path = _save_model(best_model_type, best_model_obj, out_dirs)
     with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w", encoding="utf-8") as f:
         json.dump({k: v for k, v in best_trial.items()}, f, indent=2, ensure_ascii=False)
@@ -329,6 +384,8 @@ def run_automl_group(
         calibration_report["operational_state_counts"] = {
             str(k): int(v) for k, v in state.value_counts().to_dict().items()
         }
+    if seed_sweep is not None:
+        calibration_report["seed_sweep"] = seed_sweep
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
 
