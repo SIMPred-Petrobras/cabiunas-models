@@ -66,6 +66,21 @@ def cobre(ep, outros) -> bool:
     return any((b0 <= a1) and (b1 >= a0) for b0, b1 in outros)
 
 
+def rampa_no_onset(ramp: pd.Series, t0: pd.Timestamp, horas_depois: float) -> float:
+    """Máximo de |dT5/dt| em [-6h, onset + horas_depois].
+
+    Duas leituras, e a diferença importa:
+      • `horas_depois=0` é CAUSAL — é o que o modelo poderia ter visto ao disparar.
+      • `horas_depois=3` é a janela de `fp-reducao-portao-contexto-graduacao` (172 °C/h
+        no FP × 21 no TP), que enxerga 3h ADIANTE do onset. Se a manobra do falso
+        positivo vem depois do alerta, só a segunda a vê — e aí o sinal existe mas é
+        inútil para um portão em tempo real.
+    """
+    w = ramp[(ramp.index >= t0 - pd.Timedelta(hours=6))
+             & (ramp.index <= t0 + pd.Timedelta(hours=horas_depois))]
+    return float(np.nanmax(w.values)) if len(w) else float("nan")
+
+
 def auc_mw(x: np.ndarray, y: np.ndarray) -> float:
     """AUC de Mann-Whitney: P(x > y). 0,5 = indistinguível."""
     x, y = x[~np.isnan(x)], y[~np.isnan(y)]
@@ -108,12 +123,20 @@ def main() -> None:
           f"(recall_raw {r_ctrl['recall_raw']*100:.1f}%, FA {r_ctrl['fa_per_day']:.3f}, "
           f"hl={r_ctrl['hl']})")
 
-    # rampa no onset de cada FP do controle: é a variável que a hipótese aponta
-    ramp_fp = np.array([float(ramp.reindex([s0], method="nearest").iloc[0]) for s0, _ in fp_c])
-    ramp_tp = np.array([float(ramp.reindex([s0], method="nearest").iloc[0])
-                        for (s0, _), t in zip(eps_c, tp_c) if t])
-    print(f"  rampa |dT5/dt| no onset — FP p50={np.nanmedian(ramp_fp):.0f} °C/h  "
-          f"TP p50={np.nanmedian(ramp_tp):.0f} °C/h  (AUC {auc_mw(ramp_fp, ramp_tp):.2f})\n")
+    # rampa no onset de cada FP do controle: é a variável que a hipótese aponta.
+    # Medida nas duas janelas — a causal e a da memória — porque a conclusão pode
+    # depender de qual delas separa FP de TP.
+    ramp_fp, ramp_tp = {}, {}
+    print("  rampa |dT5/dt| — o que de fato separa FP de TP no controle:")
+    for hd in (0.0, 3.0):
+        ramp_fp[hd] = np.array([rampa_no_onset(ramp, s0, hd) for s0, _ in fp_c])
+        ramp_tp[hd] = np.array([rampa_no_onset(ramp, s0, hd)
+                                for (s0, _), t in zip(eps_c, tp_c) if t])
+        jan = "[-6h, onset]  (causal)" if hd == 0 else "[-6h, onset+3h] (memória)"
+        print(f"    {jan:<28} FP p50={np.nanmedian(ramp_fp[hd]):>5.0f}  "
+              f"TP p50={np.nanmedian(ramp_tp[hd]):>5.0f} °C/h   "
+              f"AUC={auc_mw(ramp_fp[hd], ramp_tp[hd]):.2f}")
+    print()
 
     rows = []
     for lab, s in multis.items():
@@ -131,26 +154,30 @@ def main() -> None:
                   "sem contraste para medir o mecanismo\n")
             continue
 
-        r_morto, r_vivo = ramp_fp[morto], ramp_fp[~morto]
-        auc = auc_mw(r_morto, r_vivo)
         print(f"  {n_morto}/{len(fp_c)} FP do controle eliminados")
-        print(f"    rampa dos ELIMINADOS   p50 = {np.nanmedian(r_morto):>6.0f} °C/h")
-        print(f"    rampa dos SOBREVIVENTES p50 = {np.nanmedian(r_vivo):>6.0f} °C/h")
-        print(f"    AUC(eliminado > sobrevivente) = {auc:.2f}")
-        # 0,5 = escolha ao acaso. O sinal só é forte o bastante para agir a partir de
-        # ~0,70, régua já usada em features-testadas-fp-vs-tp com esta mesma amostra.
-        if auc >= 0.70:
-            v = "MECANISMO CONFIRMADO — mata preferencialmente FP de manobra"
-        elif auc <= 0.30:
-            v = "INVERTIDO — mata os FP de máquina ESTÁVEL, o contrário da hipótese"
-        else:
-            v = "SEM MECANISMO — eliminação indistinguível do acaso (deslocou threshold)"
-        print(f"    → {v}\n")
-        rows.append(dict(multi=lab, n_fp_ctrl=len(fp_c), n_eliminados=n_morto,
-                         ramp_p50_eliminados=float(np.nanmedian(r_morto)),
-                         ramp_p50_sobreviventes=float(np.nanmedian(r_vivo)),
-                         auc_rampa=auc, veredito=v,
-                         recall_multi=r_m["recall_raw"], fa_multi=r_m["fa_per_day"]))
+        linha = dict(multi=lab, n_fp_ctrl=len(fp_c), n_eliminados=n_morto,
+                     recall_multi=r_m["recall_raw"], fa_multi=r_m["fa_per_day"])
+        for hd in (0.0, 3.0):
+            r_morto, r_vivo = ramp_fp[hd][morto], ramp_fp[hd][~morto]
+            auc = auc_mw(r_morto, r_vivo)
+            # 0,5 = acaso. O sinal só é forte o bastante para agir a partir de ~0,70,
+            # régua já usada em features-testadas-fp-vs-tp com esta mesma amostra.
+            if auc >= 0.70:
+                v = "CONFIRMADO — mata preferencialmente FP de manobra"
+            elif auc <= 0.35:
+                v = "INVERTIDO — mata os FP de máquina ESTÁVEL, o oposto da hipótese"
+            else:
+                v = "SEM MECANISMO — indistinguível do acaso (deslocou threshold)"
+            jan = "causal" if hd == 0 else "c/ +3h"
+            print(f"    [{jan}] eliminados p50={np.nanmedian(r_morto):>6.0f} × "
+                  f"sobreviventes p50={np.nanmedian(r_vivo):>6.0f} °C/h  "
+                  f"AUC={auc:.2f} → {v}")
+            suf = "causal" if hd == 0 else "mais3h"
+            linha.update({f"ramp_p50_eliminados_{suf}": float(np.nanmedian(r_morto)),
+                          f"ramp_p50_sobreviventes_{suf}": float(np.nanmedian(r_vivo)),
+                          f"auc_rampa_{suf}": auc, f"veredito_{suf}": v})
+        print()
+        rows.append(linha)
 
     if rows:
         os.makedirs(os.path.dirname(OUT), exist_ok=True)
