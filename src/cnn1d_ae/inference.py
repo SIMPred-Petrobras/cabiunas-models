@@ -140,3 +140,101 @@ def score_production(model, bundle: dict, df_sensor: pd.DataFrame, batch_size: i
         alert = a
     base["alert"] = alert
     return base
+
+
+# ---------------------------------------------------------------------------
+# Graduação de confiança (pós-processamento; nada é suprimido nem atrasado)
+# ---------------------------------------------------------------------------
+
+def health_to_reference_rank(values, reference_quantiles) -> np.ndarray:
+    """Mapeia EWMA absoluto → rank [0,1] contra a distribuição de CALIBRAÇÃO.
+
+    A graduação foi calibrada em unidades de rank (`ewm(mae).rank(pct=True)`), que não
+    existe em streaming — o rank de um ponto dependeria do futuro. Congelar a ECDF da
+    janela de calibração no bundle resolve, pela mesma razão que se persiste o scaler:
+    a régua tem de ser a do treino, não a do dado novo.
+    """
+    rq = np.asarray(reference_quantiles, dtype=float)
+    probs = np.linspace(0.0, 1.0, len(rq))
+    return np.clip(np.interp(np.asarray(values, dtype=float), rq, probs), 0.0, 1.0)
+
+
+def grade_episodes(
+    health: pd.Series,
+    episodes,
+    *,
+    threshold: float,
+    window_hours: float,
+    dens_min: float,
+    incl_min: float,
+) -> pd.DataFrame:
+    """Classifica cada episódio em `acao` ou `observacao` pela SUSTENTAÇÃO inicial.
+
+    O alerta acende no mesmo instante de hoje — o lead é preservado. Em `onset +
+    window_hours` o nível é revisto por dois números medidos na janela:
+
+        densidade   fração dos pontos com health >= threshold
+        inclinação  coeficiente linear do health por hora
+
+    Por que não amplitude: o pico do score no falso positivo é tão alto quanto no
+    evento real (AUC 0,44) — nada que olhe a altura separa. O que separa é a
+    sustentação (densidade 0,73 / inclinação 0,74 em 6h).
+
+    ⚠️ `health`, `threshold` e `incl_min` têm de estar na MESMA unidade. A calibração
+    é em rank; em produção use `health_to_reference_rank()` antes de chamar.
+
+    ⚠️ Episódio curto demais para medir a janela fica em `acao`: não se rebaixa o que
+    não deu para avaliar. O custo relevante é TP rebaixado, não FP mantido.
+
+    Devolve um DataFrame com onset, fim, densidade, inclinação e nível por episódio.
+    """
+    w = pd.Timedelta(hours=float(window_hours))
+    rows = []
+    for t0, t1 in episodes:
+        seg = health[(health.index >= t0) & (health.index <= t0 + w)]
+        if len(seg) < 3:
+            rows.append(dict(onset=t0, fim=t1, densidade=np.nan, inclinacao=np.nan,
+                             medido=False, nivel="acao"))
+            continue
+        x = (seg.index - seg.index[0]).total_seconds().to_numpy() / 3600.0
+        y = seg.to_numpy(dtype=float)
+        dens = float((y >= threshold).mean())
+        incl = 0.0 if np.ptp(x) <= 0 else float(np.polyfit(x, y, 1)[0])
+        nivel = "acao" if (dens >= dens_min and incl >= incl_min) else "observacao"
+        rows.append(dict(onset=t0, fim=t1, densidade=dens, inclinacao=incl,
+                         medido=True, nivel=nivel))
+    return pd.DataFrame(rows, columns=["onset", "fim", "densidade", "inclinacao",
+                                       "medido", "nivel"])
+
+
+def grade_production_episodes(base: pd.DataFrame, bundle: dict) -> pd.DataFrame:
+    """Aplica a graduação sobre a saída de `score_production()`.
+
+    Requer o bloco `grading` no bundle (`scripts/finalize_bundle.py --grading`).
+    """
+    g = bundle.get("grading")
+    if g is None:
+        raise ValueError("bundle sem 'grading' — rode finalize_bundle.py --grading antes")
+
+    h_abs = pd.Series(base["health_ewma"].to_numpy(),
+                      index=pd.DatetimeIndex(base["seq_end_time"]))
+    health = pd.Series(health_to_reference_rank(h_abs.to_numpy(), g["reference_quantiles"]),
+                       index=h_abs.index)
+
+    alert = base["alert"].to_numpy().astype(bool)
+    episodes, i = [], 0
+    while i < len(alert):
+        if alert[i]:
+            j = i
+            while j + 1 < len(alert) and alert[j + 1]:
+                j += 1
+            episodes.append((h_abs.index[i], h_abs.index[j]))
+            i = j + 1
+        else:
+            i += 1
+
+    return grade_episodes(health, episodes,
+                          threshold=float(g["threshold_rank"]),
+                          window_hours=float(g["window_hours"]),
+                          dens_min=float(g["dens_min"]),
+                          incl_min=float(g["incl_min"]))

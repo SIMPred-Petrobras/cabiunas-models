@@ -50,6 +50,15 @@ def main() -> None:
     p.add_argument("--std_mult", type=float, default=3.0,
                    help="y de mu + y*sigma quando --thresh_rule mean_std")
     p.add_argument("--upload", action="store_true", help="Re-upload do bundle finalizado como artefato")
+    p.add_argument("--grading", nargs=3, type=float, metavar=("W_HORAS", "DENS_MIN", "INCL_MIN"),
+                   default=None,
+                   help="Graduação de confiança: rebaixa para 'observação' o episódio que "
+                        "não se sustenta em W horas. Ponto calibrado no TC382_03_A: "
+                        "--grading 6 0.70 -0.030 (65%% dos FP rebaixados, 83%% dos TP "
+                        "mantidos em ação, sem custo de lead). "
+                        "Ver eval_predictive_out/confidence_grading_TC382_03_A.csv")
+    p.add_argument("--grading_ecdf_points", type=int, default=201,
+                   help="Nº de quantis da ECDF de calibração gravada no bundle")
     args = p.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -116,6 +125,22 @@ def main() -> None:
             "recall_at_op": float(row.get("recall", float("nan"))),
             "fa_per_day_at_op": float(row.get("fa_per_day", float("nan"))),
         }
+        if args.grading:
+            w_h, dens_min, incl_min = args.grading
+            # ECDF da MESMA janela de calibração que produziu o abs_thr — é a régua
+            # que converte o EWMA absoluto de volta para o rank em que a graduação
+            # foi calibrada (ver inference.health_to_reference_rank).
+            probs = [i / (args.grading_ecdf_points - 1) for i in range(args.grading_ecdf_points)]
+            bundle["grading"] = {
+                "window_hours": float(w_h),
+                "dens_min": float(dens_min),
+                "incl_min": float(incl_min),
+                "threshold_rank": thr_q,
+                "reference_quantiles": [float(sm.quantile(p)) for p in probs],
+            }
+            print(f"    grading: W={w_h:.0f}h dens>={dens_min:.2f} incl>={incl_min:+.3f} "
+                  f"(ECDF de {args.grading_ecdf_points} pontos)")
+
         out_path = os.path.join(args.out_dir, f"{sensor}_inference_bundle.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(bundle, f, indent=2, ensure_ascii=False)

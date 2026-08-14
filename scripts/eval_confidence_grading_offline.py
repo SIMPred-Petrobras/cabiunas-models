@@ -42,6 +42,8 @@ def _load(name: str):
     return mod
 
 
+from src.cnn1d_ae.inference import grade_episodes
+
 ev = _load("eval_per_sensor_level")
 sw = _load("sweep_regime_band_offline")
 on = _load("sweep_onset_rules_offline")
@@ -52,15 +54,10 @@ DENS_GRID = [0.70, 0.80, 0.90, 0.95]
 INCL_GRID = [-0.030, -0.010, 0.000]
 
 
-def window_stats(h: pd.Series, q: float, s0: pd.Timestamp, w_h: float):
-    """(densidade acima de q, inclinação do rank por hora) nas primeiras w_h horas."""
-    w = h[(h.index >= s0) & (h.index <= s0 + pd.Timedelta(hours=w_h))]
-    if len(w) < 3:
-        return np.nan, np.nan
-    x = (w.index - w.index[0]).total_seconds().values / 3600.0
-    if x.ptp() <= 0:
-        return float((w.values >= q).mean()), 0.0
-    return float((w.values >= q).mean()), float(np.polyfit(x, w.values, 1)[0])
+# A medição da janela vive em `src/cnn1d_ae/inference.grade_episodes` — o mesmo código
+# que roda em produção via `grade_production_episodes`. Este script varre a grade de
+# limiares sobre as estatísticas que aquela função devolve, então o CSV de calibração é,
+# por construção, produzido pelo caminho de produção.
 
 
 def main() -> None:
@@ -82,9 +79,12 @@ def main() -> None:
 
     rows = []
     for w_h in W_GRID:
-        stats = [window_stats(h, q, s0, w_h) for s0, _ in eps]
-        dens = np.array([s[0] for s in stats])
-        incl = np.array([s[1] for s in stats])
+        # dens_min/incl_min permissivos: aqui só queremos as ESTATÍSTICAS por episódio;
+        # a decisão vem da grade abaixo.
+        g = grade_episodes(h, eps, threshold=q, window_hours=w_h,
+                           dens_min=0.0, incl_min=-np.inf)
+        dens = g["densidade"].to_numpy()
+        incl = g["inclinacao"].to_numpy()
         tp = np.array(is_tp)
         # episódios curtos demais para medir a janela ficam em `ação` (não rebaixa
         # o que não deu para avaliar — o conservador aqui é NÃO silenciar)
