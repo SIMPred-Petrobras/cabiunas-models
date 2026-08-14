@@ -169,3 +169,37 @@ experimentos AutoML** — acima do EXP5 combinado original (57,1%).
   análise da pipeline da Lara (`analise_automl_lara.md`, seção 2) mostrou
   ~±27pp de variação entre seeds com os mesmos hiperparâmetros; um único run
   não é prova de estabilidade.
+
+---
+
+## EXP5-seed-sweep — variância de semente do candidato TC382_03_A/iforest
+
+**Task ClearML:** `bb566578798d45bf90826012e7b579fd`
+**Feature nova:** `AUTOML_SEED_SWEEP_N` (`automl_pipeline.py`) — re-treina o
+trial vencedor com N seeds extras e registra `hit_rate`/`normal_alert_rate`
+de cada um em `calibration_report.json["seed_sweep"]`.
+
+| Seed | hit_rate | normal_alert_rate |
+|---|---|---|
+| 42 (original) | 65,0% | 2,43% |
+| 43 | 65,0% | 2,47% |
+| 44 | 65,0% | 2,03% |
+| 45 | 65,0% | 1,90% |
+| 46 | 65,0% | 1,86% |
+| **média / std** | **65,0% / std=0** | 2,14% / std=0,26pp |
+
+`hit_rate` deu 26/40 exatamente nos 5 seeds — **variância zero**, bem
+diferente do ~±27pp visto no dense da Lara. Consistente com o fato de
+`IsolationForest(n_estimators=100)` já fazer uma média sobre 100 árvores,
+mais quase 292 mil pontos de treino estabilizando o ensemble rápido.
+
+**Status final desta série de experimentos:** `TC382_03_A_univariado` com
+`iforest` (`threshold_percentile=95`, `debounce=1`,
+`contamination=0.05`, `n_estimators=100`) é um candidato **validado e
+estável**:
+- OOS (65,0% vs. 81,6% in-sample — queda esperada, não é o número real de
+  produção, é o número in-sample que era inflado)
+- Robusto contra dense/ocsvm nos dois regimes (in-sample e OOS)
+- Variância de semente zero em `hit_rate`
+
+Acima do baseline `T5_temperatura` combinado original (57,1%).
