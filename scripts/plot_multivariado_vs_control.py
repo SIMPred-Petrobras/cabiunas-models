@@ -69,8 +69,10 @@ def main() -> None:
             if len(r) >= 2:
                 ax.axhspan(r.recall_raw.min() * 100, r.recall_raw.max() * 100,
                            color=C_BAND, alpha=0.55, zorder=0, lw=0)
-                ax.annotate(f"amplitude de {len(r)} réplicas idênticas",
-                            xy=(0.02, r.recall_raw.max() * 100), xycoords=("axes fraction", "data"),
+                # à direita: à esquerda colide com o rótulo do limiar trivial
+                ax.annotate(f"amplitude de {len(r)} réplicas idênticas do b2024",
+                            xy=(0.98, r.recall_raw.max() * 100),
+                            xycoords=("axes fraction", "data"), ha="right",
                             fontsize=6.8, color=MUTED, va="bottom", zorder=1)
 
         # setas pareadas por semente

@@ -58,6 +58,15 @@ SEEDS = [42, 7, 13]
 OUT = "eval_predictive_out/multivariado_vs_control.csv"
 PROJECT = "TesteMLCab"
 
+# ⚠️ As janelas são as de `eval_replicas_b2024.py`, NÃO as de `baseline_trivial_vs_ae.py`:
+# a FULL de lá começa em jan/24 e conta 79 incidentes, a de cá começa em jun/24 e conta 58.
+# Toda a mesa atual (86,2% do b2024, 84,5% do limiar trivial, 62,1% do controle semeado)
+# está no denominador de 58 — misturar os dois foi um erro que já custou uma sessão.
+# O dado do b2024 também só existe a partir de jun/24 (RAW = sensores_2024h2_*).
+JANELAS = [("FULL jun/24→abr/26", "2024-06-01", "2026-05-01"),
+           ("2024 jun–dez", "2024-06-01", "2025-01-01"),
+           ("OOS jul/25→abr/26", "2025-07-01", "2026-05-01")]
+
 # Tasks já rodadas (controle semeado). As demais são resolvidas por nome do config.
 KNOWN = {
     ("ctrl", 42): "6cfbec162c3c48f798549fd97ca557b9",
@@ -157,7 +166,7 @@ def main() -> None:
 
     print("[3/3] Avaliando...")
     rows = []
-    for wlab, a, b in bl.JANELAS:
+    for wlab, a, b in JANELAS:
         t0, t1 = pd.Timestamp(a, tz="UTC"), pd.Timestamp(b, tz="UTC")
         inc = sw.incidents_on(running, tc03, t0, t1)
         if len(inc) < 5:
