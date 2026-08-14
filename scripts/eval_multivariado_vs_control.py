@@ -174,7 +174,16 @@ def main() -> None:
         print(f"\n=== {wlab} — {len(inc)} incidentes ON ===")
         print(f"  {'braço':<24}{'recall_raw':>12}{'FA/dia':>10}{'duty':>8}{'hl':>6}")
         for alab, ser in arms.items():
-            r = bl.best_over_hl(ser, inc, running)
+            # ⚠️ RECORTAR a série na janela é obrigatório, e o repositório tem as duas
+            # convenções: `eval_replicas_b2024.py` recorta, `baseline_trivial_vs_ae.py`
+            # não. Sem recorte, FA/dia e duty saem medidos sobre a série INTEIRA enquanto
+            # o recall sai da janela — o "FA de 2024" viraria o FA de 2024→2026. As duas
+            # convenções coincidem na FULL (janela = série), o que esconde o erro.
+            # A mesa atual (84,5% @ 0,026 etc.) está na convenção COM recorte.
+            s = ser[(ser.index >= t0) & (ser.index < t1)].dropna()
+            if s.empty:
+                continue
+            r = bl.best_over_hl(s, inc, running)
             print(f"  {alab:<24}{(r.get('recall_raw') or 0)*100:>11.1f}%"
                   f"{r.get('fa_per_day', float('nan')):>10.3f}"
                   f"{r.get('duty_sticky', r.get('duty', float('nan'))):>8.3f}"

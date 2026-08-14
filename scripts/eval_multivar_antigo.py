@@ -106,9 +106,10 @@ def main() -> None:
     # limiar trivial NA SUA PRÓPRIA GRADE mantém cada par honesto — duty, FA e
     # denominador idênticos dentro do par, que é o que a comparação exige.
     #
-    # ⚠️ A série NÃO é fatiada por janela: `baseline_trivial_vs_ae.py` normaliza o rank
-    # sobre a série inteira e recorta só os INCIDENTES. Fatiar a série muda a base do
-    # rank e o aquecimento da EWMA, e os números deixam de bater com os auditados.
+    # ⚠️ A série É recortada na janela, como em `eval_replicas_b2024.py` — e ao contrário
+    # de `baseline_trivial_vs_ae.py`, que passa a série inteira. Sem recorte, FA/dia e
+    # duty saem medidos sobre a série toda enquanto o recall sai da janela. As duas
+    # convenções coincidem na FULL, o que torna o erro fácil de não ver.
     rows = []
     for lab, s in series.items():
         s0, s1 = s.index.min(), s.index.max()
@@ -131,7 +132,10 @@ def main() -> None:
             print(f"\n=== {wlab} ∩ grade ({cov:.0%} da janela) — {len(inc)} incidentes ON ===")
             print(f"  {'braço':<24}{'recall_raw':>12}{'FA/dia':>10}{'duty':>8}{'hl':>6}")
             for alab, ser in arms.items():
-                r = bl.best_over_hl(ser.dropna(), inc, running)
+                w = ser[(ser.index >= t0) & (ser.index < t1)].dropna()
+                if w.empty:
+                    continue
+                r = bl.best_over_hl(w, inc, running)
                 print(f"  {alab:<24}{(r.get('recall_raw') or 0)*100:>11.1f}%"
                       f"{r.get('fa_per_day', float('nan')):>10.3f}"
                       f"{r.get('duty_sticky', r.get('duty', float('nan'))):>8.3f}"

@@ -53,15 +53,26 @@ def main() -> None:
     df = pd.read_csv(SRC)
     repl = pd.read_csv(REPL) if os.path.exists(REPL) else None
 
+    # `poe_rotulo` só tenta deslocamentos VERTICAIS, e aqui duas sementes caem quase no
+    # mesmo ponto (no OOS as três batem em 100% de recall) — os rótulos se fundem.
+    # Acrescenta candidatos laterais para esta figura.
+    ce._OFFSETS = [(0, 10), (0, -16), (-22, 8), (22, 8), (-24, -10), (24, -10),
+                   (0, 24), (0, -30), (-34, 0), (34, 0)]
+
     janelas = [j for j in df.janela.unique()]
     fig, axes = plt.subplots(1, len(janelas), figsize=(5.0 * len(janelas), 4.9),
                              squeeze=False)
     axes = axes[0]
 
+    # `poe_rotulo` decide colisão em coordenadas de PIXEL (ax.transData). Se for chamado
+    # durante o desenho, os limites dos eixos ainda não estão fixados e o transform
+    # devolve posições erradas — os rótulos se sobrepõem em silêncio. Por isso acumulamos
+    # aqui e só posicionamos depois de um fig.canvas.draw().
+    pendentes = []
+
     for ax, jan in zip(axes, janelas):
         w = df[df.janela == jan].set_index("braco")
         n = int(w.n_inc.iloc[0])
-        ocupadas = []
 
         # faixa das réplicas não semeadas: a régua de "isso é ruído?"
         if repl is not None:
@@ -88,14 +99,14 @@ def main() -> None:
             ax.scatter([x0], [y0], s=34, facecolor="none", edgecolor=C_CTRL,
                        lw=1.6, zorder=3)
             ax.scatter([x1], [y1], s=38, color=C_MULTI, zorder=3)
-            ce.poe_rotulo(ax, x1, y1, f"s{s}", C_MULTI, ocupadas)
+            pendentes.append((ax, x1, y1, f"s{s}", C_MULTI))
 
         if "temp (limiar trivial)" in w.index:
             t = w.loc["temp (limiar trivial)"]
             ax.scatter([t.fa_per_day], [t.recall_raw * 100], marker="P", s=125,
                        color=C_TRI, zorder=4)
-            ce.poe_rotulo(ax, t.fa_per_day, t.recall_raw * 100, "limiar trivial",
-                          C_TRI, ocupadas)
+            pendentes.append((ax, t.fa_per_day, t.recall_raw * 100,
+                              "limiar trivial", C_TRI))
             # o canto que o critério pré-registrado exige
             ax.axvline(t.fa_per_day, color=C_TRI, lw=0.8, ls=":", alpha=0.7, zorder=1)
             ax.axhline(t.recall_raw * 100, color=C_TRI, lw=0.8, ls=":", alpha=0.7, zorder=1)
@@ -111,6 +122,12 @@ def main() -> None:
         ax.tick_params(labelsize=7.8, colors=MUTED)
 
     axes[0].set_ylabel("recall_raw (%)  ↑  melhor", fontsize=8.4, color=MUTED)
+
+    # agora os limites estão fixados: transData é confiável e a de-colisão funciona
+    fig.canvas.draw()
+    ocupadas_por_ax = {}
+    for ax, x, y, txt, cor in pendentes:
+        ce.poe_rotulo(ax, x, y, txt, cor, ocupadas_por_ax.setdefault(id(ax), []))
 
     handles = [
         plt.Line2D([], [], marker="o", ls="", mfc="none", mec=C_CTRL, mew=1.6,
