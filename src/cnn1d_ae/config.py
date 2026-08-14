@@ -344,6 +344,18 @@ class PipelineConfig:
     # None = comportamento legado (MAE combinado entre canais).
     TARGET_SENSOR: Optional[str] = None
 
+    # Escopo das exclusões de treino no caminho multivariado (alarmes, gaps longos e
+    # runs de forward-fill):
+    #   "union"  — união sobre TODOS os canais do grupo (legado)
+    #   "target" — só o TARGET_SENSOR, igual ao caminho univariado
+    # Use "target" em ablação pareada multivariado × univariado: aí a ÚNICA diferença
+    # entre os braços é a arquitetura. Com "union" os conjuntos de treino divergem, e a
+    # janela de treino já foi medida valendo +34,5pp neste projeto — muito mais que a
+    # arquitetura, o que tornaria o resultado ininterpretável.
+    # ⚠️ Com "target" o AE conjunto pode ver canal irmão congelado na entrada; é o preço
+    # de manter o pareamento, e está registrado como limitação.
+    MULTI_EXCLUSION_SCOPE: str = "union"
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

@@ -32,6 +32,8 @@ from .preprocess import (
     apply_hampel_filter,
     build_exclusion_mask,
     build_startup_exclusion_mask,
+    build_constant_run_mask,
+    select_train_alarm_times,
 )
 from .sequences import make_sequences, train_val_split
 from .tuning import run_tuner, refit_best_model
@@ -159,12 +161,14 @@ def run_pipeline_multivariado(
     # 1. Preprocessar cada sensor individualmente (sentinel + interpolação)
     # ------------------------------------------------------------------
     sensor_dfs: Dict[str, pd.DataFrame] = {}
+    long_gap_masks: Dict[str, pd.Series] = {}
     for sensor in sensors:
         print(f"  [PREPROC] {sensor} ...", end=" ", flush=True)
         try:
-            df_s, _ = build_sensor_dataframe(cfg, df_feat, df_raw, sensor)
+            df_s, long_gap_mask = build_sensor_dataframe(cfg, df_feat, df_raw, sensor)
             df_s = apply_hampel_filter(df_s, sensor, cfg)
             sensor_dfs[sensor] = df_s[[sensor]]
+            long_gap_masks[sensor] = long_gap_mask
             print("OK")
         except Exception as exc:
             print(f"ERRO ({exc}) — sensor ignorado")
@@ -201,14 +205,56 @@ def run_pipeline_multivariado(
         print(f"[ALARM-FILTER] {len(df_alarm)}/{_n_before} alarmes dos sensores do modelo")
 
     # ------------------------------------------------------------------
-    # 3. Máscara de exclusão combinada (alarmes dos sensores do modelo)
+    # 3. Máscara de exclusão de treino
+    #
+    # Espelha o caminho univariado (pipeline.py): TRAIN_SKIP_CONDITIONS + janela
+    # assimétrica before/after. Ambos são no-op quando não configurados, então
+    # configs antigos não mudam de comportamento. O escopo dos alarmes é a única
+    # parte que precisa de chave (MULTI_ALARM_EXCLUSION_SCOPE), porque mudá-lo
+    # muda o resultado de configs multivariados já rodados.
     # ------------------------------------------------------------------
-    all_alarm_times = pd.to_datetime(
-        df_alarm["Data da Ocorrencia"], errors="coerce"
-    ).dropna().drop_duplicates()
+    _scope = str(getattr(cfg, "MULTI_EXCLUSION_SCOPE", "union")).lower()
+    if _scope == "target" and cfg.TARGET_SENSOR in sensors_ok:
+        _excl_channels = [cfg.TARGET_SENSOR]
+    else:
+        if _scope == "target":
+            print("[EXCL-SCOPE] 'target' pedido sem TARGET_SENSOR válido — caindo para 'union'")
+        _excl_channels = sensors_ok
+    print(f"[EXCL-SCOPE] escopo='{_scope}' → exclusões de treino sobre: {_excl_channels}")
 
-    alarm_exclude = build_exclusion_mask(common_index, all_alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    all_alarm_times = select_train_alarm_times(cfg, df_alarm, tags=_excl_channels, label=" [MULTI]")
+
+    alarm_exclude = build_exclusion_mask(
+        common_index,
+        all_alarm_times,
+        cfg.EXCLUDE_MINUTES_AROUND_ALARM,
+        minutes_before=cfg.EXCLUDE_MINUTES_BEFORE_ALARM,
+        minutes_after=cfg.EXCLUDE_MINUTES_AFTER_ALARM,
+    )
     exclude = alarm_exclude.copy() if hasattr(alarm_exclude, "copy") else np.array(alarm_exclude)
+
+    # Gaps longos e runs de forward-fill: o univariado exclui os dois (pipeline.py) e o
+    # multivariado não excluía nenhum. Sem isso o AE conjunto treina em platôs que o
+    # univariado nunca viu — e depois marca esses mesmos platôs como anomalia.
+    if cfg.EXCLUDE_LONG_GAPS_FROM_TRAIN and long_gap_masks:
+        lg = pd.Series(False, index=common_index)
+        for s in _excl_channels:
+            m = long_gap_masks.get(s)
+            if m is not None:
+                lg = lg | m.reindex(common_index).fillna(False).astype(bool)
+        print(f"[LONG-GAP] {int(lg.sum())} pontos excluídos do treino "
+              f"({len(_excl_channels)} canal/canais)")
+        exclude = exclude | lg
+
+    if cfg.EXCLUDE_CONSTANT_RUNS:
+        cr = pd.Series(False, index=common_index)
+        for s in _excl_channels:
+            m = build_constant_run_mask(df_all[s], min_length=cfg.CONSTANT_RUN_MIN_LENGTH)
+            cr = cr | m.reindex(common_index).fillna(False).astype(bool)
+        print(f"[CONST-RUN] {int(cr.sum())} pontos de forward-fill "
+              f"(runs>={cfg.CONSTANT_RUN_MIN_LENGTH}) excluídos do treino "
+              f"({len(_excl_channels)} canal/canais)")
+        exclude = exclude | cr
 
     # RUNNING_COL (usa primeiro sensor como referência)
     running = _load_running_col(cfg, df_raw, common_index)

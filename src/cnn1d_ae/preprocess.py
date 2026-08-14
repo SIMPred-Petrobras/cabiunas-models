@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -493,6 +493,43 @@ def build_exclusion_mask(
         t1 = pd.Timestamp(t) + after
         exclude.loc[(exclude.index >= t0) & (exclude.index <= t1)] = True
     return exclude
+
+
+def select_train_alarm_times(
+    cfg: PipelineConfig,
+    df_alarm: pd.DataFrame,
+    tags: Optional[Sequence[str]] = None,
+    label: str = "",
+) -> pd.Series:
+    """Alarmes que abrem janela de exclusão de treino: filtro por Tag + TRAIN_SKIP_CONDITIONS.
+
+    Extraído para que os caminhos univariado e multivariado possam usar a MESMA regra.
+    O multivariado ignorava `TRAIN_SKIP_CONDITIONS` e a assimetria before/after, e
+    excluía pela união dos alarmes de todos os canais — três diferenças que, numa
+    ablação pareada, confundem "multivariado" com "treinado em menos dado".
+    """
+    df = df_alarm
+    if tags is not None and "Tag" in df.columns:
+        df = df.loc[df["Tag"].astype(str).isin(set(tags))]
+
+    if cfg.TRAIN_SKIP_CONDITIONS:
+        cond_col = next((c for c in df.columns if "condi" in c.lower() and "não" not in c.lower()),
+                        None)
+        if cond_col:
+            skip = {c.upper() for c in cfg.TRAIN_SKIP_CONDITIONS}
+            n_before = len(df)
+            df = df[~df[cond_col].astype(str).str.upper().fillna("").isin(skip)]
+            print(f"  [TRAIN_SKIP]{label} removidas {n_before - len(df)} linhas de alarme "
+                  f"({cfg.TRAIN_SKIP_CONDITIONS}) da janela de exclusão de treino")
+
+    if "Data da Ocorrencia" not in df.columns:
+        return pd.Series(dtype="datetime64[ns]")
+    return (
+        pd.to_datetime(df["Data da Ocorrencia"], errors="coerce")
+        .dropna()
+        .drop_duplicates()
+        .sort_values()
+    )
 
 
 # ---------------------------------------------------------------------------
