@@ -139,4 +139,53 @@ scoring já existia e permanece).
 
 ## Resultado (pós-correção)
 
-_(preencher após a run — task ClearML: TBD)_
+**Task ClearML:** `2c3c7f92e93441dc976acf7d0aeb906d` (grid completo, 126 trials)
+
+O vencedor pelo `composite_score` (`ocsvm`, p97/debounce=1) tem hit_rate de
+97,5% mas `normal_alert_rate` de **26,1%** (731 anomalias/dia) — confirmado
+visualmente (`series_with_anomalies_TC382_03_A.png`): o modelo marca quase
+toda a faixa operacional (600-800) como anômala, sem discriminar nada.
+Sintoma de que `AUTOML_FP_PENALTY=2.0` não penaliza FP o suficiente pra
+evitar essa escolha quando o hit_rate sobe muito.
+
+**Melhor por modelo:**
+
+| Modelo | Percentil/debounce | hit_rate | normal_alert_rate | anomalias/dia | composite |
+|---|---|---|---|---|---|
+| ocsvm (vencedor oficial) | p97/1 | 97,5% (39/40) | 26,1% | 731 | 0,946 |
+| dense | p99.5/3 | 82,5% (33/40) | 12,9% | 376 | 0,931 |
+| **iforest** | **p99.9/6** | **75,0% (30/40)** | **0,06%** | **3,2** | 0,917 |
+
+**Candidato prático: `iforest` (p99.9, debounce=6).** Rodado isolado pra
+gerar as figuras (`AUTOML_MODELS=["iforest"]`,
+`configs/calibracao_v4_eq/test_grupo_exp6_vibracao_iforest_only.json`,
+task `d79fbb7ce31d45298a0a01761eab8c50` — mesmo resultado, `composite_score`
+e hiperparâmetros idênticos ao trial do grid completo, confirmando
+reprodutibilidade). Visualmente
+(`series_alarm_anomaly_subplots_TC382_03_A.png` /
+`..._T5_AVG_A.png`), os pontos marcados como anomalia se concentram nos
+picos de temperatura acima da faixa normal de operação (~700-800, vs.
+operação normal ~600-700), próximos aos agrupamentos reais de alarme —
+padrão fisicamente sensato, bem diferente da mancha do `ocsvm`.
+
+**Comparação com o EXP5** (candidato antigo: `TC382_03_A` sozinho, sem
+vibração, iforest, 65% hit rate / 2,43% FP): a versão com vibração +
+derived features melhora nos dois eixos ao mesmo tempo — hit_rate maior
+(75% vs. 65%) **e** FP drasticamente menor (0,06% vs. 2,43%, ~40x menos
+falso alerta). Ressalva: bases de alarme diferentes (EXP5 usava o arquivo
+antigo duplicado, 20 alarmes OOS deduplicados; EXP6 usa o arquivo novo, 40
+alarmes OOS onset-only) — não é uma comparação perfeitamente equivalente,
+mas a ordem de grandeza da melhoria em FP é grande o suficiente pra ser um
+sinal real.
+
+### Pendências antes de promover
+
+1. **`AUTOML_FP_PENALTY`** provavelmente precisa subir (ex: 2.0 → 8-10) pra
+   o `composite_score` parar de escolher candidatos com FP alto por padrão
+   — hoje só pegamos o `iforest` porque olhamos o ranking manualmente.
+2. Checar variância de semente do `iforest` vencedor (como fizemos no
+   EXP5) antes de considerar definitivo.
+3. Investigar se a vibração (`TV_*`) está realmente contribuindo sinal, ou
+   se o ganho de FP vem só do `ENABLE_DERIVED_FEATURES` + exclusão de
+   off/idle do treino — rodar um grupo de controle sem vibração (só
+   TC382+T5) com os mesmos ajustes pra isolar o efeito.
