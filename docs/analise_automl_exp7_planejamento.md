@@ -116,11 +116,23 @@ Ordem de execução sugerida — do mais barato/baixo-risco ao mais custoso:
 5. RUL/sobrevivência — não priorizado agora; revisitar se o volume de
    alarmes rotulados crescer substancialmente.
 
-**Pendência paralela:** confirmar se `TV_*` é RMS já agregado pelo
-transmissor ou se existe alguma fonte de forma de onda bruta de vibração
-disponível — isso calibra o teto realista de antecedência que dá pra
-perseguir com análise de envelope/espectral (item fora da lista acima
-porque depende dessa confirmação).
+**Pendência paralela — RESOLVIDA (2026-08-15):** `TV_*` é leitura
+bruta/instantânea de sonda de proximidade (eddy-current), não RMS agregado.
+Evidência: os alarmes desses tags têm condição `LOLO` disparando em valores
+**negativos** (-12 a -19 nos setpoints reais) — impossível para um RMS (que
+nunca é negativo), mas típico de falha/perda de referência do sinal de gap
+de uma sonda de proximidade. Valores em operação normal ficam na faixa
+0–40 (provável deslocamento em mícrons), com alarmes HI/HIHI em 51–69.
+
+Consequência prática:
+- Dá pra calcular estatísticas de textura (kurtosis, crest factor, RMS
+  próprio) em janela móvel de forma legítima — é leitura quase-bruta, não
+  um valor já pré-processado (bom para o item 2 do plano).
+- Análise de envelope/espectral de alta frequência (a técnica que pega
+  falha de mancal com 3–6 meses de antecedência) **não é viável** com essa
+  fonte — só temos snapshot a cada 30s, não forma de onda contínua em kHz.
+  O teto realista de antecedência continua sendo da ordem de horas, como já
+  observado no EXP6, não meses.
 
 ## 4. Onde paramos
 
