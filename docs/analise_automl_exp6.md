@@ -92,6 +92,51 @@ Dataset ClearML **`Cabiunas full 2024-2026 30s`** (`TesteMLCab`, ID
   operacional final = 68,3% on / 30,2% off_longo / 1,3% transiente / 0,2%
   off_curto — distribuição sã, compatível com o que víamos com `NGP_A`.
 
-## Resultado
+## Achado pré-run: máscara operacional não excluía o treino, só a avaliação
+
+O usuário perguntou diretamente (antes de ver qualquer resultado) se
+recortávamos valores fora do funcionamento normal e se a máscara de alarme
+cobria o treino. Ao investigar, achamos um problema real: o estado
+operacional (`on`/`off_longo`/`off_curto`/`transiente`, derivado de
+`RUNNING_A`) só era usado **na hora de pontuar** anomalias
+(`is_anom_point=0` quando `state != "on"`) — nunca para excluir os períodos
+desligados do próprio conjunto de **treino** (`df_normal`/`x_normal`). Isso
+significa que o modelo era ajustado numa mistura de dois regimes bem
+diferentes (turbina operando, ~500-800°C, vs. parada/fria, ~25-40°C).
+
+**Task pré-correção (`bd84fa6cb50d46e2875305ef20e092f8`)**, resultado bruto
+antes do fix:
+
+| Métrica | Valor |
+|---|---|
+| Melhor modelo | `ocsvm`, p97, debounce=1 |
+| `hit_rate` | **97,5% (39/40)** |
+| `normal_alert_rate` | **10,3%** |
+| `composite_score` | 0,985 |
+
+Números tentadores à primeira vista, mas o `normal_alert_rate` de 10,3% (4x
+pior que o melhor resultado do EXP5) é a evidência de que o modelo estava
+essencialmente aprendendo a detectar a **transição liga/desliga** em si
+(um salto enorme de temperatura), não anomalias sutis durante a operação —
+o que também explica o hit_rate quase perfeito, já que muitos alarmes reais
+coincidem com esses períodos de transição.
+
+**Investigação adicional:** o platô de sensor "morto" em -40,51°C do
+`TC382_03_A` (ver seção de dados) — 99,9% desses pontos (5092/5098)
+acontecem justamente com `RUNNING_A==0`. Ou seja, a mesma correção resolve
+os dois problemas de uma vez: excluir "não-on" do treino também remove
+esse artefato de sensor sem precisar mexer no threshold de outlier
+separadamente.
+
+### Correção aplicada
+
+`automl_pipeline.py`: o cálculo do estado operacional foi movido para
+**antes** da construção de `df_normal`, e agora `state != "on"` entra como
+mais um critério de exclusão do treino (junto com proximidade de alarme e
+gaps longos) — igual já acontecia no pipeline CNN-1D. A avaliação continua
+inalterada (`df_all`/`x_all` seguem completos; a máscara de estado no
+scoring já existia e permanece).
+
+## Resultado (pós-correção)
 
 _(preencher após a run — task ClearML: TBD)_

@@ -191,6 +191,28 @@ def run_automl_group(
                     feature_cols.append(col)
     df_use = df_use[feature_cols]
 
+    # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do
+    # CNN-1D). Calculado aqui (antes do fit) para poder excluir periodos
+    # fora de "on" do proprio conjunto de treino -- nao so da avaliacao.
+    # Sem isso, o modelo aprendia uma mistura de dois regimes bem diferentes
+    # (operando vs. parado/frio), o que inflava hit_rate e normal_alert_rate
+    # juntos (o "anomalo" virava, em boa parte, so a transicao liga/desliga).
+    state = None
+    if cfg.ENABLE_OPERATIONAL_MASK:
+        ref_sensor = cfg.OPERATIONAL_REF_SENSOR
+        if ref_sensor and ref_sensor not in sensors:
+            df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
+            ref_series = df_ref[ref_sensor]
+        else:
+            ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
+            ref_series = df_use[ref_col]
+        state = build_operational_state(
+            index=df_use.index, sensor_series=ref_series,
+            off_value_quantile=cfg.OFF_VALUE_QUANTILE, off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
+            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS, transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+        )
+
     if "Tag" in df_alarm.columns:
         df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
     else:
@@ -207,6 +229,8 @@ def run_automl_group(
     if cfg.EXCLUDE_LONG_GAPS_FROM_TRAIN:
         long_gap_mask = long_gap_mask.reindex(df_use.index).fillna(False)
         exclude = exclude | long_gap_mask
+    if state is not None:
+        exclude = exclude | (state != "on")
 
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
@@ -236,26 +260,10 @@ def run_automl_group(
     else:
         eval_mask = pd.Series(True, index=all_index)
 
-    # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do
-    # CNN-1D). No arquivo antigo, RUNNING_A era pouco confiavel e usavamos
-    # NGP_A; no arquivo novo (sensores_full_2024_2026_30s.csv) RUNNING_A e o
-    # campo pensado para isso -- build_sensor_dataframe ja limpa valores
-    # sujos (to_numeric + interpolate/ffill/bfill) antes de chegar aqui.
-    state = None
-    if cfg.ENABLE_OPERATIONAL_MASK:
-        ref_sensor = cfg.OPERATIONAL_REF_SENSOR
-        if ref_sensor and ref_sensor not in sensors:
-            df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
-            ref_series = df_ref[ref_sensor]
-        else:
-            ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
-            ref_series = df_all[ref_col]
-        state = build_operational_state(
-            index=all_index, sensor_series=ref_series,
-            off_value_quantile=cfg.OFF_VALUE_QUANTILE, off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
-            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS, transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
-            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
-        )
+    # `state` ja foi calculado mais acima (antes do fit) e tem o mesmo indice
+    # de df_use == all_index (normalize_train_only preserva index/ordem).
+    if state is not None:
+        state = state.reindex(all_index)
 
     near_alarm_mask = build_exclusion_mask(all_index, alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
 
