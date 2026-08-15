@@ -64,10 +64,22 @@ def _fit_score_dense(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarra
 
 
 def _fit_score_ocsvm(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, n_features: int):
-    clf = fit_ocsvm(x_normal, cfg.AUTOML_OCSVM_NU, cfg.AUTOML_OCSVM_GAMMA)
+    # OneClassSVM (kernel RBF) escala ~O(n^2)-O(n^3) no numero de amostras de
+    # treino -- com centenas de milhares de pontos (datasets maiores/janelas
+    # de fit mais longas) o ajuste fica impraticavel. Subamostra so o *fit*;
+    # o score (train_err/all_err) continua sendo calculado sobre os dados
+    # inteiros, que e barato (so avalia contra os vetores de suporte).
+    x_fit = x_normal
+    max_train = cfg.AUTOML_OCSVM_MAX_TRAIN_SAMPLES
+    if max_train and len(x_normal) > max_train:
+        rng = np.random.default_rng(cfg.RANDOM_SEED)
+        idx = rng.choice(len(x_normal), size=int(max_train), replace=False)
+        x_fit = x_normal[idx]
+    clf = fit_ocsvm(x_fit, cfg.AUTOML_OCSVM_NU, cfg.AUTOML_OCSVM_GAMMA)
     train_err = ocsvm_error(clf, x_normal)
     all_err = ocsvm_error(clf, x_all)
-    return train_err, all_err, clf, {"nu": cfg.AUTOML_OCSVM_NU, "gamma": cfg.AUTOML_OCSVM_GAMMA}
+    return train_err, all_err, clf, {"nu": cfg.AUTOML_OCSVM_NU, "gamma": cfg.AUTOML_OCSVM_GAMMA,
+                                      "train_samples": int(len(x_fit))}
 
 
 def _fit_score_iforest(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, n_features: int):
@@ -145,6 +157,12 @@ def run_automl_group(
     group_name = group["name"]
     sensors = list(group["sensors"])
     target_sensor = group.get("target_sensor")
+    # eval_sensors: subconjunto de `sensors` cujos alarmes contam na
+    # avaliacao (hit_rate/normal_alert_rate/composite_score). Default =
+    # todos os `sensors`. Util quando alguns sensores do grupo (ex: canais
+    # de vibracao) entram so como feature preditiva, sem que seus proprios
+    # alarmes participem do denominador/numerador da avaliacao.
+    eval_sensors = list(group.get("eval_sensors") or sensors)
 
     out_dirs = ensure_sensor_dirs(cfg, group_name)
     save_run_config(cfg, out_dirs)
@@ -162,10 +180,19 @@ def run_automl_group(
     sensors = valid_sensors
     if target_sensor and target_sensor not in sensors:
         target_sensor = None
-    df_use = df_use[sensors]
+
+    feature_cols = list(sensors)
+    if cfg.ENABLE_DERIVED_FEATURES:
+        w = cfg.DERIVED_ROLLING_WINDOW
+        for s in sensors:
+            for suffix in (f"__roll_med_{w}", f"__roll_std_{w}", "__delta_1"):
+                col = f"{s}{suffix}"
+                if col in df_use.columns:
+                    feature_cols.append(col)
+    df_use = df_use[feature_cols]
 
     if "Tag" in df_alarm.columns:
-        df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(sensors)].copy()
+        df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
     else:
         df_alarm_group = df_alarm.copy()
     if "Data da Ocorrencia" in df_alarm_group.columns:
@@ -209,14 +236,14 @@ def run_automl_group(
     else:
         eval_mask = pd.Series(True, index=all_index)
 
-    # Estado operacional: nunca via RUNNING_A (nao confiavel/indisponivel na
-    # nossa fonte de dados) — usa o mesmo mecanismo do CNN-1D (OPERATIONAL_REF_SENSOR,
-    # tipicamente NGP_A) em vez do filter_running da pipeline original.
+    # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do
+    # CNN-1D). No arquivo antigo, RUNNING_A era pouco confiavel e usavamos
+    # NGP_A; no arquivo novo (sensores_full_2024_2026_30s.csv) RUNNING_A e o
+    # campo pensado para isso -- build_sensor_dataframe ja limpa valores
+    # sujos (to_numeric + interpolate/ffill/bfill) antes de chegar aqui.
     state = None
     if cfg.ENABLE_OPERATIONAL_MASK:
         ref_sensor = cfg.OPERATIONAL_REF_SENSOR
-        if ref_sensor == "RUNNING_A":
-            raise ValueError("OPERATIONAL_REF_SENSOR nao pode ser RUNNING_A nesta pipeline.")
         if ref_sensor and ref_sensor not in sensors:
             df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
             ref_series = df_ref[ref_sensor]
@@ -364,6 +391,7 @@ def run_automl_group(
     calibration_report = {
         "group": group_name,
         "sensors": sensors,
+        "eval_sensors": eval_sensors,
         "target_sensor": target_sensor or "global",
         "n_sensors": len(sensors),
         "best_model": best_model_type,

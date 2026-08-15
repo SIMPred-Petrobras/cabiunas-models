@@ -90,6 +90,10 @@ def build_group_dataframe(
         df_use[s] = df_use[s].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
         df_use[s] = df_use[s].ffill().bfill()
 
+    if cfg.ENABLE_DERIVED_FEATURES:
+        for s in sensors:
+            df_use = _build_derived_features(df_use, sensor=s, window=cfg.DERIVED_ROLLING_WINDOW)
+
     return df_use, long_gap_union
 
 

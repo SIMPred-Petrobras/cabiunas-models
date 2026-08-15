@@ -21,6 +21,12 @@ class PipelineConfig:
     SHIFT_HOURS: int = 0
     LOG_TIME_AUDIT_SAMPLES: int = 3
 
+    # Recorte opcional do inicio/fim da serie usada por toda a pipeline
+    # (aplicado logo apos o parsing de tempo, antes de qualquer split
+    # treino/OOS). None = usa a serie inteira disponivel no arquivo.
+    DATA_START_DATE: Optional[str] = None
+    DATA_END_DATE: Optional[str] = None
+
     # =========================
     # MODO DE EXECUCAO
     # =========================
@@ -151,6 +157,9 @@ class PipelineConfig:
 
     AUTOML_OCSVM_NU: float = 0.05
     AUTOML_OCSVM_GAMMA: str = "scale"
+    # Limite de amostras usadas para *ajustar* o OneClassSVM (RBF escala mal
+    # com n). None = sem limite (usa x_normal inteiro).
+    AUTOML_OCSVM_MAX_TRAIN_SAMPLES: Optional[int] = 50000
 
     AUTOML_IFOREST_CONTAMINATION: float = 0.05
     AUTOML_IFOREST_N_ESTIMATORS: int = 100

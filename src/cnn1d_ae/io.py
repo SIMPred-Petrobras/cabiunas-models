@@ -196,6 +196,14 @@ def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataF
     df_alarm = pd.read_csv(alarm_csv)
     if "Data da Ocorrência" in df_alarm.columns and "Data da Ocorrencia" not in df_alarm.columns:
         df_alarm["Data da Ocorrencia"] = df_alarm["Data da Ocorrência"]
+    if "Tag Alarme" in df_alarm.columns and "Tag" not in df_alarm.columns:
+        df_alarm["Tag"] = df_alarm["Tag Alarme"]
+    if "Status" in df_alarm.columns:
+        # Alguns arquivos de alarme (ex: alarmes_selecionados_turbina_a.csv)
+        # trazem pares onset/clear (ACT/UNACK + INACT/UNACK) para o mesmo
+        # evento. So o onset (ACT) e o que faz sentido prever com antecedencia
+        # -- o clear nao e "detectavel antes", e so a baixa do alarme.
+        df_alarm = df_alarm[df_alarm["Status"].astype(str).str.startswith("ACT")].copy()
 
     df_feat = pd.read_csv(features_csv)
     df_raw = pd.read_csv(raw_csv)
@@ -203,6 +211,15 @@ def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataF
     df_alarm = _process_time_column(df_alarm, "Data da Ocorrencia", cfg, "alarms")
     df_feat = _process_time_column(df_feat, cfg.TIME_COL, cfg, "features")
     df_raw = _process_time_column(df_raw, cfg.TIME_COL, cfg, "raw")
+
+    if cfg.DATA_START_DATE:
+        start = pd.Timestamp(cfg.DATA_START_DATE)
+        df_feat = df_feat.loc[df_feat[cfg.TIME_COL] >= start].reset_index(drop=True)
+        df_raw = df_raw.loc[df_raw[cfg.TIME_COL] >= start].reset_index(drop=True)
+    if cfg.DATA_END_DATE:
+        end = pd.Timestamp(cfg.DATA_END_DATE)
+        df_feat = df_feat.loc[df_feat[cfg.TIME_COL] <= end].reset_index(drop=True)
+        df_raw = df_raw.loc[df_raw[cfg.TIME_COL] <= end].reset_index(drop=True)
 
     report = {
         "alarm": build_time_integrity_report(df_alarm, "Data da Ocorrencia", "alarm"),
