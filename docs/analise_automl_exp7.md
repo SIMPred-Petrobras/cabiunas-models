@@ -97,28 +97,70 @@ da hora, junto com os de quase 24h).
 
 ---
 
+## Item 3 — Detecção de mudança de regime (CUSUM + z-score de linha de base local)
+
+**Mudança:** duas features causais novas por sensor, complementares ao
+threshold por percentil global: `localz_{1h}_{24h}` (z-score da média de
+curto prazo em relação à linha de base de longo prazo) e
+`cusum_pos`/`cusum_neg` (CUSUM causal de Page, acumula evidência de desvio
+sustentado da média móvel de 24h, com folga de 0,5 desvio-padrão local).
+276 → 312 features de entrada. Implementação e teste de performance em
+`docs/analise_automl_exp7_planejamento.md`.
+
+**Task ClearML:** `43c4d35df1e144a9994a61b765c76e0a`
+
+| | EXP7 item 1+2 (textura) | EXP7 item 1+2+3 (+ mudança de regime) |
+|---|---|---|
+| hit_rate | 92,5% | 92,5% |
+| FP | 1,94% | 1,93% |
+| Preditivo | 29 | 29 |
+| Reativo | 8 | 8 |
+| **Sem detecção** | **3** | **3 (os mesmos 3 casos)** |
+| Mediana de antecedência | 14,7h | 14,7h (idêntico) |
+
+**Resultado: nenhum ganho adicional.** Os números batem exatamente, e os 3
+alarmes sem detecção são **os mesmos** das etapas anteriores (08/08/2025
+T5\_AVG\_A, 08/08/2025 TC382\_03\_A, 29/11/2025 TC382\_03\_A). Não é bug --
+o `threshold` do `ocsvm` vencedor mudou de 14,88 para 16,07 (escala
+interna diferente), confirmando que as novas features entraram no ajuste
+do modelo; só que isso não mudou a classificação final nesses casos
+específicos.
+
+**Interpretação:** esses 3 alarmes provavelmente não têm nenhum precursor
+detectável nos sensores disponíveis (temperatura + vibração) -- nem em
+nível, nem em tendência, nem em mudança de regime local. É possível que
+tenham causa externa ao que monitoramos (ação de operador, trip por outro
+sistema) que não deixa rastro nesses canais especificamente. Não vale
+insistir nessa direção com os dados atuais.
+
+---
+
 ## Resumo acumulado
 
 | Etapa | Preditivo | Reativo | Sem detecção | FP | Mediana antecedência |
 |---|---|---|---|---|---|
 | EXP6 (baseline, janela única) | 26 | 4 | 10 | 0,06% | 12,4h |
 | EXP7 item 1 (multi-escala) | 28 | 7 | 5 | 2,21% | 15,0h |
-| **EXP7 item 1+2 (+ textura)** | **29** | 8 | **3** | 1,94% | 14,7h |
+| EXP7 item 1+2 (+ textura) | 29 | 8 | 3 | 1,94% | 14,7h |
+| **EXP7 item 1+2+3 (+ mudança de regime)** | **29** | **8** | **3** | 1,93% | 14,7h |
 
-**Candidato de referência atual:** `ocsvm` (p99.9, debounce=1) sobre o grupo
-`TC382_T5_vibracao_mancais_multiescala` com `ENABLE_DERIVED_FEATURES=true`,
-`DERIVED_ROLLING_WINDOWS=[12, 120, 480, 2880]` e features de textura
-(kurtosis/skewness/crest factor) nas janelas ≥1h.
+**Candidato de referência atual (inalterado desde o item 2):** `ocsvm`
+(p99.9, debounce=1) sobre o grupo `TC382_T5_vibracao_mancais` com
+`ENABLE_DERIVED_FEATURES=true`, `DERIVED_ROLLING_WINDOWS=[12, 120, 480,
+2880]` e features de textura (kurtosis/skewness/crest factor) nas janelas
+≥1h. O item 3 não trouxe motivo para trocar de candidato.
 
 ## Próximos passos (do plano em 5 itens)
 
 1. ✅ Features multi-escala — feito, ganho real (com custo de FP)
-2. ✅ Features de textura — feito, ganho limpo (sem custo adicional)
-3. ⬜ Detecção de mudança de regime (PELT/CUSUM) — ainda restam 3 alarmes
-   sem detecção nenhuma; candidato natural para atacá-los especificamente
-4. ⬜ Reformulação supervisionada ("vai alarmar em N horas?") — considerar
-   depois do item 3, com cuidado redobrado de validação temporal dado o
-   tamanho pequeno da amostra (40 eventos)
+2. ✅ Features de textura — feito, ganho limpo (sem custo adicional) --
+   **candidato de referência**
+3. ✅ Detecção de mudança de regime — feito, **sem ganho adicional**; os 3
+   casos residuais parecem não ter precursor detectável nos dados atuais
+4. ⬜ Reformulação supervisionada ("vai alarmar em N horas?") -- próximo
+   candidato natural, mas com cuidado redobrado de validação temporal dado
+   o tamanho pequeno da amostra (40 eventos); não vai resolver os 3 casos
+   sem sinal, mas pode melhorar a divisão preditivo/reativo dos outros 37
 5. ⬜ RUL/sobrevivência — não priorizado, requer mais eventos rotulados
 
 **Pendência de validação:** nenhum dos candidatos do EXP7 teve checagem de
