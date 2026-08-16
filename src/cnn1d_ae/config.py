@@ -195,6 +195,25 @@ class PipelineConfig:
     # de cada um em calibration_report.json["seed_sweep"]. 0/None = desliga.
     AUTOML_SEED_SWEEP_N: int = 0
 
+    # =========================
+    # SUPERVISIONADO (EXP7/EXP8 item 4 -- classificador de alerta precoce,
+    # em vez de detector de anomalia nao-supervisionado. Reusa as mesmas
+    # features do AutoML (select_feature_columns) mas otimiza diretamente
+    # "existe alarme nas proximas PREDICTION_HORIZON_HOURS?" usando os
+    # alarmes reais como rotulo. Ver docs/analise_automl_exp7_planejamento.md
+    # e src/cnn1d_ae/supervised_pipeline.py.
+    # =========================
+    ENABLE_SUPERVISED: bool = False
+    PREDICTION_HORIZON_HOURS: float = 24.0
+    SUPERVISED_PROBA_THRESHOLDS: Optional[List[float]] = None  # default: [0.2..0.8]
+    SUPERVISED_N_ESTIMATORS: int = 300
+    SUPERVISED_MAX_DEPTH: Optional[int] = None
+    SUPERVISED_MIN_SAMPLES_LEAF: int = 5
+    # Subamostra negativos pro fit (mantem todos os positivos) -- RandomForest
+    # com class_weight="balanced" nao precisa disso pra corretude estatistica,
+    # so por velocidade com centenas de milhares de pontos "on".
+    SUPERVISED_MAX_TRAIN_SAMPLES: Optional[int] = 200000
+
     # Execucao em lote
     OVERWRITE: bool = False
     MIN_STD: float = 1e-8

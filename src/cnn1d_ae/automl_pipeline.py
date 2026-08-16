@@ -17,7 +17,7 @@ from .preprocess import (
     build_exclusion_mask,
     clip_outliers,
     normalize_train_only,
-    TEXTURE_MIN_WINDOW,
+    select_feature_columns,
 )
 from .scoring import (
     map_seq_to_point_anomalies,
@@ -182,29 +182,7 @@ def run_automl_group(
     if target_sensor and target_sensor not in sensors:
         target_sensor = None
 
-    feature_cols = list(sensors)
-    if cfg.ENABLE_DERIVED_FEATURES:
-        windows = list(cfg.DERIVED_ROLLING_WINDOWS) if cfg.DERIVED_ROLLING_WINDOWS else [cfg.DERIVED_ROLLING_WINDOW]
-        suffixes = ["__delta_1"]
-        for w in windows:
-            w = max(2, int(w))
-            suffixes += [f"__roll_med_{w}", f"__roll_std_{w}", f"__trend_{w}"]
-            if w >= TEXTURE_MIN_WINDOW:
-                suffixes += [f"__roll_kurt_{w}", f"__roll_skew_{w}", f"__crest_{w}"]
-        for s in sensors:
-            for suffix in suffixes:
-                col = f"{s}{suffix}"
-                if col in df_use.columns:
-                    feature_cols.append(col)
-    if cfg.ENABLE_CHANGEPOINT_FEATURES:
-        sw = max(2, int(cfg.CHANGEPOINT_SHORT_WINDOW))
-        lw = max(sw + 1, int(cfg.CHANGEPOINT_LONG_WINDOW))
-        cp_suffixes = [f"__localz_{sw}_{lw}", f"__cusum_pos_{lw}", f"__cusum_neg_{lw}"]
-        for s in sensors:
-            for suffix in cp_suffixes:
-                col = f"{s}{suffix}"
-                if col in df_use.columns:
-                    feature_cols.append(col)
+    feature_cols = select_feature_columns(cfg, df_use, sensors)
     df_use = df_use[feature_cols]
 
     # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do

@@ -192,6 +192,38 @@ def build_group_dataframe(
     return df_use, long_gap_union
 
 
+def select_feature_columns(cfg: PipelineConfig, df_use: pd.DataFrame, sensors: List[str]) -> List[str]:
+    """Nomes das colunas de feature (sensor bruto + derivadas habilitadas)
+    presentes em `df_use` para os `sensors` dados -- mesma logica usada
+    tanto pelo AutoML nao-supervisionado quanto pelo classificador
+    supervisionado (EXP7/EXP8), para as duas abordagens usarem exatamente
+    o mesmo espaco de features e serem comparaveis."""
+    feature_cols = list(sensors)
+    if cfg.ENABLE_DERIVED_FEATURES:
+        windows = _derived_windows(cfg)
+        suffixes = ["__delta_1"]
+        for w in windows:
+            w = max(2, int(w))
+            suffixes += [f"__roll_med_{w}", f"__roll_std_{w}", f"__trend_{w}"]
+            if w >= TEXTURE_MIN_WINDOW:
+                suffixes += [f"__roll_kurt_{w}", f"__roll_skew_{w}", f"__crest_{w}"]
+        for s in sensors:
+            for suffix in suffixes:
+                col = f"{s}{suffix}"
+                if col in df_use.columns:
+                    feature_cols.append(col)
+    if cfg.ENABLE_CHANGEPOINT_FEATURES:
+        sw = max(2, int(cfg.CHANGEPOINT_SHORT_WINDOW))
+        lw = max(sw + 1, int(cfg.CHANGEPOINT_LONG_WINDOW))
+        cp_suffixes = [f"__localz_{sw}_{lw}", f"__cusum_pos_{lw}", f"__cusum_neg_{lw}"]
+        for s in sensors:
+            for suffix in cp_suffixes:
+                col = f"{s}{suffix}"
+                if col in df_use.columns:
+                    feature_cols.append(col)
+    return feature_cols
+
+
 def build_exclusion_mask(index: pd.DatetimeIndex, alarm_times: pd.Series, minutes: int) -> pd.Series:
     exclude = pd.Series(False, index=index)
     delta = pd.Timedelta(minutes=minutes)

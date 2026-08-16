@@ -39,6 +39,7 @@ from .plots import (
     plot_series_alarm_anomaly_subplots,
 )
 from .automl_pipeline import run_automl_group
+from .supervised_pipeline import run_supervised_group
 
 
 def discover_sensors(cfg: PipelineConfig, df_feat: pd.DataFrame, df_raw: pd.DataFrame) -> List[str]:
@@ -574,6 +575,9 @@ def run(cfg: PipelineConfig) -> Dict[str, Any]:
     with open(time_report_path, "w", encoding="utf-8") as f:
         json.dump(time_report, f, indent=2, ensure_ascii=False)
 
+    if cfg.ENABLE_AUTOML and cfg.ENABLE_SUPERVISED:
+        raise ValueError("ENABLE_AUTOML e ENABLE_SUPERVISED sao mutuamente exclusivos.")
+
     if cfg.ENABLE_AUTOML:
         if not cfg.SENSOR_GROUPS:
             raise ValueError("ENABLE_AUTOML=true exige SENSOR_GROUPS definido.")
@@ -588,6 +592,28 @@ def run(cfg: PipelineConfig) -> Dict[str, Any]:
         df_summary = pd.DataFrame(rows).sort_values("skipped", ascending=True)
         df_summary.to_csv(summary_path, index=False)
         print(f"\n[DONE] Summary AutoML salvo em: {summary_path}")
+        return {
+            "summary_path": summary_path,
+            "time_report_path": time_report_path,
+            "sensor_outputs": rows,
+            "sensors": [],
+            "groups": [g["name"] for g in cfg.SENSOR_GROUPS],
+        }
+
+    if cfg.ENABLE_SUPERVISED:
+        if not cfg.SENSOR_GROUPS:
+            raise ValueError("ENABLE_SUPERVISED=true exige SENSOR_GROUPS definido.")
+        rows = []
+        for group in cfg.SENSOR_GROUPS:
+            try:
+                rows.append(run_supervised_group(cfg, df_alarm, df_feat, df_raw, group))
+            except Exception as e:
+                print(f"[ERROR] supervised group={group.get('name')} -> {e}")
+                rows.append({"group": group.get("name"), "sensors": group.get("sensors", []),
+                             "skipped": True, "reason": f"exception: {e}"})
+        df_summary = pd.DataFrame(rows).sort_values("skipped", ascending=True)
+        df_summary.to_csv(summary_path, index=False)
+        print(f"\n[DONE] Summary Supervisionado salvo em: {summary_path}")
         return {
             "summary_path": summary_path,
             "time_report_path": time_report_path,
