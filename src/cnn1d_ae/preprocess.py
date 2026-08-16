@@ -48,6 +48,57 @@ def _derived_windows(cfg: PipelineConfig) -> List[int]:
     return list(cfg.DERIVED_ROLLING_WINDOWS) if cfg.DERIVED_ROLLING_WINDOWS else [cfg.DERIVED_ROLLING_WINDOW]
 
 
+def _build_changepoint_features(
+    df: pd.DataFrame, sensor: str, short_window: int, long_window: int, cusum_k: float
+) -> pd.DataFrame:
+    """Features causais de deteccao de mudanca de regime, complementares ao
+    threshold por percentil global (que so dispara quando o valor cruza um
+    limiar historico fixo). Aqui o alvo e detectar quando o sinal ja diverge
+    da sua propria linha de base *local* recente, mesmo sem cruzar esse
+    limiar -- pensado para os casos "sem deteccao" do EXP7 item 1+2, que
+    mostram inflexao de tendencia sutil mas dentro do ruido normal do sinal.
+
+    - `localz_{sw}_{lw}`: z-score da media de curto prazo (sw) em relacao a
+      media/desvio de longo prazo (lw) -- "quantos desvios-padrao locais a
+      media recente ja esta longe da linha de base".
+    - `cusum_pos_{lw}` / `cusum_neg_{lw}`: CUSUM causal (Page's CUSUM) do
+      desvio em relacao a media movel de longo prazo, com folga (slack)
+      proporcional ao desvio padrao local -- acumula evidencia de um desvio
+      sustentado (mesmo pequeno) e reseta quando o sinal volta a linha de
+      base. Precisa de loop sequencial: o reset em max(0, ...)/min(0, ...)
+      nao vetoriza em pandas.rolling.
+
+    Ver docs/analise_automl_exp7_planejamento.md (item 3)."""
+    out = df.copy()
+    x = out[sensor]
+    sw = max(2, int(short_window))
+    lw = max(sw + 1, int(long_window))
+
+    short_mean = x.rolling(sw, min_periods=1).mean()
+    long_mean = x.rolling(lw, min_periods=1).mean()
+    long_std = x.rolling(lw, min_periods=1).std().fillna(0.0)
+    eps = 1e-6
+    out[f"{sensor}__localz_{sw}_{lw}"] = ((short_mean - long_mean) / (long_std + eps)).fillna(0.0)
+
+    vals = x.to_numpy(dtype=np.float64)
+    mean_arr = long_mean.to_numpy(dtype=np.float64)
+    k_arr = float(cusum_k) * long_std.to_numpy(dtype=np.float64)
+    n = len(vals)
+    pos = np.empty(n, dtype=np.float64)
+    neg = np.empty(n, dtype=np.float64)
+    p = 0.0
+    ng = 0.0
+    for i in range(n):
+        dev = vals[i] - mean_arr[i]
+        p = max(0.0, p + dev - k_arr[i])
+        ng = max(0.0, ng - dev - k_arr[i])
+        pos[i] = p
+        neg[i] = ng
+    out[f"{sensor}__cusum_pos_{lw}"] = pos
+    out[f"{sensor}__cusum_neg_{lw}"] = neg
+    return out
+
+
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     missing = series.isna()
     grp = missing.ne(missing.shift(fill_value=False)).cumsum()
@@ -84,6 +135,11 @@ def build_sensor_dataframe(
 
     if cfg.ENABLE_DERIVED_FEATURES:
         df_use = _build_derived_features(df_use, sensor=sensor, windows=_derived_windows(cfg))
+    if cfg.ENABLE_CHANGEPOINT_FEATURES:
+        df_use = _build_changepoint_features(
+            df_use, sensor=sensor, short_window=cfg.CHANGEPOINT_SHORT_WINDOW,
+            long_window=cfg.CHANGEPOINT_LONG_WINDOW, cusum_k=cfg.CHANGEPOINT_CUSUM_K,
+        )
 
     return df_use, long_gap_raw
 
@@ -126,6 +182,12 @@ def build_group_dataframe(
         windows = _derived_windows(cfg)
         for s in sensors:
             df_use = _build_derived_features(df_use, sensor=s, windows=windows)
+    if cfg.ENABLE_CHANGEPOINT_FEATURES:
+        for s in sensors:
+            df_use = _build_changepoint_features(
+                df_use, sensor=s, short_window=cfg.CHANGEPOINT_SHORT_WINDOW,
+                long_window=cfg.CHANGEPOINT_LONG_WINDOW, cusum_k=cfg.CHANGEPOINT_CUSUM_K,
+            )
 
     return df_use, long_gap_union
 

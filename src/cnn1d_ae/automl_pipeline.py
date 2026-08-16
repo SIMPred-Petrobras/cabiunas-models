@@ -196,6 +196,15 @@ def run_automl_group(
                 col = f"{s}{suffix}"
                 if col in df_use.columns:
                     feature_cols.append(col)
+    if cfg.ENABLE_CHANGEPOINT_FEATURES:
+        sw = max(2, int(cfg.CHANGEPOINT_SHORT_WINDOW))
+        lw = max(sw + 1, int(cfg.CHANGEPOINT_LONG_WINDOW))
+        cp_suffixes = [f"__localz_{sw}_{lw}", f"__cusum_pos_{lw}", f"__cusum_neg_{lw}"]
+        for s in sensors:
+            for suffix in cp_suffixes:
+                col = f"{s}{suffix}"
+                if col in df_use.columns:
+                    feature_cols.append(col)
     df_use = df_use[feature_cols]
 
     # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do

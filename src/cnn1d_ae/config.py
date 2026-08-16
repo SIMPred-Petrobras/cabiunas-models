@@ -55,6 +55,15 @@ class PipelineConfig:
     # DERIVED_ROLLING_WINDOW (que continua sendo o fallback de janela unica).
     # Ver docs/analise_automl_exp7_planejamento.md.
     DERIVED_ROLLING_WINDOWS: Optional[List[int]] = None
+
+    # Features causais de deteccao de mudanca de regime (CUSUM + z-score de
+    # linha de base local), complementares ao threshold por percentil
+    # global. Ver docs/analise_automl_exp7_planejamento.md (item 3).
+    ENABLE_CHANGEPOINT_FEATURES: bool = False
+    CHANGEPOINT_SHORT_WINDOW: int = 120   # amostras (1h a 30s)
+    CHANGEPOINT_LONG_WINDOW: int = 2880   # amostras (24h a 30s)
+    CHANGEPOINT_CUSUM_K: float = 0.5      # folga (slack) em desvios-padrao locais
+
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995
