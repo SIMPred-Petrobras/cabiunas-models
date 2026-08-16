@@ -99,6 +99,42 @@ def _build_changepoint_features(
     return out
 
 
+THERMAL_ARRAY_SPREAD_COL = "thermal_array_spread"
+
+
+def _build_thermal_array_spread(
+    cfg: PipelineConfig, df_use: pd.DataFrame, source_df: pd.DataFrame, array_sensors: List[str]
+) -> pd.DataFrame:
+    """Pseudo-sensor de desbalanceamento termico: desvio-padrao, a cada
+    instante, entre as leituras de um array de sondas fisicamente
+    redundantes (ex: os 6 termopares TC382_0X_A do mesmo anel de exaustao,
+    corr >=0.99 par-a-par -- ver docs/analise_automl_exp9_planejamento.md).
+    Individualmente cada sonda e quase identica ao alvo (adiciona-las cruas
+    seria quase circular); mas um array que comeca a divergir entre sondas
+    pode ser um precursor real de degradacao localizada antes da sonda
+    monitorada isoladamente cruzar o limiar de alarme. Reusa
+    `_build_derived_features` para dar ao pseudo-sensor o mesmo tratamento
+    multi-escala/textura de qualquer sensor real."""
+    missing = [s for s in array_sensors if s not in source_df.columns]
+    if missing:
+        raise ValueError(f"Sensores do array termico nao encontrados na fonte: {missing}")
+
+    array_df = source_df[[cfg.TIME_COL] + list(array_sensors)].copy()
+    for s in array_sensors:
+        array_df[s] = pd.to_numeric(array_df[s], errors="coerce")
+    array_df = array_df.set_index(cfg.TIME_COL).sort_index()
+    for s in array_sensors:
+        array_df[s] = array_df[s].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
+        array_df[s] = array_df[s].ffill().bfill()
+    array_df = array_df.reindex(df_use.index)
+
+    out = df_use.copy()
+    out[THERMAL_ARRAY_SPREAD_COL] = array_df[array_sensors].std(axis=1, skipna=True).fillna(0.0)
+    if cfg.ENABLE_DERIVED_FEATURES:
+        out = _build_derived_features(out, sensor=THERMAL_ARRAY_SPREAD_COL, windows=_derived_windows(cfg))
+    return out
+
+
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     missing = series.isna()
     grp = missing.ne(missing.shift(fill_value=False)).cumsum()
@@ -188,6 +224,8 @@ def build_group_dataframe(
                 df_use, sensor=s, short_window=cfg.CHANGEPOINT_SHORT_WINDOW,
                 long_window=cfg.CHANGEPOINT_LONG_WINDOW, cusum_k=cfg.CHANGEPOINT_CUSUM_K,
             )
+    if cfg.ENABLE_THERMAL_ARRAY_SPREAD and cfg.THERMAL_ARRAY_SENSORS:
+        df_use = _build_thermal_array_spread(cfg, df_use, source_df, cfg.THERMAL_ARRAY_SENSORS)
 
     return df_use, long_gap_union
 

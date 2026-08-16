@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,7 @@ from .preprocess import (
     clip_outliers,
     normalize_train_only,
     select_feature_columns,
+    THERMAL_ARRAY_SPREAD_COL,
 )
 from .scoring import (
     map_seq_to_point_anomalies,
@@ -64,23 +65,37 @@ def _fit_score_dense(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarra
                                         "batch_size": cfg.AUTOML_DENSE_BATCH_SIZE}
 
 
-def _fit_score_ocsvm(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, n_features: int):
+def _fit_score_ocsvm(
+    cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, n_features: int,
+    nu: float | None = None, gamma: Any = None,
+):
     # OneClassSVM (kernel RBF) escala ~O(n^2)-O(n^3) no numero de amostras de
     # treino -- com centenas de milhares de pontos (datasets maiores/janelas
     # de fit mais longas) o ajuste fica impraticavel. Subamostra so o *fit*;
     # o score (train_err/all_err) continua sendo calculado sobre os dados
     # inteiros, que e barato (so avalia contra os vetores de suporte).
+    nu = cfg.AUTOML_OCSVM_NU if nu is None else nu
+    gamma = cfg.AUTOML_OCSVM_GAMMA if gamma is None else gamma
     x_fit = x_normal
     max_train = cfg.AUTOML_OCSVM_MAX_TRAIN_SAMPLES
     if max_train and len(x_normal) > max_train:
         rng = np.random.default_rng(cfg.RANDOM_SEED)
         idx = rng.choice(len(x_normal), size=int(max_train), replace=False)
         x_fit = x_normal[idx]
-    clf = fit_ocsvm(x_fit, cfg.AUTOML_OCSVM_NU, cfg.AUTOML_OCSVM_GAMMA)
+    clf = fit_ocsvm(x_fit, nu, gamma)
     train_err = ocsvm_error(clf, x_normal)
     all_err = ocsvm_error(clf, x_all)
-    return train_err, all_err, clf, {"nu": cfg.AUTOML_OCSVM_NU, "gamma": cfg.AUTOML_OCSVM_GAMMA,
-                                      "train_samples": int(len(x_fit))}
+    return train_err, all_err, clf, {"nu": nu, "gamma": gamma, "train_samples": int(len(x_fit))}
+
+
+def _ocsvm_param_grid(cfg: PipelineConfig) -> List[Tuple[float, Any]]:
+    """Grade de (nu, gamma) a testar para ocsvm. Sem grades explicitas
+    definidas, cai no par unico de AUTOML_OCSVM_NU/AUTOML_OCSVM_GAMMA
+    (comportamento anterior, inalterado). Ver
+    docs/analise_automl_exp9_planejamento.md (item 3)."""
+    nus = cfg.AUTOML_OCSVM_NU_GRID or [cfg.AUTOML_OCSVM_NU]
+    gammas = cfg.AUTOML_OCSVM_GAMMA_GRID or [cfg.AUTOML_OCSVM_GAMMA]
+    return [(nu, gamma) for nu in nus for gamma in gammas]
 
 
 def _fit_score_iforest(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, n_features: int):
@@ -101,23 +116,28 @@ _SEED_SWEEP_SUPPORTED = ("iforest", "ocsvm")
 
 def _refit_with_seed(
     cfg: PipelineConfig, model_type: str, x_normal: np.ndarray, x_all: np.ndarray, seed: int,
+    nu: float | None = None, gamma: Any = None,
 ):
     """Re-treina `model_type` com uma seed especifica. Para `iforest` a
     aleatoriedade vem do proprio ensemble (random_state); para `ocsvm` vem
     da subamostragem do treino quando x_normal > AUTOML_OCSVM_MAX_TRAIN_SAMPLES
     (o algoritmo do SVM em si e deterministico, mas QUAIS pontos entram no
-    fit muda com a seed)."""
+    fit muda com a seed). `nu`/`gamma` sobrescrevem AUTOML_OCSVM_NU/GAMMA --
+    necessario porque o melhor trial pode vir de AUTOML_OCSVM_NU_GRID/
+    AUTOML_OCSVM_GAMMA_GRID (EXP9 item 3), nao do par unico da config."""
     if model_type == "iforest":
         model = fit_isolation_forest(x_normal, cfg.AUTOML_IFOREST_CONTAMINATION, cfg.AUTOML_IFOREST_N_ESTIMATORS, seed)
         return isolation_forest_error(model, x_normal), isolation_forest_error(model, x_all)
     if model_type == "ocsvm":
+        nu = cfg.AUTOML_OCSVM_NU if nu is None else nu
+        gamma = cfg.AUTOML_OCSVM_GAMMA if gamma is None else gamma
         x_fit = x_normal
         max_train = cfg.AUTOML_OCSVM_MAX_TRAIN_SAMPLES
         if max_train and len(x_normal) > max_train:
             rng = np.random.default_rng(seed)
             idx = rng.choice(len(x_normal), size=int(max_train), replace=False)
             x_fit = x_normal[idx]
-        model = fit_ocsvm(x_fit, cfg.AUTOML_OCSVM_NU, cfg.AUTOML_OCSVM_GAMMA)
+        model = fit_ocsvm(x_fit, nu, gamma)
         return ocsvm_error(model, x_normal), ocsvm_error(model, x_all)
     raise ValueError(f"seed sweep nao suportado para model_type={model_type!r}")
 
@@ -126,16 +146,17 @@ def _seed_sweep(
     cfg: PipelineConfig, model_type: str, x_normal: np.ndarray, x_all: np.ndarray, all_index: pd.Index,
     state: pd.Series | None, df_alarm_eval: pd.DataFrame, df_point_eval_idx: pd.Index,
     near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
+    nu: float | None = None, gamma: Any = None,
 ) -> List[Dict[str, Any]]:
-    """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce do
-    melhor trial) com N seeds extras, pra medir o quanto hit_rate/
+    """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce/nu/gamma
+    do melhor trial) com N seeds extras, pra medir o quanto hit_rate/
     normal_alert_rate variam so por causa da aleatoriedade do ajuste —
     ver analise_automl_lara.md secao 2 (~+-27pp de ruido de semente na
     pipeline da Lara)."""
     results = []
     for i in range(1, n_seeds + 1):
         seed = cfg.RANDOM_SEED + i
-        train_err, all_err = _refit_with_seed(cfg, model_type, x_normal, x_all, seed)
+        train_err, all_err = _refit_with_seed(cfg, model_type, x_normal, x_all, seed, nu=nu, gamma=gamma)
         threshold = float(np.percentile(train_err, pct))
         anomaly_flags = (all_err > threshold).astype(int)
         df_point = map_seq_to_point_anomalies(
@@ -207,6 +228,8 @@ def run_automl_group(
         target_sensor = None
 
     feature_cols = select_feature_columns(cfg, df_use, sensors)
+    if cfg.ENABLE_THERMAL_ARRAY_SPREAD and THERMAL_ARRAY_SPREAD_COL in df_use.columns:
+        feature_cols += select_feature_columns(cfg, df_use, [THERMAL_ARRAY_SPREAD_COL])
     df_use = df_use[feature_cols]
 
     # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do
@@ -308,53 +331,71 @@ def run_automl_group(
             print(f"[WARN] automl group={group_name}: modelo desconhecido '{model_type}' ignorado")
             continue
 
-        print(f"[AUTOML] group={group_name} model={model_type} — treinando...")
-        train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features)
+        # Para ocsvm, AUTOML_OCSVM_NU_GRID/AUTOML_OCSVM_GAMMA_GRID (se
+        # definidos) expandem esse model_type num conjunto de (nu, gamma) a
+        # re-treinar, cada um entrando no ranking de trials como uma
+        # variante independente -- outros model_types sempre caem no par
+        # unico (comportamento anterior). Ver
+        # docs/analise_automl_exp9_planejamento.md (item 3).
+        param_combos: List[Tuple[float, Any] | None]
+        if model_type == "ocsvm":
+            param_combos = list(_ocsvm_param_grid(cfg))
+        else:
+            param_combos = [None]
 
-        for pct in percentiles:
-            threshold = float(np.percentile(train_err, pct))
-            anomaly_flags = (all_err > threshold).astype(int)
+        for params in param_combos:
+            if params is not None:
+                nu, gamma = params
+                print(f"[AUTOML] group={group_name} model={model_type} nu={nu} gamma={gamma} — treinando...")
+                train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features, nu=nu, gamma=gamma)
+            else:
+                print(f"[AUTOML] group={group_name} model={model_type} — treinando...")
+                train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features)
 
-            for debounce in debounces:
-                df_point = map_seq_to_point_anomalies(
-                    anomaly_flags, all_index, time_steps=1,
-                    point_rule="all_of_window", point_window=int(debounce), point_min_count=int(debounce),
-                )
-                if state is not None:
-                    df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
-                    df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+            for pct in percentiles:
+                threshold = float(np.percentile(train_err, pct))
+                anomaly_flags = (all_err > threshold).astype(int)
 
-                # Janela de match do hit_rate usa o df_point inteiro (um alarme
-                # OOS perto do corte ainda pode casar com pontos um pouco antes
-                # dele); o que garante a disciplina OOS e o modelo/threshold so
-                # terem visto dados antes do corte, e so contar alarmes OOS.
-                eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
-                normal_rate = compute_normal_alert_rate(
-                    df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
-                )
-                score = compute_composite_score(
-                    detection_rate=eval_stats["hit_rate"] or 0.0,
-                    normal_alert_rate=normal_rate,
-                    fp_penalty=cfg.AUTOML_FP_PENALTY,
-                    min_detection_rate=cfg.AUTOML_MIN_DETECTION_RATE,
-                )
-                trial = {
-                    "model": model_type,
-                    "threshold_percentile": pct,
-                    "debounce": int(debounce),
-                    "threshold": threshold,
-                    "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point.loc[df_point_eval_idx]),
-                    **model_params,
-                    **eval_stats,
-                    **score,
-                }
-                trials.append(trial)
+                for debounce in debounces:
+                    df_point = map_seq_to_point_anomalies(
+                        anomaly_flags, all_index, time_steps=1,
+                        point_rule="all_of_window", point_window=int(debounce), point_min_count=int(debounce),
+                    )
+                    if state is not None:
+                        df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
+                        df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
 
-                if best_trial is None or trial["composite_score"] > best_trial["composite_score"]:
-                    best_trial = trial
-                    best_model_obj = model_obj
-                    best_model_type = model_type
-                    best_point_df = df_point
+                    # Janela de match do hit_rate usa o df_point inteiro (um alarme
+                    # OOS perto do corte ainda pode casar com pontos um pouco antes
+                    # dele); o que garante a disciplina OOS e o modelo/threshold so
+                    # terem visto dados antes do corte, e so contar alarmes OOS.
+                    eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+                    normal_rate = compute_normal_alert_rate(
+                        df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
+                    )
+                    score = compute_composite_score(
+                        detection_rate=eval_stats["hit_rate"] or 0.0,
+                        normal_alert_rate=normal_rate,
+                        fp_penalty=cfg.AUTOML_FP_PENALTY,
+                        min_detection_rate=cfg.AUTOML_MIN_DETECTION_RATE,
+                    )
+                    trial = {
+                        "model": model_type,
+                        "threshold_percentile": pct,
+                        "debounce": int(debounce),
+                        "threshold": threshold,
+                        "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point.loc[df_point_eval_idx]),
+                        **model_params,
+                        **eval_stats,
+                        **score,
+                    }
+                    trials.append(trial)
+
+                    if best_trial is None or trial["composite_score"] > best_trial["composite_score"]:
+                        best_trial = trial
+                        best_model_obj = model_obj
+                        best_model_type = model_type
+                        best_point_df = df_point
 
     if best_trial is None:
         return {"group": group_name, "sensors": sensors, "skipped": True, "reason": "no_valid_trials"}
@@ -364,9 +405,13 @@ def run_automl_group(
 
     seed_sweep = None
     if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED:
+        seed_sweep_kwargs = {}
+        if best_model_type == "ocsvm":
+            seed_sweep_kwargs = {"nu": best_trial.get("nu"), "gamma": best_trial.get("gamma")}
         extra = _seed_sweep(
             cfg, best_model_type, x_normal, x_all, all_index, state, df_alarm_eval, df_point_eval_idx, near_alarm_mask,
             best_trial["threshold_percentile"], best_trial["debounce"], cfg.AUTOML_SEED_SWEEP_N,
+            **seed_sweep_kwargs,
         )
         runs = [{"seed": cfg.RANDOM_SEED, "hit_rate": best_trial["hit_rate"],
                  "normal_alert_rate": best_trial["normal_alert_rate"]}] + extra

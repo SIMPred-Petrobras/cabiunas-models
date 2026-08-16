@@ -64,6 +64,15 @@ class PipelineConfig:
     CHANGEPOINT_LONG_WINDOW: int = 2880   # amostras (24h a 30s)
     CHANGEPOINT_CUSUM_K: float = 0.5      # folga (slack) em desvios-padrao locais
 
+    # Feature de desbalanceamento entre sondas fisicamente redundantes (ex:
+    # os 6 termopares TC382_0X_A do mesmo anel de exaustao): desvio-padrao
+    # entre as leituras do array a cada instante, tratado como um
+    # pseudo-sensor (recebe o mesmo tratamento multi-escala/textura que
+    # qualquer sensor de `sensors`, via `select_feature_columns`). Ver
+    # docs/analise_automl_exp9_planejamento.md.
+    ENABLE_THERMAL_ARRAY_SPREAD: bool = False
+    THERMAL_ARRAY_SENSORS: Optional[List[str]] = None
+
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995
@@ -172,6 +181,13 @@ class PipelineConfig:
 
     AUTOML_OCSVM_NU: float = 0.05
     AUTOML_OCSVM_GAMMA: str = "scale"
+    # Grades opcionais de hiperparametro para ocsvm: quando definidas,
+    # substituem o par unico AUTOML_OCSVM_NU/AUTOML_OCSVM_GAMMA por um
+    # produto cartesiano de (nu, gamma) re-treinados e ranqueados junto no
+    # mesmo automl_ranking.csv. Ver docs/analise_automl_exp9_planejamento.md
+    # (item 3).
+    AUTOML_OCSVM_NU_GRID: Optional[List[float]] = None
+    AUTOML_OCSVM_GAMMA_GRID: Optional[List[Any]] = None
     # Limite de amostras usadas para *ajustar* o OneClassSVM (RBF escala mal
     # com n). None = sem limite (usa x_normal inteiro).
     AUTOML_OCSVM_MAX_TRAIN_SAMPLES: Optional[int] = 50000
