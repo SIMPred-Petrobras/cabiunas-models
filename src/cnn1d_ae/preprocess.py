@@ -7,6 +7,12 @@ from typing import List, Tuple
 from .config import PipelineConfig
 
 
+# Janelas menores que isso (amostras) nao tem tamanho suficiente para
+# kurtosis/skewness/crest factor serem estimadores minimamente estaveis --
+# essas features de "textura" so sao calculadas para janelas >= este valor.
+TEXTURE_MIN_WINDOW = 60
+
+
 def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -> pd.DataFrame:
     """Features derivadas em multiplas escalas de tempo (uma passada por
     janela em `windows`), alem do delta instantaneo (1 passo, independente
@@ -14,6 +20,12 @@ def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -
     recente) e `trend_w` = valor atual menos o valor de w passos atras
     (tendencia/inclinacao ao longo daquela janela especifica) -- pensado
     para capturar precursores lentos que uma unica janela curta nao pega.
+
+    Para janelas >= TEXTURE_MIN_WINDOW, adiciona tambem features de
+    "textura" do sinal (mudanca de forma da distribuicao, nao so
+    nivel/variancia): kurtosis, skewness e crest factor (pico/RMS) --
+    comuns em condition monitoring de vibracao para pegar sinais ficando
+    mais "impulsivos" antes de uma falha de mancal.
     Ver docs/analise_automl_exp7_planejamento.md."""
     out = df.copy()
     out[f"{sensor}__delta_1"] = out[sensor].diff().fillna(0.0)
@@ -22,6 +34,13 @@ def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -
         out[f"{sensor}__roll_med_{w}"] = out[sensor].rolling(w, min_periods=1).median()
         out[f"{sensor}__roll_std_{w}"] = out[sensor].rolling(w, min_periods=1).std().fillna(0.0)
         out[f"{sensor}__trend_{w}"] = (out[sensor] - out[sensor].shift(w)).fillna(0.0)
+        if w >= TEXTURE_MIN_WINDOW:
+            roll = out[sensor].rolling(w, min_periods=max(10, w // 4))
+            out[f"{sensor}__roll_kurt_{w}"] = roll.kurt().fillna(0.0)
+            out[f"{sensor}__roll_skew_{w}"] = roll.skew().fillna(0.0)
+            rms = np.sqrt((out[sensor] ** 2).rolling(w, min_periods=1).mean())
+            peak = out[sensor].abs().rolling(w, min_periods=1).max()
+            out[f"{sensor}__crest_{w}"] = (peak / rms.replace(0, np.nan)).fillna(0.0)
     return out
 
 

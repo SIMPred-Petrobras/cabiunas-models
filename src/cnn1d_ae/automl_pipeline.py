@@ -17,6 +17,7 @@ from .preprocess import (
     build_exclusion_mask,
     clip_outliers,
     normalize_train_only,
+    TEXTURE_MIN_WINDOW,
 )
 from .scoring import (
     map_seq_to_point_anomalies,
@@ -188,6 +189,8 @@ def run_automl_group(
         for w in windows:
             w = max(2, int(w))
             suffixes += [f"__roll_med_{w}", f"__roll_std_{w}", f"__trend_{w}"]
+            if w >= TEXTURE_MIN_WINDOW:
+                suffixes += [f"__roll_kurt_{w}", f"__roll_skew_{w}", f"__crest_{w}"]
         for s in sensors:
             for suffix in suffixes:
                 col = f"{s}{suffix}"
