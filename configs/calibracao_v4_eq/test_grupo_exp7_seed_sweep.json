@@ -1,0 +1,98 @@
+{
+  "MODE": "local",
+  "N_WORKERS": 1,
+
+  "FEATURES_CSV": "sensores_full_2024_2026_30s.csv",
+  "RAW_CSV": "sensores_full_2024_2026_30s.csv",
+  "ALARM_CSV": "alarmes_selecionados_turbina_a.csv",
+  "EXTRA_RAW_CSV": null,
+
+  "TIME_COL": "data_datetime",
+  "SOURCE_TZ": "UTC",
+  "TARGET_TZ": "UTC",
+  "APPLY_HOUR_SHIFT": false,
+  "SHIFT_HOURS": 0,
+  "LOG_TIME_AUDIT_SAMPLES": 3,
+
+  "DATA_START_DATE": "2024-07-01",
+  "DATA_END_DATE": null,
+
+  "OUTPUT_ROOT": "runs_exp7_seed_sweep_tc382_t5",
+  "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
+  "TRAIN_SOURCE": "raw",
+
+  "SENSOR_LIST": ["TC382_03_A", "T5_AVG_A"],
+  "SENSOR_EXCLUDE": null,
+  "SENSOR_REGEX": null,
+
+  "SENSOR_GROUPS": [
+    {
+      "name": "TC382_T5_vibracao_mancais_multiescala",
+      "sensors": [
+        "TC382_03_A", "T5_AVG_A",
+        "TV_351X_A", "TV_351Y_A",
+        "TV_352X_A", "TV_352Y_A",
+        "TV_353X_A", "TV_353Y_A",
+        "TV_354X_A", "TV_354Y_A",
+        "TV_355X_A", "TV_355Y_A"
+      ],
+      "eval_sensors": ["TC382_03_A", "T5_AVG_A"],
+      "target_sensor": "TC382_03_A"
+    }
+  ],
+
+  "ENABLE_AUTOML": true,
+  "AUTOML_MODELS": ["ocsvm"],
+  "AUTOML_THRESHOLD_PERCENTILES": [99.9],
+  "AUTOML_DEBOUNCE_GRID": [1],
+  "AUTOML_FP_PENALTY": 2.0,
+  "AUTOML_MIN_DETECTION_RATE": 0.3,
+  "AUTOML_DENSE_LAYERS": [256, 128],
+  "AUTOML_DENSE_DROPOUT": 0.1,
+  "AUTOML_DENSE_LR": 0.001,
+  "AUTOML_DENSE_EPOCHS": 100,
+  "AUTOML_DENSE_BATCH_SIZE": 512,
+  "AUTOML_DENSE_PATIENCE": 15,
+  "AUTOML_OCSVM_NU": 0.05,
+  "AUTOML_OCSVM_GAMMA": "scale",
+  "AUTOML_OCSVM_MAX_TRAIN_SAMPLES": 50000,
+  "AUTOML_IFOREST_CONTAMINATION": 0.05,
+  "AUTOML_IFOREST_N_ESTIMATORS": 200,
+
+  "AUTOML_OOS_SPLIT_DATE": "2025-07-01",
+  "AUTOML_SEED_SWEEP_N": 4,
+
+  "OPERATIONAL_REF_SENSOR": "RUNNING_A",
+
+  "EXCLUDE_MINUTES_AROUND_ALARM": 1440,
+  "INTERPOLATE_LIMIT": 3,
+  "EXCLUDE_LONG_GAPS_FROM_TRAIN": true,
+  "ENABLE_DERIVED_FEATURES": true,
+  "DERIVED_ROLLING_WINDOW": 12,
+  "DERIVED_ROLLING_WINDOWS": [12, 120, 480, 2880],
+  "OUTLIER_MODE": "quantile",
+  "OUTLIER_Q_LOW": 0.001,
+  "OUTLIER_Q_HIGH": 0.999,
+  "OUTLIER_MAD_K": 6.0,
+  "NORMALIZE_MODE": "zscore",
+
+  "VAL_FRAC": 0.1,
+  "SHUFFLE_TRAIN": false,
+  "SPLIT_MODE": "temporal",
+
+  "ENABLE_OPERATIONAL_MASK": true,
+  "OFF_VALUE_QUANTILE": 0.05,
+  "OFF_ABS_THRESHOLD": 0.5,
+  "OFF_LONG_MIN_HOURS": 4.0,
+  "TRANSIENT_PADDING_MINUTES": 60,
+  "TRANSIENT_DIFF_QUANTILE": 0.99,
+
+  "RANDOM_SEED": 42,
+  "OVERWRITE": true,
+
+  "RUN_REMOTE": true,
+  "REMOTE_QUEUE": "default",
+  "CLEARML_PROJECT_NAME": "TesteMLCab",
+  "CLEARML_DATASET_ID": "a97ba56ba14840fbb1125c2a82f883c9",
+  "USE_CLEARML_DATASET": true
+}

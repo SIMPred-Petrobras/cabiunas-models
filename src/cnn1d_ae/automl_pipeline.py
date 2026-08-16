@@ -96,22 +96,46 @@ def _fit_score_iforest(cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndar
 _FITTERS = {"dense": _fit_score_dense, "ocsvm": _fit_score_ocsvm, "iforest": _fit_score_iforest}
 
 
-def _seed_sweep_iforest(
-    cfg: PipelineConfig, x_normal: np.ndarray, x_all: np.ndarray, all_index: pd.Index,
+_SEED_SWEEP_SUPPORTED = ("iforest", "ocsvm")
+
+
+def _refit_with_seed(
+    cfg: PipelineConfig, model_type: str, x_normal: np.ndarray, x_all: np.ndarray, seed: int,
+):
+    """Re-treina `model_type` com uma seed especifica. Para `iforest` a
+    aleatoriedade vem do proprio ensemble (random_state); para `ocsvm` vem
+    da subamostragem do treino quando x_normal > AUTOML_OCSVM_MAX_TRAIN_SAMPLES
+    (o algoritmo do SVM em si e deterministico, mas QUAIS pontos entram no
+    fit muda com a seed)."""
+    if model_type == "iforest":
+        model = fit_isolation_forest(x_normal, cfg.AUTOML_IFOREST_CONTAMINATION, cfg.AUTOML_IFOREST_N_ESTIMATORS, seed)
+        return isolation_forest_error(model, x_normal), isolation_forest_error(model, x_all)
+    if model_type == "ocsvm":
+        x_fit = x_normal
+        max_train = cfg.AUTOML_OCSVM_MAX_TRAIN_SAMPLES
+        if max_train and len(x_normal) > max_train:
+            rng = np.random.default_rng(seed)
+            idx = rng.choice(len(x_normal), size=int(max_train), replace=False)
+            x_fit = x_normal[idx]
+        model = fit_ocsvm(x_fit, cfg.AUTOML_OCSVM_NU, cfg.AUTOML_OCSVM_GAMMA)
+        return ocsvm_error(model, x_normal), ocsvm_error(model, x_all)
+    raise ValueError(f"seed sweep nao suportado para model_type={model_type!r}")
+
+
+def _seed_sweep(
+    cfg: PipelineConfig, model_type: str, x_normal: np.ndarray, x_all: np.ndarray, all_index: pd.Index,
     state: pd.Series | None, df_alarm_eval: pd.DataFrame, df_point_eval_idx: pd.Index,
     near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
 ) -> List[Dict[str, Any]]:
-    """Re-treina o mesmo iforest (mesmo threshold_percentile/debounce do
+    """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce do
     melhor trial) com N seeds extras, pra medir o quanto hit_rate/
-    normal_alert_rate variam so por causa da aleatoriedade da floresta —
+    normal_alert_rate variam so por causa da aleatoriedade do ajuste —
     ver analise_automl_lara.md secao 2 (~+-27pp de ruido de semente na
     pipeline da Lara)."""
     results = []
     for i in range(1, n_seeds + 1):
         seed = cfg.RANDOM_SEED + i
-        model = fit_isolation_forest(x_normal, cfg.AUTOML_IFOREST_CONTAMINATION, cfg.AUTOML_IFOREST_N_ESTIMATORS, seed)
-        train_err = isolation_forest_error(model, x_normal)
-        all_err = isolation_forest_error(model, x_all)
+        train_err, all_err = _refit_with_seed(cfg, model_type, x_normal, x_all, seed)
         threshold = float(np.percentile(train_err, pct))
         anomaly_flags = (all_err > threshold).astype(int)
         df_point = map_seq_to_point_anomalies(
@@ -339,9 +363,9 @@ def run_automl_group(
     df_ranking.to_csv(os.path.join(out_dirs["csv"], "automl_ranking.csv"), index=False)
 
     seed_sweep = None
-    if cfg.AUTOML_SEED_SWEEP_N and best_model_type == "iforest":
-        extra = _seed_sweep_iforest(
-            cfg, x_normal, x_all, all_index, state, df_alarm_eval, df_point_eval_idx, near_alarm_mask,
+    if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED:
+        extra = _seed_sweep(
+            cfg, best_model_type, x_normal, x_all, all_index, state, df_alarm_eval, df_point_eval_idx, near_alarm_mask,
             best_trial["threshold_percentile"], best_trial["debounce"], cfg.AUTOML_SEED_SWEEP_N,
         )
         runs = [{"seed": cfg.RANDOM_SEED, "hit_rate": best_trial["hit_rate"],
