@@ -167,5 +167,37 @@ depois de um período longo de estabilidade.
 **Candidato final da série EXP5--EXP8:** `ocsvm` (p99.9, debounce=1) sobre
 `TC382_T5_vibracao_mancais` com features multi-escala + textura (item 2),
 sem mudança de regime nem reformulação supervisionada (nenhum dos dois
-trouxe ganho sobre o item 2). Pendência ainda em aberto: checagem de
-variância de semente do candidato final (feita no EXP5, ainda não neste).
+trouxe ganho sobre o item 2).
+
+## Checagem de variância de semente (2026-08-16)
+
+A rotina de seed-sweep (`AUTOML_SEED_SWEEP_N`, EXP5) era específica pra
+`iforest`. Generalizada (`src/cnn1d_ae/automl_pipeline.py`) para cobrir
+também `ocsvm` -- que tem uma fonte real de aleatoriedade nesta pipeline:
+quando `x_normal` excede `AUTOML_OCSVM_MAX_TRAIN_SAMPLES` (386.492 > 50.000
+neste caso), uma subamostra aleatória é usada pra ajustar o SVM (o
+algoritmo em si é determinístico, mas *quais* pontos entram no ajuste
+muda com a seed).
+
+**Task ClearML:** `58a68b604f1e4207982e151252708a83` (candidato final
+isolado: `ocsvm`, p99.9/debounce=1, 5 seeds).
+
+| Seed | hit\_rate | normal\_alert\_rate |
+|---|---|---|
+| 42 (original) | 92,5% | 1,94% |
+| 43 | 92,5% | 1,90% |
+| 44 | 92,5% | 1,91% |
+| 45 | 92,5% | 1,90% |
+| 46 | 92,5% | 1,93% |
+| **média / desvio** | **92,5% / std=0** | 1,91% / std=0,015pp |
+
+**Resultado: variância nula em `hit_rate`, variação desprezível em FP.** O
+candidato final está confirmado estável -- a subamostragem do `ocsvm` não
+afeta a classificação final, provavelmente porque 50 mil pontos já é
+amostra grande o suficiente para representar bem a distribuição
+independente de qual subconjunto específico é sorteado.
+
+**Pendência fechada.** Com isso, o candidato `ocsvm` (multi-escala +
+textura, p99.9/debounce=1) está validado em todos os eixos considerados
+nesta série: OOS, breakdown preditivo/reativo/sem-detecção, e agora
+variância de semente.
