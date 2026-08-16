@@ -139,3 +139,14 @@ Consequência prática:
 Nenhum código foi alterado ainda para este plano — este documento é só o
 registro da pesquisa e da decisão de prioridade, para continuar direto pelo
 item 1 na próxima sessão sem precisar re-derivar o diagnóstico.
+
+## 5. Fechamento (2026-08-16)
+
+Os 5 itens foram implementados e documentados:
+- Itens 1--3 (features multi-escala, textura, mudança de regime): ver
+  `docs/analise_automl_exp7.md`.
+- Itens 4--5 (reformulação supervisionada, sobrevivência exploratória): ver
+  `docs/analise_automl_exp8.md`.
+
+Candidato final: `ocsvm` (p99.9/debounce=1) com features multi-escala +
+textura (item 2) — os itens 3 e 4 não trouxeram ganho adicional sobre isso.
