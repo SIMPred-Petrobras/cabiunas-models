@@ -183,9 +183,13 @@ def run_automl_group(
 
     feature_cols = list(sensors)
     if cfg.ENABLE_DERIVED_FEATURES:
-        w = cfg.DERIVED_ROLLING_WINDOW
+        windows = list(cfg.DERIVED_ROLLING_WINDOWS) if cfg.DERIVED_ROLLING_WINDOWS else [cfg.DERIVED_ROLLING_WINDOW]
+        suffixes = ["__delta_1"]
+        for w in windows:
+            w = max(2, int(w))
+            suffixes += [f"__roll_med_{w}", f"__roll_std_{w}", f"__trend_{w}"]
         for s in sensors:
-            for suffix in (f"__roll_med_{w}", f"__roll_std_{w}", "__delta_1"):
+            for suffix in suffixes:
                 col = f"{s}{suffix}"
                 if col in df_use.columns:
                     feature_cols.append(col)

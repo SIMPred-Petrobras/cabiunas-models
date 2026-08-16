@@ -7,13 +7,26 @@ from typing import List, Tuple
 from .config import PipelineConfig
 
 
-def _build_derived_features(df: pd.DataFrame, sensor: str, window: int) -> pd.DataFrame:
+def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -> pd.DataFrame:
+    """Features derivadas em multiplas escalas de tempo (uma passada por
+    janela em `windows`), alem do delta instantaneo (1 passo, independente
+    de janela). Para cada janela w: media/desvio movel (nivel/variabilidade
+    recente) e `trend_w` = valor atual menos o valor de w passos atras
+    (tendencia/inclinacao ao longo daquela janela especifica) -- pensado
+    para capturar precursores lentos que uma unica janela curta nao pega.
+    Ver docs/analise_automl_exp7_planejamento.md."""
     out = df.copy()
-    w = max(2, int(window))
-    out[f"{sensor}__roll_med_{w}"] = out[sensor].rolling(w, min_periods=1).median()
-    out[f"{sensor}__roll_std_{w}"] = out[sensor].rolling(w, min_periods=1).std().fillna(0.0)
     out[f"{sensor}__delta_1"] = out[sensor].diff().fillna(0.0)
+    for window in windows:
+        w = max(2, int(window))
+        out[f"{sensor}__roll_med_{w}"] = out[sensor].rolling(w, min_periods=1).median()
+        out[f"{sensor}__roll_std_{w}"] = out[sensor].rolling(w, min_periods=1).std().fillna(0.0)
+        out[f"{sensor}__trend_{w}"] = (out[sensor] - out[sensor].shift(w)).fillna(0.0)
     return out
+
+
+def _derived_windows(cfg: PipelineConfig) -> List[int]:
+    return list(cfg.DERIVED_ROLLING_WINDOWS) if cfg.DERIVED_ROLLING_WINDOWS else [cfg.DERIVED_ROLLING_WINDOW]
 
 
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
@@ -51,7 +64,7 @@ def build_sensor_dataframe(
     df_use[sensor] = df_use[sensor].ffill().bfill()
 
     if cfg.ENABLE_DERIVED_FEATURES:
-        df_use = _build_derived_features(df_use, sensor=sensor, window=cfg.DERIVED_ROLLING_WINDOW)
+        df_use = _build_derived_features(df_use, sensor=sensor, windows=_derived_windows(cfg))
 
     return df_use, long_gap_raw
 
@@ -91,8 +104,9 @@ def build_group_dataframe(
         df_use[s] = df_use[s].ffill().bfill()
 
     if cfg.ENABLE_DERIVED_FEATURES:
+        windows = _derived_windows(cfg)
         for s in sensors:
-            df_use = _build_derived_features(df_use, sensor=s, window=cfg.DERIVED_ROLLING_WINDOW)
+            df_use = _build_derived_features(df_use, sensor=s, windows=windows)
 
     return df_use, long_gap_union
 

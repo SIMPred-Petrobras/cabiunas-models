@@ -49,6 +49,12 @@ class PipelineConfig:
     EXCLUDE_LONG_GAPS_FROM_TRAIN: bool = True
     ENABLE_DERIVED_FEATURES: bool = False
     DERIVED_ROLLING_WINDOW: int = 12
+    # Lista opcional de janelas (em nº de amostras) para gerar features
+    # derivadas em multiplas escalas de tempo (ex: [12, 120, 480, 2880] =
+    # 6min/1h/4h/24h a 30s de resolucao). Quando definida, substitui
+    # DERIVED_ROLLING_WINDOW (que continua sendo o fallback de janela unica).
+    # Ver docs/analise_automl_exp7_planejamento.md.
+    DERIVED_ROLLING_WINDOWS: Optional[List[int]] = None
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995
