@@ -166,3 +166,113 @@ insistir nessa direção com os dados atuais.
 **Pendência de validação:** nenhum dos candidatos do EXP7 teve checagem de
 variância de semente ainda (feita no EXP5 via `AUTOML_SEED_SWEEP_N`) —
 recomendado antes de considerar o candidato atual definitivo.
+
+---
+
+## Aprofundamento: qualidade dos alarmes e catálogo geral (2026-08-16)
+
+Análise pedida depois de fechar o EXP8: quantificar os 40 alarmes OOS do
+candidato final (EXP7 item 2) por sensor e por condição, e catalogar o
+restante dos alarmes do dataset (não só `TC382_03_A`/`T5_AVG_A`).
+
+### Os 40 alarmes OOS não são homogêneos
+
+| Sensor | Alarmes | % do total |
+|---|---|---|
+| **TC382\_03\_A** | **35** | **87,5%** |
+| T5\_AVG\_A | 5 | 12,5% |
+
+| Condição do alarme | Qtd |
+|---|---|
+| HI | 18 |
+| HIHI | 14 |
+| UNDER | 8 |
+
+**A performance varia muito por sensor e por condição:**
+
+| Sensor | Preditivo | Reativo | Sem detecção | Taxa preditiva real |
+|---|---|---|---|---|
+| TC382\_03\_A | 28 | 5 | 2 | 80,0% (28/35) |
+| T5\_AVG\_A | 1 | 3 | 1 | 20,0% (1/5) |
+
+| Condição | Preditivo | Reativo | Sem detecção | Taxa preditiva |
+|---|---|---|---|---|
+| HI | 16 | 2 | 0 | 88,9% |
+| HIHI | 13 | 1 | 0 | 92,9% |
+| **UNDER** | **0** | 5 | 3 | **0%** |
+
+![Detecção por condição](../task_plots_exp7_final_analise/01_deteccao_por_condicao.png)
+
+### Achado: todos os alarmes UNDER são falha de sensor/comunicação, não evento físico
+
+Os 8 alarmes `UNDER` disparam com `Valor` negativo (-18 a -22 -- fisicamente
+implausível para a faixa normal de operação, ~600-800). Verificação direta
+na série bruta em torno de cada um dos 5 instantes distintos:
+
+| Alarme | Evidência |
+|---|---|
+| 08/08/2025 15:31 | 9 de 12 pontos NaN em `TC382_03_A` na janela de 3 min, `RUNNING_A=1` o tempo todo -- gap de dado, não queda física |
+| 17/01/2026 00:59 | `RUNNING_A` = `{'Name': 'Comm Fail', ...}` e depois `{'Name': 'Out of Serv', ...}` -- falha de comunicação explícita no sistema |
+| 29/11/2025 07:52 | `RUNNING_A=0` (equipamento desligado) |
+| 24/07/2025 16:14 | Transição `RUNNING_A` 1→0 (parada em andamento) |
+| 14/01/2026 16:18 | Mistura de `Out of Serv`/transição |
+
+**Nenhum dos 5 casos representa uma queda física real de temperatura em
+operação normal** -- são falha de instrumentação, comunicação, ou o
+equipamento já parado. Não existe precursor de sensor pra prever uma
+falha de comunicação do próprio sensor; excluir esses casos da avaliação
+não é viés de seleção, é remover alvos que são estruturalmente
+imprevisíveis com os dados disponíveis.
+
+![Exemplos de falha de sensor](../task_plots_exp7_final_analise/03_exemplos_under_sensor_error.png)
+
+### Métricas corrigidas (excluindo UNDER)
+
+| Métrica | Com UNDER (40 alarmes) | **Sem UNDER (32 alarmes reais)** |
+|---|---|---|
+| Hit rate | 92,5% | **100%** |
+| Antecedência real (preditivo) | 72,5% (29/40) | **90,6% (29/32)** |
+| Reativo | 8 | 3 |
+| Sem detecção | 3 | **0** |
+| Mediana de antecedência | 14,7h | 14,7h (mesmos 29 casos) |
+
+![Antes/depois de excluir UNDER](../task_plots_exp7_final_analise/02_antes_depois_under.png)
+
+**Sobre os 32 alarmes reais (HI+HIHI) de `TC382_03_A`/`T5_AVG_A` no período
+OOS, o candidato detecta 100% deles, com 90,6% de antecedência genuína.**
+Os 92,5%/72,5% reportados antes eram estatisticamente corretos mas
+penalizavam o modelo por não prever falhas de comunicação -- uma tarefa
+fora do escopo de um detector baseado em temperatura/vibração.
+
+**Ressalva:** os 3 "reativos" remanescentes (1 de T5\_AVG\_A com só 0,1h de
+antecedência, 2 de TC382\_03\_A) continuam genuinamente sem antecedência
+real -- esse achado não os resolve, só remove o ruído dos UNDER.
+
+### Catálogo geral de alarmes (todos os sensores da turbina)
+
+O arquivo `alarmes_selecionados_turbina_a.csv` cobre **47 tags distintos,
+3.757 alarmes (onset) entre 2022-01-04 e 2026-04-18** -- bem mais do que os
+2 sensores usados no EXP5-EXP8.
+
+| Categoria | Alarmes | Tags |
+|---|---|---|
+| Temperatura | 1.440 | 18 |
+| Pressão | 1.339 | 9 |
+| Falha de instrumento/transmissor | 844 | 10 |
+| Vibração | 134 | 10 |
+
+![Alarmes por categoria](../task_plots_exp7_final_analise/05_categorias_catalogo.png)
+![Top 20 tags](../task_plots_exp7_final_analise/04_top_tags_catalogo.png)
+
+Os tags com mais alarmes no catálogo completo: `PI_6240319_AL` (630,
+falha de partida a gás), `PAL_6240315` (558, pressão baixa de gás
+combustível), `PAL_6240339` (254, pressão baixa óleo lub.),
+`TC382_03_A` (253) e `PALL_6240340` (204). Os 10 canais de vibração
+(`TV_*`) têm alarme próprio -- 134 no total, 8 a 15 por mancal --
+ainda não explorados como alvo de predição (só como feature de entrada
+no EXP6-EXP8).
+
+**Próximo passo natural, se quisermos expandir:** repetir a mesma
+metodologia (multi-escala + textura, `eval_sensors` restrito) para outros
+sensores/categorias do catálogo -- pressão e os alarmes de falha de
+instrumento são os maiores grupos ainda não tocados.
