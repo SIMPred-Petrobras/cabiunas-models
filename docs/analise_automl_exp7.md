@@ -77,7 +77,23 @@ condition monitoring de vibração. 168 → ~276 features de entrada.
 
 **Task ClearML:** `3eb2f1f166114118a5c2dbbf759da5bb`
 
-_(resultado preenchido após a run terminar)_
+| | EXP7 item 1 (multi-escala) | EXP7 item 1+2 (+ textura, vencedor: `ocsvm` p99.9/db1) |
+|---|---|---|
+| hit_rate | 87,5% (35/40) | **92,5% (37/40)** |
+| normal_alert_rate (FP) | 2,21% | **1,94%** |
+| **Preditivo** | 28 | **29** |
+| Reativo | 7 | 8 |
+| **Sem detecção** | 5 | **3** |
+| Mediana de antecedência | 15,0h | 14,7h |
+
+**Ganho limpo:** ao contrário do item 1 (que trocou FP por menos casos
+perdidos), o item 2 melhorou hit_rate, FP *e* a divisão preditivo/sem-detecção
+ao mesmo tempo — as features de textura (kurtosis/skewness/crest factor)
+parecem estar capturando sinal genuíno de vibração ficando mais "irregular"
+antes do evento, não só reclassificando detecções reativas como preditivas.
+Sem perda identificada nesta etapa (a única ressalva é a amplitude da
+antecedência: de 0,002h a 23,3h — ainda há casos detectados quase em cima
+da hora, junto com os de quase 24h).
 
 ---
 
@@ -85,6 +101,26 @@ _(resultado preenchido após a run terminar)_
 
 | Etapa | Preditivo | Reativo | Sem detecção | FP | Mediana antecedência |
 |---|---|---|---|---|---|
-| EXP6 (baseline) | 26 | 4 | 10 | 0,06% | 12,4h |
+| EXP6 (baseline, janela única) | 26 | 4 | 10 | 0,06% | 12,4h |
 | EXP7 item 1 (multi-escala) | 28 | 7 | 5 | 2,21% | 15,0h |
-| EXP7 item 1+2 (+ textura) | _pendente_ | _pendente_ | _pendente_ | _pendente_ | _pendente_ |
+| **EXP7 item 1+2 (+ textura)** | **29** | 8 | **3** | 1,94% | 14,7h |
+
+**Candidato de referência atual:** `ocsvm` (p99.9, debounce=1) sobre o grupo
+`TC382_T5_vibracao_mancais_multiescala` com `ENABLE_DERIVED_FEATURES=true`,
+`DERIVED_ROLLING_WINDOWS=[12, 120, 480, 2880]` e features de textura
+(kurtosis/skewness/crest factor) nas janelas ≥1h.
+
+## Próximos passos (do plano em 5 itens)
+
+1. ✅ Features multi-escala — feito, ganho real (com custo de FP)
+2. ✅ Features de textura — feito, ganho limpo (sem custo adicional)
+3. ⬜ Detecção de mudança de regime (PELT/CUSUM) — ainda restam 3 alarmes
+   sem detecção nenhuma; candidato natural para atacá-los especificamente
+4. ⬜ Reformulação supervisionada ("vai alarmar em N horas?") — considerar
+   depois do item 3, com cuidado redobrado de validação temporal dado o
+   tamanho pequeno da amostra (40 eventos)
+5. ⬜ RUL/sobrevivência — não priorizado, requer mais eventos rotulados
+
+**Pendência de validação:** nenhum dos candidatos do EXP7 teve checagem de
+variância de semente ainda (feita no EXP5 via `AUTOML_SEED_SWEEP_N`) —
+recomendado antes de considerar o candidato atual definitivo.
