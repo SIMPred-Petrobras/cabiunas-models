@@ -247,6 +247,7 @@ class TestCommonModeRemoval(unittest.TestCase):
         return PipelineConfig(ENABLE_COMMON_MODE_REMOVAL=True,
                               COMMON_MODE_GROUP=list(self.GRUPO),
                               SENTINEL_LOW=500.0, SENTINEL_HIGH=950.0,
+                              COMMON_MODE_VALID_LOW=-30.0, COMMON_MODE_VALID_HIGH=1200.0,
                               SENTINEL_MODE="none", **kw)
 
     def _residuo(self, df, cfg, sensor="TC382_03_A"):
@@ -272,6 +273,15 @@ class TestCommonModeRemoval(unittest.TestCase):
         r = self._residuo(df, self._cfg())
         # sem o descarte, a média cairia ~148°C e o resíduo saltaria para ~+148
         self.assertLess(abs(float(r.iloc[5])), 5.0)
+
+    def test_leitura_de_maquina_parada_nao_e_anulada(self):
+        """~23-33 C com a turbina parada e leitura legitima. Usar SENTINEL_LOW=500
+        como criterio de validade anularia 34% da serie do TC382 em vez de 2%."""
+        df = self._frame()
+        for i, c in enumerate(self.GRUPO):
+            df.loc[9:19, c] = 28.0 + i          # turbina parada, todos frios
+        _, gap = self._residuo_e_mascara(df, self._cfg(INTERPOLATE_LIMIT=3))
+        self.assertFalse(bool(gap.iloc[14]))
 
     def test_sentinela_isolada_no_proprio_sensor_nao_envenena(self):
         # buraco curto: a interpolação (INTERPOLATE_LIMIT) preenche, e deve
