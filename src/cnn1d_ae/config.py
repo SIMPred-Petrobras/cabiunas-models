@@ -45,6 +45,10 @@ class PipelineConfig:
     # Aplicado no início do feature engineering (antes do rolling).
     ENABLE_COMMON_MODE_REMOVAL: bool = False
     COMMON_MODE_GROUP: list = field(default_factory=list)
+    # Mínimo de irmãos com leitura válida (dentro de SENTINEL_LOW/HIGH) para a
+    # média leave-one-out valer. Abaixo disso o resíduo vira NaN em vez de herdar
+    # a média de um ou dois sensores.
+    COMMON_MODE_MIN_SIBLINGS: int = 3
 
     EXCLUDE_MINUTES_AROUND_ALARM: int = 1440
     # Exclusão assimétrica em torno do alarme (sobrepõe AROUND quando definidos).

@@ -228,5 +228,85 @@ class TestClipOutliersMad(unittest.TestCase):
         self.assertLessEqual(strict["v"].max(), loose["v"].max())
 
 
+class TestCommonModeRemoval(unittest.TestCase):
+    """O resíduo contra a média dos irmãos só é válido se a sentinela sair ANTES
+    da subtração: um termopar aberto (-40.5) desloca a média em ~140°C e a
+    pontuação não aplica clipping, então o resíduo envenenado vira falso positivo."""
+
+    GRUPO = [f"TC382_0{i}_A" for i in range(1, 7)]
+
+    def _frame(self, n=40):
+        idx = pd.date_range("2025-01-01", periods=n, freq="30s", tz="UTC")
+        df = pd.DataFrame({"data_datetime": idx})
+        for i, c in enumerate(self.GRUPO):
+            df[c] = 700.0 + i          # irmãos separados por 1°C
+        df["RUNNING_A"] = 1.0
+        return df
+
+    def _cfg(self, **kw):
+        return PipelineConfig(ENABLE_COMMON_MODE_REMOVAL=True,
+                              COMMON_MODE_GROUP=list(self.GRUPO),
+                              SENTINEL_LOW=500.0, SENTINEL_HIGH=950.0,
+                              SENTINEL_MODE="none", **kw)
+
+    def _residuo(self, df, cfg, sensor="TC382_03_A"):
+        return self._residuo_e_mascara(df, cfg, sensor)[0]
+
+    def _residuo_e_mascara(self, df, cfg, sensor="TC382_03_A"):
+        """O pipeline preenche todo NaN restante por interpolação temporal, então
+        buraco não sobrevive no valor — quem marca o trecho como não-confiável, e
+        o tira do treino via EXCLUDE_LONG_GAPS_FROM_TRAIN, é o long_gap_mask."""
+        from src.cnn1d_ae.preprocess import build_sensor_dataframe
+        out, long_gap = build_sensor_dataframe(cfg, df, df, sensor)
+        return pd.to_numeric(out[sensor], errors="coerce"), long_gap
+
+    def test_residuo_sem_sentinela_bate_a_conta(self):
+        df = self._frame()
+        r = self._residuo(df, self._cfg())
+        # TC382_03_A = 702; irmãos = 700,701,703,704,705 -> média 702.6
+        self.assertAlmostEqual(float(r.dropna().iloc[0]), 702.0 - 702.6, places=6)
+
+    def test_irmao_em_sentinela_nao_envenena_o_residuo(self):
+        df = self._frame()
+        df.loc[5, "TC382_01_A"] = -40.5          # termopar aberto num irmão
+        r = self._residuo(df, self._cfg())
+        # sem o descarte, a média cairia ~148°C e o resíduo saltaria para ~+148
+        self.assertLess(abs(float(r.iloc[5])), 5.0)
+
+    def test_sentinela_isolada_no_proprio_sensor_nao_envenena(self):
+        # buraco curto: a interpolação (INTERPOLATE_LIMIT) preenche, e deve
+        # preencher com um valor são — não com o -40.5 menos a média dos irmãos.
+        df = self._frame()
+        df.loc[9, "TC382_03_A"] = -40.5
+        r = self._residuo(df, self._cfg())
+        self.assertLess(abs(float(r.iloc[9])), 5.0)
+
+    def test_sentinela_longa_no_proprio_sensor_marca_gap(self):
+        # buraco maior que INTERPOLATE_LIMIT: o valor é preenchido pelo fallback
+        # temporal, mas o trecho tem de ficar marcado para sair do treino.
+        df = self._frame()
+        df.loc[9:19, "TC382_03_A"] = -40.5
+        r, gap = self._residuo_e_mascara(df, self._cfg(INTERPOLATE_LIMIT=3))
+        self.assertTrue(bool(gap.iloc[14]))
+        self.assertLess(abs(float(r.iloc[14])), 5.0)   # e o valor não fica envenenado
+
+    def test_poucos_irmaos_validos_marcam_gap(self):
+        df = self._frame()
+        for c in ["TC382_01_A", "TC382_02_A", "TC382_04_A"]:
+            df.loc[9:19, c] = -40.5              # sobram 2 irmãos válidos
+        _, gap = self._residuo_e_mascara(
+            df, self._cfg(COMMON_MODE_MIN_SIBLINGS=3, INTERPOLATE_LIMIT=3))
+        self.assertTrue(bool(gap.iloc[14]))
+
+    def test_com_dois_irmaos_exigidos_o_mesmo_trecho_e_aceito(self):
+        # o limiar é COMMON_MODE_MIN_SIBLINGS, não uma regra fixa
+        df = self._frame()
+        for c in ["TC382_01_A", "TC382_02_A", "TC382_04_A"]:
+            df.loc[9:19, c] = -40.5
+        _, gap = self._residuo_e_mascara(
+            df, self._cfg(COMMON_MODE_MIN_SIBLINGS=2, INTERPOLATE_LIMIT=3))
+        self.assertFalse(bool(gap.iloc[14]))
+
+
 if __name__ == "__main__":
     unittest.main()

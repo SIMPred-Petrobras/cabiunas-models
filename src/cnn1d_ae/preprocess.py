@@ -339,10 +339,36 @@ def build_sensor_dataframe(
         group = [c for c in (cfg.COMMON_MODE_GROUP or []) if c in source_df.columns]
         siblings = [c for c in group if c != sensor]
         if sensor in group and siblings:
-            s = pd.to_numeric(df_use[sensor], errors="coerce")
-            sib_mean = source_df[siblings].apply(pd.to_numeric, errors="coerce").mean(axis=1)
-            df_use[sensor] = (s - sib_mean).astype(float)
-            print(f"[COMMON-MODE] sensor={sensor} = valor − média({len(siblings)} irmãos do grupo)")
+            # Sentinelas TÊM de sair antes da subtração. O mascaramento normal
+            # (SENTINEL_MODE) só roda mais adiante, sobre o valor já residual —
+            # tarde demais, e com limites que não fazem sentido num resíduo. Um
+            # único irmão em -40.5 (termopar aberto) desloca a média em ~140°C e
+            # cria um resíduo de centenas de graus; como a pontuação não aplica
+            # clipping, isso viraria falso positivo direto. No TC382 são ~1.5%
+            # das amostras com máquina ligada.
+            lo, hi = cfg.SENTINEL_LOW, cfg.SENTINEL_HIGH
+
+            def _sem_sentinela(x: pd.Series) -> pd.Series:
+                x = pd.to_numeric(x, errors="coerce")
+                if lo is not None:
+                    x = x.where(x >= lo)
+                if hi is not None:
+                    x = x.where(x <= hi)
+                return x
+
+            s = _sem_sentinela(df_use[sensor])
+            sib = source_df[siblings].apply(_sem_sentinela)
+            n_ok = sib.notna().sum(axis=1)
+            # com poucos irmãos válidos a média vira ruído: melhor NaN, que o
+            # long_gap_mask e a interpolação já sabem tratar.
+            sib_mean = sib.mean(axis=1).where(n_ok >= cfg.COMMON_MODE_MIN_SIBLINGS)
+            residuo = (s - sib_mean).astype(float)
+            n_nan = int(residuo.isna().sum()) - int(pd.to_numeric(df_use[sensor],
+                                                                  errors="coerce").isna().sum())
+            df_use[sensor] = residuo
+            print(f"[COMMON-MODE] sensor={sensor} = valor − média({len(siblings)} irmãos do grupo); "
+                  f"{max(n_nan, 0)} pontos anulados por sentinela no sensor ou nos irmãos "
+                  f"(mín. {cfg.COMMON_MODE_MIN_SIBLINGS} irmãos válidos)")
 
     before_dupes = int(df_use.duplicated(subset=[cfg.TIME_COL]).sum())
     if before_dupes:
