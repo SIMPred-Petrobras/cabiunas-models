@@ -55,6 +55,16 @@ class PipelineConfig:
     # DERIVED_ROLLING_WINDOW (que continua sendo o fallback de janela unica).
     # Ver docs/analise_automl_exp7_planejamento.md.
     DERIVED_ROLLING_WINDOWS: Optional[List[int]] = None
+    # Subconjunto opcional de `sensors` (por grupo) que recebe features de
+    # "textura" (kurtosis/skew/crest, ver TEXTURE_MIN_WINDOW em
+    # preprocess.py) quando ENABLE_DERIVED_FEATURES=true. None = todos os
+    # sensores recebem (comportamento anterior, EXP7 item 2). Definido para
+    # restringir textura a sensores onde a motivacao fisica de
+    # "impulsividade" se aplica (ex: vibracao) e evitar aplicar o mesmo
+    # tratamento, sem base fisica, a sensores de temperatura/pressao
+    # adicionados so como contexto correlacionado. Ver
+    # docs/analise_automl_exp9_planejamento.md (EXP9c).
+    TEXTURE_SENSORS: Optional[List[str]] = None
 
     # Features causais de deteccao de mudanca de regime (CUSUM + z-score de
     # linha de base local), complementares ao threshold por percentil

@@ -13,7 +13,9 @@ from .config import PipelineConfig
 TEXTURE_MIN_WINDOW = 60
 
 
-def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -> pd.DataFrame:
+def _build_derived_features(
+    df: pd.DataFrame, sensor: str, windows: List[int], include_texture: bool = True
+) -> pd.DataFrame:
     """Features derivadas em multiplas escalas de tempo (uma passada por
     janela em `windows`), alem do delta instantaneo (1 passo, independente
     de janela). Para cada janela w: media/desvio movel (nivel/variabilidade
@@ -21,12 +23,17 @@ def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -
     (tendencia/inclinacao ao longo daquela janela especifica) -- pensado
     para capturar precursores lentos que uma unica janela curta nao pega.
 
-    Para janelas >= TEXTURE_MIN_WINDOW, adiciona tambem features de
-    "textura" do sinal (mudanca de forma da distribuicao, nao so
-    nivel/variancia): kurtosis, skewness e crest factor (pico/RMS) --
-    comuns em condition monitoring de vibracao para pegar sinais ficando
-    mais "impulsivos" antes de uma falha de mancal.
-    Ver docs/analise_automl_exp7_planejamento.md."""
+    Para janelas >= TEXTURE_MIN_WINDOW (e `include_texture=True`), adiciona
+    tambem features de "textura" do sinal (mudanca de forma da
+    distribuicao, nao so nivel/variancia): kurtosis, skewness e crest
+    factor (pico/RMS) -- comuns em condition monitoring de vibracao para
+    pegar sinais ficando mais "impulsivos" antes de uma falha de mancal.
+    `include_texture=False` pula esse bloco -- usado (via
+    `cfg.TEXTURE_SENSORS`, EXP9c) para sensores de temperatura/pressao
+    onde a motivacao fisica de "impulsividade" nao se aplica, controlando
+    o crescimento de dimensionalidade ao incorporar sensores
+    correlacionados extras. Ver docs/analise_automl_exp7_planejamento.md
+    e docs/analise_automl_exp9_planejamento.md."""
     out = df.copy()
     out[f"{sensor}__delta_1"] = out[sensor].diff().fillna(0.0)
     for window in windows:
@@ -34,7 +41,7 @@ def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -
         out[f"{sensor}__roll_med_{w}"] = out[sensor].rolling(w, min_periods=1).median()
         out[f"{sensor}__roll_std_{w}"] = out[sensor].rolling(w, min_periods=1).std().fillna(0.0)
         out[f"{sensor}__trend_{w}"] = (out[sensor] - out[sensor].shift(w)).fillna(0.0)
-        if w >= TEXTURE_MIN_WINDOW:
+        if w >= TEXTURE_MIN_WINDOW and include_texture:
             roll = out[sensor].rolling(w, min_periods=max(10, w // 4))
             out[f"{sensor}__roll_kurt_{w}"] = roll.kurt().fillna(0.0)
             out[f"{sensor}__roll_skew_{w}"] = roll.skew().fillna(0.0)
@@ -42,6 +49,10 @@ def _build_derived_features(df: pd.DataFrame, sensor: str, windows: List[int]) -
             peak = out[sensor].abs().rolling(w, min_periods=1).max()
             out[f"{sensor}__crest_{w}"] = (peak / rms.replace(0, np.nan)).fillna(0.0)
     return out
+
+
+def _texture_enabled(cfg: PipelineConfig, sensor: str) -> bool:
+    return cfg.TEXTURE_SENSORS is None or sensor in cfg.TEXTURE_SENSORS
 
 
 def _derived_windows(cfg: PipelineConfig) -> List[int]:
@@ -170,7 +181,9 @@ def build_sensor_dataframe(
     df_use[sensor] = df_use[sensor].ffill().bfill()
 
     if cfg.ENABLE_DERIVED_FEATURES:
-        df_use = _build_derived_features(df_use, sensor=sensor, windows=_derived_windows(cfg))
+        df_use = _build_derived_features(
+            df_use, sensor=sensor, windows=_derived_windows(cfg), include_texture=_texture_enabled(cfg, sensor)
+        )
     if cfg.ENABLE_CHANGEPOINT_FEATURES:
         df_use = _build_changepoint_features(
             df_use, sensor=sensor, short_window=cfg.CHANGEPOINT_SHORT_WINDOW,
@@ -217,7 +230,7 @@ def build_group_dataframe(
     if cfg.ENABLE_DERIVED_FEATURES:
         windows = _derived_windows(cfg)
         for s in sensors:
-            df_use = _build_derived_features(df_use, sensor=s, windows=windows)
+            df_use = _build_derived_features(df_use, sensor=s, windows=windows, include_texture=_texture_enabled(cfg, s))
     if cfg.ENABLE_CHANGEPOINT_FEATURES:
         for s in sensors:
             df_use = _build_changepoint_features(
