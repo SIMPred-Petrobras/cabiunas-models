@@ -344,9 +344,12 @@ def build_sensor_dataframe(
             # tarde demais, e com limites que não fazem sentido num resíduo. Um
             # único irmão em -40.5 (termopar aberto) desloca a média em ~140°C e
             # cria um resíduo de centenas de graus; como a pontuação não aplica
-            # clipping, isso viraria falso positivo direto. No TC382 são ~1.5%
-            # das amostras com máquina ligada.
-            lo, hi = cfg.SENTINEL_LOW, cfg.SENTINEL_HIGH
+            # clipping, isso viraria falso positivo direto.
+            #
+            # A faixa aqui é a de validade FÍSICA (COMMON_MODE_VALID_*), não a
+            # operacional (SENTINEL_*): com a máquina parada os termopares leem
+            # ~23-33°C, e usar SENTINEL_LOW=500 anularia 34% da série em vez de 2%.
+            lo, hi = cfg.COMMON_MODE_VALID_LOW, cfg.COMMON_MODE_VALID_HIGH
 
             def _sem_sentinela(x: pd.Series) -> pd.Series:
                 x = pd.to_numeric(x, errors="coerce")

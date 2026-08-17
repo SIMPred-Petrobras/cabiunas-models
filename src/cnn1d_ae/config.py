@@ -45,10 +45,17 @@ class PipelineConfig:
     # Aplicado no início do feature engineering (antes do rolling).
     ENABLE_COMMON_MODE_REMOVAL: bool = False
     COMMON_MODE_GROUP: list = field(default_factory=list)
-    # Mínimo de irmãos com leitura válida (dentro de SENTINEL_LOW/HIGH) para a
-    # média leave-one-out valer. Abaixo disso o resíduo vira NaN em vez de herdar
-    # a média de um ou dois sensores.
+    # Mínimo de irmãos com leitura válida para a média leave-one-out valer.
+    # Abaixo disso o resíduo vira NaN em vez de herdar a média de um ou dois sensores.
     COMMON_MODE_MIN_SIBLINGS: int = 3
+    # Faixa de validade FÍSICA do instrumento, usada só para decidir quais irmãos
+    # entram na média do resíduo. NÃO confundir com SENTINEL_LOW/HIGH, que é a
+    # faixa OPERACIONAL do sensor em carga: com a máquina parada os termopares
+    # leem ~23-33°C, leitura legítima que SENTINEL_LOW=500 descartaria — no TC382
+    # isso anularia 34% da série em vez de 2%. Aqui só se rejeita falha de
+    # instrumento (o -40.5 do termopar aberto).
+    COMMON_MODE_VALID_LOW: Optional[float] = -30.0
+    COMMON_MODE_VALID_HIGH: Optional[float] = 1200.0
 
     EXCLUDE_MINUTES_AROUND_ALARM: int = 1440
     # Exclusão assimétrica em torno do alarme (sobrepõe AROUND quando definidos).
