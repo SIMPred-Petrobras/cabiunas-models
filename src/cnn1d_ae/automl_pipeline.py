@@ -247,11 +247,15 @@ def run_automl_group(
         else:
             ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
             ref_series = df_use[ref_col]
+        secondary_series = None
+        if cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_use.columns:
+            secondary_series = df_use[target_sensor]
         state = build_operational_state(
             index=df_use.index, sensor_series=ref_series,
             off_value_quantile=cfg.OFF_VALUE_QUANTILE, off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
             off_long_min_hours=cfg.OFF_LONG_MIN_HOURS, transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
             transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+            secondary_series=secondary_series, secondary_off_abs_threshold=cfg.OFF_TARGET_ABS_THRESHOLD,
         )
 
     if "Tag" in df_alarm.columns:

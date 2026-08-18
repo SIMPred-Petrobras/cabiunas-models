@@ -155,7 +155,20 @@ def build_operational_state(
     off_long_min_hours: float = 24.0,
     transient_padding_minutes: int = 20,
     transient_diff_quantile: float = 0.99,
+    secondary_series: pd.Series | None = None,
+    secondary_off_abs_threshold: float | None = None,
 ) -> pd.Series:
+    """`sensor_series` (tipicamente OPERATIONAL_REF_SENSOR, ex: RUNNING_A) e a
+    referencia primaria de liga/desliga. `secondary_series`/
+    `secondary_off_abs_threshold` (opcional, ex: o proprio sensor-alvo do
+    grupo) adicionam um segundo criterio de "off" independente -- OR'd com o
+    primeiro antes da classificacao off_curto/off_longo/transiente. Motivado
+    por um desligamento real (2025-08-19 a 2025-08-23) em que RUNNING_A ficou
+    ~0.96-1.0 o periodo todo (nao caiu abaixo do OFF_ABS_THRESHOLD) enquanto
+    TC382_03_A caiu para ~28-32C (nivel ambiente, fisicamente incompativel
+    com operacao) -- a mascara baseada so em RUNNING_A nao detectava esse
+    periodo como off, respondendo por 65% do normal_alert_rate do EXP7
+    item1+2. Ver docs/analise_automl_exp9_planejamento.md."""
     s = pd.to_numeric(sensor_series.reindex(index), errors="coerce").ffill().bfill()
     state = pd.Series("on", index=index, dtype=object)
 
@@ -165,6 +178,9 @@ def build_operational_state(
         off_thr = float(off_abs_threshold)
 
     is_off = s <= off_thr
+    if secondary_series is not None and secondary_off_abs_threshold is not None:
+        s2 = pd.to_numeric(secondary_series.reindex(index), errors="coerce").ffill().bfill()
+        is_off = is_off | (s2 <= float(secondary_off_abs_threshold))
     if is_off.any():
         grp = is_off.ne(is_off.shift(fill_value=False)).cumsum()
         run_id = grp.where(is_off)

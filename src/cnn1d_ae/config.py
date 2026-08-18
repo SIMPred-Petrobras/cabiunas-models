@@ -121,6 +121,13 @@ class PipelineConfig:
     OFF_ABS_THRESHOLD: Optional[float] = None
     OFF_LONG_MIN_HOURS: float = 24.0
     TRANSIENT_PADDING_MINUTES: int = 20
+    # Segundo criterio de "off", independente de OPERATIONAL_REF_SENSOR:
+    # quando definido, o proprio sensor-alvo (`target_sensor` do grupo)
+    # sendo <= este valor tambem conta como off (OR'd com o criterio do
+    # sensor de referencia). Motivado por um desligamento real em que
+    # RUNNING_A ficou ~1 o tempo todo enquanto TC382_03_A caiu para nivel
+    # ambiente -- ver build_operational_state em scoring.py.
+    OFF_TARGET_ABS_THRESHOLD: Optional[float] = None
     TRANSIENT_DIFF_QUANTILE: float = 0.99
 
     # Portao de rampa de carga (suprime falso positivo durante manobra, sem
