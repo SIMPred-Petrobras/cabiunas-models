@@ -27,6 +27,7 @@ from .scoring import (
     eval_alarm_hit_rate,
     compute_normal_alert_rate,
     compute_composite_score,
+    apply_load_gate,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -146,7 +147,7 @@ def _seed_sweep(
     cfg: PipelineConfig, model_type: str, x_normal: np.ndarray, x_all: np.ndarray, all_index: pd.Index,
     state: pd.Series | None, df_alarm_eval: pd.DataFrame, df_point_eval_idx: pd.Index,
     near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
-    nu: float | None = None, gamma: Any = None,
+    nu: float | None = None, gamma: Any = None, load_gate_series: pd.Series | None = None,
 ) -> List[Dict[str, Any]]:
     """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce/nu/gamma
     do melhor trial) com N seeds extras, pra medir o quanto hit_rate/
@@ -166,6 +167,12 @@ def _seed_sweep(
         if state is not None:
             df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
             df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+        if load_gate_series is not None:
+            df_point = apply_load_gate(
+                df_point, load_gate_series, ramp_max=cfg.LOAD_GATE_RAMP_MAX,
+                level_min=cfg.LOAD_GATE_LEVEL_MIN, ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
+                window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
+            )
         eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
         normal_rate = compute_normal_alert_rate(
             df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
@@ -257,6 +264,28 @@ def run_automl_group(
             transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
             secondary_series=secondary_series, secondary_off_abs_threshold=cfg.OFF_TARGET_ABS_THRESHOLD,
         )
+
+    # Portao de rampa de carga (EXP10b): suprime is_anom_point durante
+    # manobra de carga legitima (rampa alta num proxy de carga, ex:
+    # T5_AVG_A), sem mexer no threshold do modelo. Motivado por 8 dos 10
+    # maiores episodios de falso alerta residual do EXP7 item1+2
+    # coincidirem com uma rampa de dezenas de graus/hora + vibracao 3-6x
+    # mais volatil -- manobra real, sem alarme, nao degradacao. Janela
+    # curta (halflife/window pequenos) escolhida especificamente por
+    # preservar os 29/29 casos preditivos reais (janelas longas
+    # bloqueavam parte deles). Ja existia para o CNN1D-AE
+    # (pipeline.py); portado aqui pro AutoML. Ver
+    # docs/analise_automl_exp9_planejamento.md.
+    load_gate_series = None
+    if cfg.ENABLE_LOAD_GATE:
+        gate_sensor = cfg.LOAD_GATE_SENSOR
+        if not gate_sensor:
+            raise ValueError("ENABLE_LOAD_GATE=true exige LOAD_GATE_SENSOR definido.")
+        if gate_sensor not in sensors:
+            df_gate, _ = build_sensor_dataframe(cfg, df_feat, df_raw, gate_sensor)
+            load_gate_series = df_gate[gate_sensor]
+        else:
+            load_gate_series = df_use[gate_sensor]
 
     if "Tag" in df_alarm.columns:
         df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
@@ -368,6 +397,12 @@ def run_automl_group(
                     if state is not None:
                         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
                         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+                    if load_gate_series is not None:
+                        df_point = apply_load_gate(
+                            df_point, load_gate_series, ramp_max=cfg.LOAD_GATE_RAMP_MAX,
+                            level_min=cfg.LOAD_GATE_LEVEL_MIN, ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
+                            window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
+                        )
 
                     # Janela de match do hit_rate usa o df_point inteiro (um alarme
                     # OOS perto do corte ainda pode casar com pontos um pouco antes
@@ -409,9 +444,10 @@ def run_automl_group(
 
     seed_sweep = None
     if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED:
-        seed_sweep_kwargs = {}
+        seed_sweep_kwargs = {"load_gate_series": load_gate_series}
         if best_model_type == "ocsvm":
-            seed_sweep_kwargs = {"nu": best_trial.get("nu"), "gamma": best_trial.get("gamma")}
+            seed_sweep_kwargs["nu"] = best_trial.get("nu")
+            seed_sweep_kwargs["gamma"] = best_trial.get("gamma")
         extra = _seed_sweep(
             cfg, best_model_type, x_normal, x_all, all_index, state, df_alarm_eval, df_point_eval_idx, near_alarm_mask,
             best_trial["threshold_percentile"], best_trial["debounce"], cfg.AUTOML_SEED_SWEEP_N,
