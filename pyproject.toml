@@ -13,6 +13,16 @@ dependencies = [
   "clearml>=1.16.5",
 ]
 
+[project.optional-dependencies]
+# Detector de 4 sinais / manutencao preditiva do TC-330.03A (src/cabiunas_pdm).
+# Nao usa TensorFlow: os modelos sao scikit-learn (PCA, IsolationForest, MLP).
+pdm = [
+  "scikit-learn>=1.5",
+  "scipy>=1.13",
+  "pyarrow>=16",
+  "joblib>=1.4",
+]
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"

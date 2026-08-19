@@ -69,3 +69,8 @@ PYTHONPATH=. ../venv/bin/python src/main.py --config configs/calibracao_v4_eq/re
 python3 -m compileall src/main.py src/cnn1d_ae
 python3 -m json.tool configs/calibracao_v4_eq/record2025_tzm3_interpolado_v4_T5_AVG_A.json >/tmp/cabiunas_config_check.json
 ```
+
+## Detector de 4 sinais (PDM)
+
+A branch `feat/pdm-deteccao-4sinais` traz uma segunda abordagem para o mesmo
+equipamento, em `src/cabiunas_pdm`. Ver [README_PDM.md](README_PDM.md).

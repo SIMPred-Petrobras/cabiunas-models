@@ -23,3 +23,10 @@ __pycache__/
 *.log
 *.tmp
 .env
+
+# --- contribuição PDM 4 sinais (branch feat/pdm-deteccao-4sinais) ---
+reports/
+automl_out/
+notebooks/.ipynb_checkpoints/
+*.parquet
+*.pkl
