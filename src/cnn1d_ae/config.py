@@ -143,6 +143,20 @@ class PipelineConfig:
     LOAD_GATE_RAMP_MAX: float = 80.0
     LOAD_GATE_LEVEL_MIN: float = 0.0
 
+    # Portao de volatilidade (complementar ao portao de rampa): suprime
+    # falso positivo quando um indice de volatilidade multivariado
+    # (desvio-padrao movel medio entre VOLATILITY_GATE_SENSORS, tipicamente
+    # os canais de vibracao) ultrapassa VOLATILITY_GATE_THRESHOLD -- diferente
+    # do portao de rampa (que reage a taxa de variacao do NIVEL de um unico
+    # proxy), este reage ao NIVEL da variabilidade em si, o que combina
+    # melhor com o padrao fisico observado (vibracao fica mais "ruidosa" e
+    # PERMANECE assim durante toda a manobra, nao so na subida). Ver
+    # docs/analise_automl_exp9_planejamento.md.
+    ENABLE_VOLATILITY_GATE: bool = False
+    VOLATILITY_GATE_SENSORS: Optional[List[str]] = None
+    VOLATILITY_GATE_WINDOW_MINUTES: float = 60.0
+    VOLATILITY_GATE_THRESHOLD: Optional[float] = None
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 

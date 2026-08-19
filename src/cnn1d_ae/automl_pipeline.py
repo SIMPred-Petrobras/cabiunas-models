@@ -28,6 +28,8 @@ from .scoring import (
     compute_normal_alert_rate,
     compute_composite_score,
     apply_load_gate,
+    compute_volatility_index,
+    apply_volatility_gate,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -148,6 +150,7 @@ def _seed_sweep(
     state: pd.Series | None, df_alarm_eval: pd.DataFrame, df_point_eval_idx: pd.Index,
     near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
     nu: float | None = None, gamma: Any = None, load_gate_series: pd.Series | None = None,
+    volatility_index: pd.Series | None = None,
 ) -> List[Dict[str, Any]]:
     """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce/nu/gamma
     do melhor trial) com N seeds extras, pra medir o quanto hit_rate/
@@ -173,6 +176,8 @@ def _seed_sweep(
                 level_min=cfg.LOAD_GATE_LEVEL_MIN, ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
                 window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
             )
+        if volatility_index is not None:
+            df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
         eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
         normal_rate = compute_normal_alert_rate(
             df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
@@ -286,6 +291,24 @@ def run_automl_group(
             load_gate_series = df_gate[gate_sensor]
         else:
             load_gate_series = df_use[gate_sensor]
+
+    # Portao de volatilidade (complementar ao de rampa): suprime
+    # is_anom_point quando o desvio-padrao movel medio de
+    # VOLATILITY_GATE_SENSORS (tipicamente os canais de vibracao) excede
+    # VOLATILITY_GATE_THRESHOLD. Motivado por episodios de falso alerta
+    # residuais onde a vibracao fica mais volatil e PERMANECE assim durante
+    # toda a manobra de carga, nao so na subida (o que o portao de rampa,
+    # baseado em taxa de variacao, so cobre parcialmente). Ver
+    # docs/analise_automl_exp9_planejamento.md.
+    volatility_index = None
+    if cfg.ENABLE_VOLATILITY_GATE:
+        vol_sensors = cfg.VOLATILITY_GATE_SENSORS
+        if not vol_sensors:
+            raise ValueError("ENABLE_VOLATILITY_GATE=true exige VOLATILITY_GATE_SENSORS definido.")
+        missing_vol = [s for s in vol_sensors if s not in df_use.columns]
+        if missing_vol:
+            raise ValueError(f"VOLATILITY_GATE_SENSORS fora de `sensors` do grupo: {missing_vol}")
+        volatility_index = compute_volatility_index(df_use[vol_sensors], cfg.VOLATILITY_GATE_WINDOW_MINUTES)
 
     if "Tag" in df_alarm.columns:
         df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
@@ -403,6 +426,8 @@ def run_automl_group(
                             level_min=cfg.LOAD_GATE_LEVEL_MIN, ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
                             window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
                         )
+                    if volatility_index is not None:
+                        df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
 
                     # Janela de match do hit_rate usa o df_point inteiro (um alarme
                     # OOS perto do corte ainda pode casar com pontos um pouco antes
@@ -444,7 +469,7 @@ def run_automl_group(
 
     seed_sweep = None
     if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED:
-        seed_sweep_kwargs = {"load_gate_series": load_gate_series}
+        seed_sweep_kwargs = {"load_gate_series": load_gate_series, "volatility_index": volatility_index}
         if best_model_type == "ocsvm":
             seed_sweep_kwargs["nu"] = best_trial.get("nu")
             seed_sweep_kwargs["gamma"] = best_trial.get("gamma")

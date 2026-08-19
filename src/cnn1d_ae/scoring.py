@@ -270,6 +270,37 @@ def apply_load_gate(
     return df_point
 
 
+def compute_volatility_index(df_sensors: pd.DataFrame, window_minutes: float) -> pd.Series:
+    """Indice de volatilidade multivariado: desvio-padrao movel causal
+    (janela trailing, nunca olha o futuro) de cada coluna de `df_sensors`,
+    reduzido pela media entre colunas a cada instante. Pensado para um
+    grupo de sensores fisicamente correlacionados (ex: os 10 canais de
+    vibracao de mancal) onde uma manobra real (rampa de carga) eleva a
+    variabilidade de varios canais ao mesmo tempo, mesmo sem uma rampa de
+    *nivel* clara no sensor-alvo -- complementar ao portao de rampa
+    (`apply_load_gate`, que reage a taxa de variacao do nivel, nao a
+    variabilidade local). Ver docs/analise_automl_exp9_planejamento.md."""
+    dt_seconds = df_sensors.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    window_samples = max(2, int(round((float(window_minutes) * 60.0) / dt_seconds)))
+    roll_std = df_sensors.rolling(window_samples, min_periods=max(2, window_samples // 2)).std()
+    return roll_std.mean(axis=1)
+
+
+def apply_volatility_gate(df_point: pd.DataFrame, volatility_index: pd.Series, threshold: float) -> pd.DataFrame:
+    """Suprime is_anom_point quando o indice de volatilidade (ver
+    `compute_volatility_index`) ultrapassa `threshold` -- causal por
+    construcao (a serie de entrada ja e uma janela trailing)."""
+    idx_at_point = volatility_index.reindex(df_point.index, method="ffill")
+    blocked = (idx_at_point > float(threshold)).fillna(False)
+
+    df_point = df_point.copy()
+    df_point["volatility_gate_blocked"] = blocked.values
+    df_point.loc[blocked.values, "is_anom_point"] = 0
+    return df_point
+
+
 def mask_anomaly_seq_by_operational_state(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,
