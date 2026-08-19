@@ -63,33 +63,65 @@ encontrados por simulação offline, preservam 29/29 preditivos.
 **Resultado (EXP10b):** hit_rate idêntico (92,5%, 37/40); FP 0,67% →
 0,48%. Seed-sweep: desvio-padrão de 0,016pp.
 
+## Achado 3 — volatilidade que persiste, não que sobe
+
+O portão de rampa reage bem a variação de *nível* em `T5_AVG_A`, mas o
+padrão de vibração observado no Achado 2 é diferente: o desvio-padrão
+sobe e **permanece** elevado por 1–2h, não é só um pico na subida.
+
+**Tentativa 1 (falhou):** alimentar `apply_load_gate` com um índice de
+volatilidade de vibração (desvio-padrão móvel médio dos 10 canais) no
+lugar do proxy de temperatura, mantendo o mecanismo de taxa de variação.
+O ponto de custo zero (`thr=8`) reduzia o FP de 0,480% para apenas
+0,477% — taxa de variação não distingue o início de uma rampa real do
+início de uma escalada de falha, o mesmo problema do portão de rampa
+original, agora por uma causa relacionada mas distinta (métrica errada,
+não janela errada).
+
+**Tentativa 2 (funcionou):** `compute_volatility_index`/
+`apply_volatility_gate` (`scoring.py`) — desvio-padrão móvel causal
+(`VOLATILITY_GATE_WINDOW_MINUTES=60min`) de cada um dos 10 canais de
+vibração, reduzido pela média entre canais, bloqueando quando o **nível**
+(não a taxa) ultrapassa `VOLATILITY_GATE_THRESHOLD`. Simulação offline
+encontrou `threshold=0,39` como ponto de custo zero: preserva 29/29
+preditivos com FP caindo 27% relativo (0,480%→0,348%).
+
+**Resultado (EXP10c):** hit_rate idêntico (92,5%, 37/40); FP 0,48% →
+0,35%. Seed-sweep: desvio-padrão de 0,011pp.
+
 ## Resultado consolidado
 
 | Etapa | hit_rate | FP |
 |---|---|---|
 | EXP7 item1+2 (base) | 92,5% (37/40) | 1,94% |
 | EXP10 (+ máscara operacional) | 92,5% (37/40) | 0,67% |
-| **EXP10b (+ portão de rampa)** | **92,5% (37/40)** | **0,48%** |
+| EXP10b (+ portão de rampa) | 92,5% (37/40) | 0,48% |
+| **EXP10c (+ portão de volatilidade)** | **92,5% (37/40)** | **0,35%** |
 
 **Candidato de referência atualizado:** `ocsvm` (p99,9/debounce=1) sobre
 multiescala + textura + máscara operacional corrigida
 (`OFF_TARGET_ABS_THRESHOLD=150`) + portão de rampa
 (`ENABLE_LOAD_GATE`, `LOAD_GATE_SENSOR=T5_AVG_A`, `LOAD_GATE_RAMP_MAX=100`,
-`LOAD_GATE_RAMP_HALFLIFE_MINUTES=15`, `LOAD_GATE_WINDOW_MINUTES=30`).
-Nenhuma das duas correções toca no modelo de anomalia — ambas atuam na
+`LOAD_GATE_RAMP_HALFLIFE_MINUTES=15`, `LOAD_GATE_WINDOW_MINUTES=30`) +
+portão de volatilidade (`ENABLE_VOLATILITY_GATE`,
+`VOLATILITY_GATE_SENSORS`=10 canais de vibração,
+`VOLATILITY_GATE_WINDOW_MINUTES=60`, `VOLATILITY_GATE_THRESHOLD=0.39`).
+Nenhuma das três correções toca no modelo de anomalia — todas atuam na
 camada de pós-processamento/avaliação (rotulagem operacional e contexto
 de manobra), com custo de detecção zero confirmado em produção (task
-remota), batendo a simulação offline com <0,01pp de diferença.
+remota) nas três vezes, batendo a simulação offline com <0,01pp de
+diferença. Redução total: 1,94%→0,35% (~82% relativo).
 
 ## Pendências (não endereçadas aqui)
 
 - ~9,7% do FP original coincide com outro alarme real do catálogo
   completo (pressão/partida a gás) — fora do escopo de avaliação de 2
   sensores, não é falso alerta genuíno, mas não foi corrigido.
-- Resíduo de rampas mais lentas/fracas que `ramp_max=100` não captura
-  (o portão pegou ~38% da fatia de "sem alarme correlato", não toda ela).
+- Resíduo de falha de sensor pontual (~2,1%) que contamina a feature de
+  tendência de 24h — nenhuma das três correções mira esse mecanismo.
 
 ## Tasks ClearML
 
 - EXP10 (máscara operacional): `5fc24eb564284436912dd189fddf747d`
 - EXP10b (+ portão de rampa): `24b3e27a4241412f99beed4e029554b4`
+- EXP10c (+ portão de volatilidade): `6ac3b1b52a45433a83568d61fafadda6`
