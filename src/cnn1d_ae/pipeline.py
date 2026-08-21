@@ -366,9 +366,17 @@ def run_one_group(
     if target_idx is not None:
         print(f"[TARGET] sensor alvo: {target_sensor!r} (canal {target_idx}) — anomalia baseada no MAE deste canal")
 
-    # Máscara de alarmes: união de todos os sensores do grupo
+    # eval_sensors: subconjunto de `sensors` cujos alarmes contam na
+    # exclusao de treino e no hit_rate/n_alarms (mesmo mecanismo do
+    # automl_pipeline.py). Default = todos os `sensors`. Necessario quando
+    # o grupo tem sensores que entram so como feature (ex: vibracao) --
+    # sem isso, os alarmes proprios desses sensores inflam n_alarms e
+    # diluem o hit_rate do sensor-alvo real.
+    eval_sensors = list(group.get("eval_sensors") or sensors)
+
+    # Máscara de alarmes: união dos sensores de avaliação do grupo
     if "Tag" in df_alarm.columns:
-        df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(sensors)].copy()
+        df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
     else:
         df_alarm_group = df_alarm.copy()
     if "Data da Ocorrencia" in df_alarm_group.columns:
@@ -553,6 +561,7 @@ def run_one_group(
     calibration_report = {
         "group": group_name,
         "sensors": sensors,
+        "eval_sensors": eval_sensors,
         "target_sensor": target_sensor or "global_mae",
         "n_sensors": len(sensors),
         "threshold": float(threshold),

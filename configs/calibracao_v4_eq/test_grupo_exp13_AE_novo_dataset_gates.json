@@ -36,6 +36,7 @@
         "TV_354X_A", "TV_354Y_A",
         "TV_355X_A", "TV_355Y_A"
       ],
+      "eval_sensors": ["TC382_03_A", "T5_AVG_A"],
       "target_sensor": "TC382_03_A"
     }
   ],
