@@ -30,6 +30,8 @@ from .scoring import (
     build_operational_state,
     mask_anomaly_seq_by_operational_state,
     apply_load_gate,
+    compute_volatility_index,
+    apply_volatility_gate,
     eval_alarm_hit_rate,
 )
 from .plots import (
@@ -154,6 +156,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             ref_series = df_ref[ref_sensor]
         else:
             ref_series = df_all[sensor]
+        secondary_series = df_all[sensor] if cfg.OFF_TARGET_ABS_THRESHOLD is not None else None
         state = build_operational_state(
             index=df_all_z.index,
             sensor_series=ref_series,
@@ -162,6 +165,8 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
             transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
             transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+            secondary_series=secondary_series,
+            secondary_off_abs_threshold=cfg.OFF_TARGET_ABS_THRESHOLD,
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,
@@ -201,6 +206,21 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
             ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
             window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
         )
+
+    if cfg.ENABLE_VOLATILITY_GATE:
+        vol_sensors = cfg.VOLATILITY_GATE_SENSORS
+        if not vol_sensors:
+            raise ValueError("ENABLE_VOLATILITY_GATE=true exige VOLATILITY_GATE_SENSORS definido.")
+        vol_cols = {}
+        for s in vol_sensors:
+            if s in df_all.columns:
+                vol_cols[s] = df_all[s]
+            else:
+                df_vol, _ = build_sensor_dataframe(cfg, df_feat, df_raw, s)
+                vol_cols[s] = df_vol[s].reindex(df_all.index)
+        df_vol_group = pd.DataFrame(vol_cols)
+        volatility_index = compute_volatility_index(df_vol_group, cfg.VOLATILITY_GATE_WINDOW_MINUTES)
+        df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
 
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
@@ -294,6 +314,11 @@ def run_one_group(
         "load_gate_level_min": "LOAD_GATE_LEVEL_MIN",
         "load_gate_ramp_halflife_minutes": "LOAD_GATE_RAMP_HALFLIFE_MINUTES",
         "load_gate_window_minutes": "LOAD_GATE_WINDOW_MINUTES",
+        "off_target_abs_threshold": "OFF_TARGET_ABS_THRESHOLD",
+        "enable_volatility_gate": "ENABLE_VOLATILITY_GATE",
+        "volatility_gate_sensors": "VOLATILITY_GATE_SENSORS",
+        "volatility_gate_window_minutes": "VOLATILITY_GATE_WINDOW_MINUTES",
+        "volatility_gate_threshold": "VOLATILITY_GATE_THRESHOLD",
     }
     overrides = {cfg_key: group[json_key]
                  for json_key, cfg_key in _OVERRIDE_KEYS.items()
@@ -427,6 +452,9 @@ def run_one_group(
             # Usa o sensor de referência se estiver no grupo, senão o primeiro sensor
             ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
             ref_series = df_all[ref_col]
+        secondary_series = None
+        if effective_cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_all.columns:
+            secondary_series = df_all[target_sensor]
         state = build_operational_state(
             index=df_all_z.index,
             sensor_series=ref_series,
@@ -435,6 +463,8 @@ def run_one_group(
             off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
             transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
             transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+            secondary_series=secondary_series,
+            secondary_off_abs_threshold=effective_cfg.OFF_TARGET_ABS_THRESHOLD,
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,
@@ -477,6 +507,16 @@ def run_one_group(
             ramp_halflife_minutes=effective_cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
             window_minutes=effective_cfg.LOAD_GATE_WINDOW_MINUTES,
         )
+
+    if effective_cfg.ENABLE_VOLATILITY_GATE:
+        vol_sensors = effective_cfg.VOLATILITY_GATE_SENSORS
+        if not vol_sensors:
+            raise ValueError("ENABLE_VOLATILITY_GATE=true exige VOLATILITY_GATE_SENSORS (ou volatility_gate_sensors no grupo).")
+        missing_vol = [s for s in vol_sensors if s not in df_all.columns]
+        if missing_vol:
+            raise ValueError(f"VOLATILITY_GATE_SENSORS fora de `sensors` do grupo: {missing_vol}")
+        volatility_index = compute_volatility_index(df_all[vol_sensors], effective_cfg.VOLATILITY_GATE_WINDOW_MINUTES)
+        df_point = apply_volatility_gate(df_point, volatility_index, effective_cfg.VOLATILITY_GATE_THRESHOLD)
 
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
