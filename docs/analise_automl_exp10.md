@@ -112,6 +112,37 @@ de manobra), com custo de detecção zero confirmado em produção (task
 remota) nas três vezes, batendo a simulação offline com <0,01pp de
 diferença. Redução total: 1,94%→0,35% (~82% relativo).
 
+## EXP12 — re-otimização de percentil/debounce por cima dos 3 filtros
+
+Motivado por revisão de literatura sobre redução de falso alerta em
+manutenção preditiva: os 3 filtros do EXP10 mudam o *pós-processamento*,
+mas o par percentil/debounce (`ocsvm` p99,9/debounce=1) nunca foi
+re-otimizado depois deles — foi herdado do EXP7 item1+2, calibrado
+*antes* dos filtros existirem. Hipótese: com o FP residual já bem menor,
+talvez um ponto de operação diferente aproveite melhor o novo regime.
+
+**Config:** `test_grupo_exp12_threshold_pos_filtros.json` — grade
+8 percentis (99,0–99,99) × 5 debounces (1–8), `ocsvm` isolado (já
+sabíamos que era o vencedor), os 3 gates do EXP10c fixos nos valores já
+calibrados.
+
+**Resultado: negativo (praticamente plano).** O topo do ranking inteiro
+(20+ combinações) tem `hit_rate` idêntico a 92,5% (37/40) — o par
+percentil/debounce não afeta mais quais alarmes são detectados nessa
+faixa. O vencedor (p99,8/debounce=5) reduz `normal_alert_rate` de
+0,348% (ponto antigo, p99,9/db1) para 0,344% — **0,004pp**, menor que o
+desvio-padrão do próprio seed-sweep nesse ponto (0,013pp). Não é uma
+melhora real, é ruído de semente.
+
+**Conclusão:** depois dos 3 filtros do EXP10, o piso de falso alerta
+(~0,35%) não está mais no par percentil/debounce — está nos dois
+mecanismos ainda não endereçados (ver Pendências abaixo: alarme
+cross-sensor fora do escopo de avaliação, e resíduo de falha de sensor
+pontual). Re-otimizar threshold sozinho, sem mexer nesses dois
+mecanismos, não tem mais margem.
+
+**Task ClearML:** `288702f1e95f415ea55bdc8585420a1c`.
+
 ## Pendências (não endereçadas aqui)
 
 - ~9,7% do FP original coincide com outro alarme real do catálogo
