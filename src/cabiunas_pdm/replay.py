@@ -210,8 +210,9 @@ class ReplayResult:
 
     def label(self) -> str:
         t = self.trial
-        janela = ("acumulativo" if t.get("baseline_mode") == "acumulativo"
-                  else f"{t['baseline_hours']} h")
+        janela = t.get("baseline_label") or (
+            "acumulativo" if t.get("baseline_mode") == "acumulativo"
+            else f"{t['baseline_hours']} h")
         return (f"{t['model']} | {t['grid']} | baseline {janela} | "
                 f"exclui {t['exclude_days']}d | EWMA {t['ewma']} | q{t['threshold']} | "
                 f"sustentado {t['sustain']} | {t['confirm']} sinais")
@@ -288,12 +289,15 @@ class DetectionReplay:
             self.bundle, eval_start, eval_end, max_fp_per_month)
 
     # ------------------------------------------------------------ etapa cara
-    def _parts(self, model: str, grid: str, baseline_hours: int, exclude_days: int,
-               exclude_alarm_h: float = 0.0, baseline_mode: str = "movel") -> dict:
-        """Scores brutos por mês, com cache em disco (o ajuste do AE é o gargalo)."""
+    def _parts(self, model: str, grid: str, baseline, exclude_days: int,
+               exclude_alarm_h: float = 0.0) -> dict:
+        """Scores brutos por mês, com cache em disco (o ajuste do AE é o gargalo).
+
+        A chave do cache usa o rótulo da política, então os arquivos gravados
+        antes da migração (``..._300h_...``, ``..._acum_...``) continuam válidos.
+        """
         arq = "unico" if getattr(self, "single_model", False) else "4sinais"
-        janela = "acum" if baseline_mode == "acumulativo" else f"{baseline_hours}h"
-        key = f"{arq}_{model}_{grid}_{janela}_{exclude_days}_{exclude_alarm_h}"
+        key = f"{arq}_{model}_{grid}_{baseline.label}_{exclude_days}_{exclude_alarm_h}"
         digest = hashlib.md5(key.encode()).hexdigest()[:8]
         cache = self.cache_dir / f"replay_parts_{key}_{digest}.pkl"
         if cache.exists():
@@ -301,10 +305,10 @@ class DetectionReplay:
             print(f"[scores] cache {cache.name}")
             return joblib.load(cache)
         print(f"[scores] ajustando {model} walk-forward (grade {grid}, "
-              f"baseline {baseline_hours} h, exclui {exclude_days}d + "
+              f"baseline {baseline.label}, exclui {exclude_days}d + "
               f"{exclude_alarm_h}h de alarme)...", flush=True)
-        parts = self.evaluator.raw_scores(model, grid, baseline_hours, exclude_days,
-                                          exclude_alarm_h, baseline_mode)
+        parts = self.evaluator.raw_scores(model, grid, baseline, exclude_days,
+                                          exclude_alarm_h)
         import joblib
         cache.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(parts, cache, compress=3)
@@ -316,7 +320,8 @@ class DetectionReplay:
             exclude_alarm_h: float = 0.0, ewma: str = "30min",
             threshold: float = 99.99, sustain: str = "2h", confirm: int = 3,
             min_alert: str = "0min", keep_sensors: bool = True,
-            mask_stops: bool = False) -> ReplayResult:
+            mask_stops: bool = False, baseline=None,
+            threshold_kind: str = "percentil") -> ReplayResult:
         """Reexecuta uma configuração e devolve as séries.
 
         ``mask_stops`` é um **diagnóstico**, não o padrão. O score do AutoML é
@@ -329,16 +334,20 @@ class DetectionReplay:
         avaliador do AutoML — e a conferência é verificada.
         """
         automl = self.automl
-        trial = automl.Trial(model=model, grid=grid, baseline_hours=baseline_hours,
-                            baseline_mode=baseline_mode, exclude_days=exclude_days,
+        # `baseline` é a forma nova; os kwargs baseline_hours/baseline_mode
+        # continuam aceitos para os notebooks já escritos não quebrarem.
+        if baseline is None:
+            baseline = (automl.BaselinePolicy() if baseline_mode == "acumulativo"
+                        else automl.BaselinePolicy(window_hours=float(baseline_hours)))
+        trial = automl.Trial(model=model, grid=grid, baseline=baseline,
+                            exclude_days=exclude_days,
                             exclude_alarm_h=exclude_alarm_h, ewma=ewma,
                             threshold=threshold, sustain=sustain, confirm=confirm,
-                            min_alert=min_alert)
-        parts = self._parts(model, grid, baseline_hours, exclude_days, exclude_alarm_h,
-                            baseline_mode)
+                            min_alert=min_alert, threshold_kind=threshold_kind)
+        parts = self._parts(model, grid, baseline, exclude_days, exclude_alarm_h)
         # alimenta o cache do avaliador para que evaluate() não recalcule
-        self.evaluator._cache[(model, grid, baseline_hours, exclude_days,
-                               exclude_alarm_h, baseline_mode)] = parts
+        self.evaluator._cache[(model, grid, baseline, exclude_days,
+                               exclude_alarm_h)] = parts
 
         frame, oper = self.bundle.grid(grid)
         step = frame.index.to_series().diff().dt.total_seconds().median() or 30.0
@@ -353,8 +362,11 @@ class DetectionReplay:
         for name in order:
             pct = trial.threshold_for(name, order)
             s_parts, l_parts, c_parts, f_parts = [], [], [], []
-            for baseline, test in parts[name]:
-                limit = float(np.nanpercentile(smooth(baseline).to_numpy(), pct))
+            for base_serie, test in parts[name]:
+                valores = smooth(base_serie).to_numpy(dtype=float)
+                valores = valores[np.isfinite(valores)]
+                limit = self.evaluator._limite(
+                    np.sort(valores)[::-1], int(valores.size), pct, threshold_kind)
                 suave = smooth(test)
                 cruzou = suave > limit
                 s_parts.append(suave)
@@ -452,11 +464,13 @@ class DetectionReplay:
               f"lead {metrics['lead_medio_h']} h | FP {fp_mes}/mês")
 
         return ReplayResult(
-            trial=dict(model=model, grid=grid, baseline_hours=baseline_hours,
-                       baseline_mode=baseline_mode,
+            trial=dict(model=model, grid=grid, baseline=baseline,
+                       baseline_label=baseline.label,
+                       baseline_hours=baseline.window_hours,
+                       baseline_mode=baseline.modo_legado,
                        exclude_days=exclude_days, exclude_alarm_h=exclude_alarm_h,
-                       ewma=ewma, threshold=threshold, sustain=sustain,
-                       confirm=confirm, min_alert=min_alert),
+                       ewma=ewma, threshold=threshold, threshold_kind=threshold_kind,
+                       sustain=sustain, confirm=confirm, min_alert=min_alert),
             scores=scores, limits=limits, crossings=crossings, flags=flags,
             alert=alert, n_active=n_active, episodes=episodes, events=events,
             false_positives=false_positives, stops=stops, metrics=metrics,

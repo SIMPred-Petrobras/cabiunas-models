@@ -165,12 +165,18 @@ class FamilyScorer:
         self.scaler = RobustScaler().fit(data)
         scaled = self.scaler.transform(data)
         self.model = self._build(scaled.shape[1])
-        if self.kind == "pca":
-            self.model.fit(scaled)
-        elif self.kind == "ae":
-            self.model.fit(scaled, scaled)
+        # Subamostra APENAS o ajuste, e apenas para os modelos que não escalam.
+        # Determinístico (linspace, não sorteio) para a busca ser reprodutível.
+        teto = self.MAX_FIT_SAMPLES.get(self.kind)
+        if teto and len(scaled) > teto:
+            passos = np.linspace(0, len(scaled) - 1, teto).astype(int)
+            treino = scaled[passos]
         else:
-            self.model.fit(scaled)
+            treino = scaled
+        if self.kind.startswith("ae"):
+            self.model.fit(treino, treino)       # autoencoder: alvo = entrada
+        else:
+            self.model.fit(treino)
         # Guarda o score do próprio baseline: o limiar é um QUANTIL desta
         # distribuição (após a mesma suavização aplicada ao teste), o que torna
         # a busca válida para qualquer modelo — inclusive os de score limitado,
@@ -178,30 +184,99 @@ class FamilyScorer:
         self.baseline_score = pd.Series(self._raw(scaled), index=data.index)
         return self
 
+    # Arquiteturas disponíveis. O critério de inclusão é escalar: o baseline vai
+    # de 9 mil a 460 mil amostras, e o ajuste é a etapa cara da busca (30 por
+    # chave de cache). Modelos com custo quadrático em amostras — OneClassSVM
+    # exato, LocalOutlierFactor, KernelPCA — ficaram FORA de propósito: com
+    # 100 mil pontos de treino e 1,4 M de teste eles não terminam.
+    #
+    #   pca        erro de reconstrução (estatística Q / SPE do monitoramento
+    #              de processo). Barato e é o que já vinha sendo usado.
+    #   pca_t2     T² de Hotelling nos escores latentes do PCA. Complementa o
+    #              anterior: Q vê o que sai do subespaço normal, T² vê o que
+    #              anda longe dentro dele. Par clássico em processo industrial.
+    #   mahal      Mahalanobis com covariância encolhida (Ledoit-Wolf). Barato,
+    #              e é a referência honesta contra a qual um autoencoder tem
+    #              que provar que vale a complexidade.
+    #   gmm        mistura de gaussianas, log-verossimilhança negativa. Pega
+    #              normal MULTIMODAL, que é o caso aqui: a máquina opera em mais
+    #              de um regime de carga.
+    #   iforest    isolamento por particionamento aleatório.
+    #   ocsvm_sgd  fronteira de uma classe, versão linear/SGD com aproximação de
+    #              kernel de Nyström — O(n), ao contrário do OneClassSVM exato.
+    #   ae         autoencoder denso, gargalo em n/4.
+    #   ae_deep    mais profundo e com gargalo mais apertado (n/6).
+    #   ae_wide    uma camada larga (2n) e gargalo em n/3.
+    ARQUITETURAS = ("pca", "pca_t2", "mahal", "gmm", "iforest", "ocsvm_sgd",
+                    "ae", "ae_deep", "ae_wide")
+
+    # Ajustar em subamostra quando o baseline é grande: para estes modelos o
+    # custo cresce mais que linear e o ganho de precisão satura muito antes.
+    # A subamostra é SEMPRE do baseline (nunca do teste), então não há vazamento.
+    MAX_FIT_SAMPLES = {"gmm": 60_000, "ocsvm_sgd": 60_000, "iforest": 120_000}
+
     def _build(self, n_features: int):
+        from sklearn.covariance import LedoitWolf
         from sklearn.decomposition import PCA
         from sklearn.ensemble import IsolationForest
+        from sklearn.linear_model import SGDOneClassSVM
+        from sklearn.kernel_approximation import Nystroem
+        from sklearn.mixture import GaussianMixture
         from sklearn.neural_network import MLPRegressor
-        if self.kind == "pca":
-            return PCA(n_components=0.95, svd_solver="full")
+        from sklearn.pipeline import make_pipeline
+
+        if self.kind in ("pca", "pca_t2"):
+            return PCA(n_components=0.95, svd_solver="full",
+                       random_state=self.seed)
+        if self.kind == "mahal":
+            return LedoitWolf(store_precision=True)
+        if self.kind == "gmm":
+            # 3 componentes: a carga tem mais de um patamar, mas com 12-14
+            # sensores e covariância cheia mais componentes ficam mal estimados.
+            return GaussianMixture(n_components=3, covariance_type="full",
+                                   reg_covar=1e-4, max_iter=100,
+                                   random_state=self.seed)
         if self.kind == "iforest":
             return IsolationForest(n_estimators=200, contamination="auto",
                                    random_state=self.seed, n_jobs=-1)
-        if self.kind == "ae":
-            hidden = (max(8, n_features // 2), max(4, n_features // 4),
-                      max(8, n_features // 2))
+        if self.kind == "ocsvm_sgd":
+            return make_pipeline(
+                Nystroem(gamma=1.0 / max(n_features, 1), n_components=100,
+                         random_state=self.seed),
+                SGDOneClassSVM(nu=0.05, random_state=self.seed))
+        if self.kind in ("ae", "ae_deep", "ae_wide"):
+            if self.kind == "ae":
+                hidden = (max(8, n_features // 2), max(4, n_features // 4),
+                          max(8, n_features // 2))
+            elif self.kind == "ae_deep":
+                hidden = (max(12, n_features), max(8, n_features // 2),
+                          max(3, n_features // 6), max(8, n_features // 2),
+                          max(12, n_features))
+            else:
+                hidden = (max(24, n_features * 2), max(5, n_features // 3),
+                          max(24, n_features * 2))
             return MLPRegressor(hidden_layer_sizes=hidden, activation="relu",
                                 early_stopping=True, n_iter_no_change=5,
                                 max_iter=60, random_state=self.seed)
         raise ValueError(f"modelo desconhecido: {self.kind}")
 
     def _raw(self, scaled: np.ndarray) -> np.ndarray:
+        """Score bruto, sempre no sentido "maior = mais anômalo"."""
         if self.kind == "pca":
             back = self.model.inverse_transform(self.model.transform(scaled))
             return np.mean((scaled - back) ** 2, axis=1)
-        if self.kind == "ae":
+        if self.kind == "pca_t2":
+            # T² de Hotelling: distância no subespaço latente, normalizada pela
+            # variância explicada de cada componente.
+            latente = self.model.transform(scaled)
+            return np.sum(latente ** 2 / self.model.explained_variance_, axis=1)
+        if self.kind == "mahal":
+            return self.model.mahalanobis(scaled)
+        if self.kind.startswith("ae"):
             return np.mean((self.model.predict(scaled) - scaled) ** 2, axis=1)
-        return -self.model.score_samples(scaled)   # maior = mais anômalo
+        if self.kind == "ocsvm_sgd":
+            return -self.model.decision_function(scaled)
+        return -self.model.score_samples(scaled)   # iforest, gmm
 
     def score(self, frame: pd.DataFrame) -> pd.Series:
         data = frame[self.columns]
@@ -458,32 +533,137 @@ def merge_events(trips: list[tuple[str, str]], gap: str = "24h") -> list[dict]:
 
 
 # ---------------------------------------------------------------- avaliação
+# Limite de SILÊNCIO do detector, em horas de OPERAÇÃO sem emitir nenhum alerta.
+# Calibrado em 19/08/2026: a cadência natural dos 132 episódios de alarme tem
+# mediana de 50 h e p90 de 138 h de operação, mas um detector preso ao teto de
+# 1 FP/mês só pode emitir ~12 alertas/ano, o que dá ~660 h de espaçamento médio.
+# O limite fica em ~3x isso: acima daí o detector não está calado por a máquina
+# estar saudável, está cego. O campeão da task 61b6b109 fica 3.186 h em silêncio.
+SILENCE_LIMIT_H = 2000.0
+# Corte que separa a série em duas metades para reportar detecção distribuída.
+# 5 dos 8 eventos ficam antes, 3 depois.
+EVAL_SPLIT = "2025-10-01"
+
+
+@dataclass(frozen=True)
+class BaselinePolicy:
+    """Como escolher o trecho de histórico que treina o modelo de cada mês.
+
+    Substitui o par ``{movel, acumulativo}``, que era um caso degenerado desta
+    política: móvel de N horas é ``window_hours=N``; acumulativo é tudo ``None``.
+
+    Os três limites são independentes e o mais restritivo vence:
+
+    ``window_hours``
+        horas de operação ELEGÍVEL (já descontadas parada, transiente de partida
+        e as exclusões de evento/alarme). É a unidade de exposição correta:
+        medido em 19/08/2026, um mês de calendário entrega de 133,8 h a 691,1 h
+        (5,17x), e a escassez é ENDÓGENA às falhas — corr(falhas nos 45 d
+        anteriores, horas elegíveis nos 30 d) = -0,61. Contar em meses encolhe o
+        baseline exatamente nos retreinos que vêm depois de um reparo.
+    ``window_days``
+        dias de CALENDÁRIO. Existe para reproduzir a parametrização em meses e
+        poder comparar as duas de frente, não porque seja preferível.
+    ``max_age_days``
+        teto de idade. Necessário porque uma janela em horas recua muito mais no
+        calendário do que se imagina: 400 h elegíveis exigem recuar de 16,8 a
+        64,0 dias dependendo do retreino (3,8x), e sazonalidade e reparo agem em
+        tempo de calendário, não em hora de máquina.
+    """
+
+    window_hours: float | None = None
+    window_days: float | None = None
+    max_age_days: float | None = None
+    # piso: abaixo disso o retreino é marcado inválido em vez de treinar com
+    # amostra insuficiente. 100 h de operação a 2 min = 3.000 amostras.
+    min_hours: float = 100.0
+
+    @property
+    def label(self) -> str:
+        if self.window_hours is None and self.window_days is None:
+            return "acum"
+        partes = []
+        if self.window_hours is not None:
+            partes.append(f"{self.window_hours:g}h")
+        if self.window_days is not None:
+            partes.append(f"{self.window_days:g}d")
+        if self.max_age_days is not None:
+            partes.append(f"idade{self.max_age_days:g}d")
+        return "+".join(partes)
+
+    @property
+    def modo_legado(self) -> str:
+        """Rótulo compatível com os resultados anteriores (notebook 02)."""
+        if self.window_hours is None and self.window_days is None:
+            return "acumulativo"
+        if self.window_hours is not None and self.window_days is None:
+            return "hibrido" if self.max_age_days is not None else "movel"
+        return "dias"
+
+    def select(self, elegiveis: pd.DatetimeIndex, start: pd.Timestamp,
+              step_s: float) -> tuple[pd.DatetimeIndex, dict]:
+        """Trecho de treino para o retreino de ``start``, e o diagnóstico dele.
+
+        Vetorizado: cada limite vira um índice por busca binária sobre o eixo
+        de tempo elegível, e o corte final é o máximo deles. Nenhum laço por
+        amostra — o eixo tem 1,4 M pontos na grade de 30 s.
+        """
+        marcas = elegiveis.values
+        fim = int(np.searchsorted(marcas, np.datetime64(start), side="right"))
+        inicio = 0
+        if self.window_hours is not None:
+            inicio = max(inicio, fim - int(self.window_hours * 3600 / step_s))
+        for dias in (self.window_days, self.max_age_days):
+            if dias is not None:
+                corte = np.datetime64(start - pd.Timedelta(days=float(dias)))
+                inicio = max(inicio, int(np.searchsorted(marcas, corte, side="left")))
+        inicio = max(inicio, 0)
+        escolhidos = elegiveis[inicio:fim]
+
+        horas = len(escolhidos) * step_s / 3600
+        pedido = self.window_hours
+        diag = {
+            "horas": horas,
+            "amostras": len(escolhidos),
+            "valido": horas >= self.min_hours,
+            # truncado = o histórico não deu para preencher a janela pedida.
+            # Importa muito: com 3.000 h, 6 dos 15 retreinos de 2025/26 ficam
+            # truncados e ali o braço "janela longa" vira acumulativo disfarçado.
+            "truncado": bool(pedido is not None and horas < pedido * 0.999),
+            "span_dias": ((escolhidos[-1] - escolhidos[0]).total_seconds() / 86400
+                          if len(escolhidos) > 1 else 0.0),
+        }
+        return escolhidos, diag
+
+
 @dataclass(frozen=True)
 class Trial:
     model: str
     grid: str
-    # HORAS de operação estável no baseline, não dias de calendário. Medido: com
-    # 28 dias fixos o baseline varia de 160 h a 672 h entre meses, porque a
-    # máquina para muito — e o limiar é um percentil desse baseline, então sua
-    # estabilidade variava junto. Com horas fixas, todo mês treina com o mesmo
-    # tamanho e os limiares mensais ficam comparáveis.
-    baseline_hours: int
-    # "movel" = só as últimas `baseline_hours` (esquece o passado remoto)
-    # "acumulativo" = tudo que já foi elegível desde o início da série
-    # CUIDADO deliberado: o acumulativo carrega regimes antigos para sempre, e esta
-    # máquina mudou depois da parada de 23 dias de abr/2025. Por isso o modo entra
-    # como dimensão de busca em vez de virar o padrão.
-    baseline_mode: str
+    # Política de baseline (ver BaselinePolicy). Substituiu o par
+    # (baseline_hours, baseline_mode): a busca de 31.104 configs varreu só 300 h
+    # e 400 h — 1,33x de amplitude — e pulou para o acumulativo (~8.000 h). A
+    # década inteira no meio ficou intocada, e é onde está o resultado: uma
+    # janela de 3.000 h dá 6/8 eventos com 0,94 FP/mês, contra 1,54 FP/mês do
+    # melhor 6/8 da grade antiga.
+    baseline: BaselinePolicy
     ewma: str
     # dias antes de cada evento conhecido removidos do baseline (0 = sem limpeza)
     exclude_days: int
     # horas em torno de CADA ativação de alarme removidas do baseline (0 = nenhuma).
     # Custo medido: ~5% do baseline com 1 h.
     exclude_alarm_h: float
-    # PERCENTIL do baseline suavizado (99 = p99). Um único valor aplica-se a
-    # todos os sinais; uma tupla define um limiar por sinal, na ordem de
-    # SIGNAL_ORDER — isso abre a fronteira, porque as famílias têm estabilidade
-    # muito diferente (a de temperatura desloca entre meses, a de pressão não).
+    # Limiar do baseline suavizado. Um único valor aplica-se a todos os sinais;
+    # uma tupla define um limiar por sinal, na ordem de SIGNAL_ORDER — isso abre
+    # a fronteira, porque as famílias têm estabilidade muito diferente.
+    # O SIGNIFICADO depende de threshold_kind:
+    #   "percentil"  -> 99.9 = p99,9 do baseline (parametrização histórica)
+    #   "k_maiores"  -> 30 = o 30º maior score do baseline
+    # Motivo de existir o segundo: medido em 19/08/2026, em janela curta os
+    # percentis de 99,9 a 99,995 são o MESMO limiar (o máximo fica só 1,79%
+    # acima do p99,9), então 4 dos 6 níveis da grade eram um só. Já "k-ésimo
+    # maior" mantém o orçamento de excedências fixo qualquer que seja a janela,
+    # o que torna políticas de tamanhos diferentes comparáveis.
     threshold: float | tuple[float, ...]
     sustain: str
     confirm: int          # nº de sinais simultâneos exigidos (1=atenção, 2=confirmado)
@@ -491,14 +671,17 @@ class Trial:
     # Sem isso, a detecção de 17/03/2025 durava 9 minutos — antecedência de 29 h
     # no papel, invisível em um plantão.
     min_alert: str = "0min"
+    # ver o comentário de `threshold`: "percentil" ou "k_maiores"
+    threshold_kind: str = "percentil"
 
     def label(self) -> str:
         thr = (self.threshold if isinstance(self.threshold, float)
                else "/".join(str(t) for t in self.threshold))
-        modo = "acum" if self.baseline_mode == "acumulativo" else f"{self.baseline_hours}h"
-        return (f"{self.model}|{self.grid}|b{modo}|excl{self.exclude_days}d"
-                f"|alm{self.exclude_alarm_h}h|ewma{self.ewma}|q{thr}"
-                f"|sust{self.sustain}|conf{self.confirm}|min{self.min_alert}")
+        sigla = "q" if self.threshold_kind == "percentil" else "k"
+        return (f"{self.model}|{self.grid}|b{self.baseline.label}"
+                f"|excl{self.exclude_days}d|alm{self.exclude_alarm_h}h"
+                f"|ewma{self.ewma}|{sigla}{thr}|sust{self.sustain}"
+                f"|conf{self.confirm}|min{self.min_alert}")
 
     def threshold_for(self, signal: str, order: list[str]) -> float:
         if isinstance(self.threshold, (int, float)):
@@ -532,7 +715,28 @@ class TrialResult:
     dias_avaliados: float = 0.0
     episodios_totais: int = 0
     baseline_amostras: int = 0    # tamanho médio do baseline (mede o custo da exclusão)
+    # --- diagnósticos de política de baseline (19/08/2026) ---
+    baseline_horas_medio: float = 0.0      # horas de operação elegível por retreino
+    baseline_span_dias_medio: float = 0.0  # quanto isso recua no CALENDÁRIO
+    retreinos_truncados: int = 0           # histórico não deu para encher a janela
+    retreinos_invalidos: int = 0           # abaixo de min_hours
+    # --- detecção distribuída no tempo ---
+    # Reportado por metade porque a média esconde o essencial: a config campeã da
+    # busca antiga detecta 5 dos 5 eventos da 1a metade e 0 dos 3 da 2a.
+    det_1a_metade: int = 0
+    det_2a_metade: int = 0
+    # --- liveness, medido na série de ALERTAS (não usa rótulo de evento) ---
+    # Este é o teste que pega o detector que emudece. Os 8 rótulos não servem:
+    # medido em 19/08/2026, dentro do teto de 1 FP/mês a máscara "detectou algo
+    # na 2a metade" é BIT-A-BIT idêntica a "detectou 26/02/2026" — zero das
+    # 11.395 configs aprovadas pegam 04/11/2025 ou 09/12/2025. Qualquer critério
+    # baseado nos eventos é, na prática, um teste de um único evento.
+    maior_silencio_h: float = 0.0          # horas de OPERAÇÃO sem nenhum alerta
+    trimestres_com_alerta: int = 0
+    trimestres_avaliados: int = 0
     aprovado: bool = False
+    # aprovado exige o teto de FP; vivo exige também não estar cego
+    vivo: bool = False
 
 
 class WalkForwardEvaluator:
@@ -550,6 +754,17 @@ class WalkForwardEvaluator:
                              if not alarmes.empty else [])
         self.alarm_eps = bundle.alarm_episodes()
         self._cache: dict[tuple, dict] = {}
+        self._diag: dict[tuple, list[dict]] = {}
+        self._diag_calc: dict[tuple, list[dict]] = {}
+        # Cache do pós-processamento. Medido em 19/08/2026: a etapa "barata"
+        # custava ~5,6 h da busca `full` contra ~1,2 h de TODOS os ajustes de
+        # modelo, porque `smooth()` era refeito 144x idêntico por par
+        # (chave, ewma) — os eixos threshold x sustain x confirm x min_alert só
+        # mudam o que vem DEPOIS da suavização. Guardar o teste suavizado e a
+        # cauda ordenada do baseline torna o eixo do limiar quase gratuito.
+        self._suave: dict[tuple, dict] = {}
+        self._suave_ordem: list[tuple] = []      # FIFO, para não estourar a RAM
+        self._stops_cache: dict[str, list] = {}
         uteis = sum(1 for e in self.alarm_eps if e["utilidade"])
         print(f"[alarmes] {len(self.alarm_eps)} episódios de alarme em operação "
               f"({uteis} só de utilidade/gás) servirão de avaliação secundária", flush=True)
@@ -582,19 +797,19 @@ class WalkForwardEvaluator:
         return keep
 
     # -------- etapa caro: score bruto por (modelo, grade, baseline) -----------
-    def raw_scores(self, model: str, grid: str, baseline_hours: int,
-                   exclude_days: int = 0, exclude_alarm_h: float = 0.0,
-                   baseline_mode: str = "movel") -> dict:
+    def raw_scores(self, model: str, grid: str, baseline: BaselinePolicy,
+                   exclude_days: int = 0, exclude_alarm_h: float = 0.0) -> dict:
         """Walk-forward: para cada mês, devolve o score do baseline e do teste.
 
         Guardar os dois permite que o limiar seja um quantil do baseline **já
         suavizado** com o mesmo EWMA do teste — sem essa correspondência, o
         limiar não controla o falso positivo de verdade.
 
-        O baseline é montado por **horas de operação estável elegível**, recuando
-        no calendário o quanto for preciso, e não por um número fixo de dias.
+        Qual trecho de histórico entra no treino é decidido por ``baseline``
+        (ver :class:`BaselinePolicy`). Esta é a etapa CARA: 15 retreinos x 2
+        famílias = 30 ajustes sklearn por chave de cache.
         """
-        key = (model, grid, baseline_hours, exclude_days, exclude_alarm_h, baseline_mode)
+        key = (model, grid, baseline, exclude_days, exclude_alarm_h)
         if key in self._cache:
             return self._cache[key]
         frame, oper = self.bundle.grid(grid)
@@ -602,7 +817,6 @@ class WalkForwardEvaluator:
         veto = self.bundle.frozen_veto(grid)      # sensor congelado não é anomalia
         veto_qualquer = veto.any(axis=1)          # para os sinais derivados
         step = frame.index.to_series().diff().dt.total_seconds().median() or 30.0
-        n_baseline = max(int(baseline_hours * 3600 / step), 1000)
         # elegibilidade do baseline calculada UMA vez para todo o período
         elegivel = stable & self._baseline_mask(frame.index, exclude_days, exclude_alarm_h)
         indices_elegiveis = elegivel[elegivel].index
@@ -611,20 +825,21 @@ class WalkForwardEvaluator:
             if getattr(self.bundle, "derived_signals", True) else ()
         names = list(self.bundle.families) + [n for n, _ in derivados]
         parts: dict[str, list[tuple[pd.Series, pd.Series]]] = {n: [] for n in names}
+        diagnosticos: list[dict] = []
 
         for month in self.months:
             start = pd.Timestamp(month + "-01")
             end = start + pd.offsets.MonthBegin(1)
-            anteriores = indices_elegiveis[indices_elegiveis <= start]
-            if len(anteriores) < 1000:
+            escolhidos, diag = baseline.select(indices_elegiveis, start, step)
+            diag["mes"] = month
+            if len(escolhidos) < 1000 or not diag["valido"]:
+                diagnosticos.append(diag)
                 continue
-            # móvel = só as últimas N horas; acumulativo = tudo desde o início
-            escolhidos = (anteriores if baseline_mode == "acumulativo"
-                          else anteriores[-n_baseline:])
             base_stable = frame.loc[escolhidos]
             test = frame.loc[start:end - pd.Timedelta(seconds=1)]
             if test.empty:
                 continue
+            diagnosticos.append(diag)
             estavel_teste = stable.reindex(test.index, fill_value=False)
 
             for name, columns in self.bundle.families.items():
@@ -654,6 +869,7 @@ class WalkForwardEvaluator:
                     ((derivado(test) - centro) / escala).abs().where(mask)))
 
         self._cache[key] = parts
+        self._diag[key] = diagnosticos
         return parts
 
     @staticmethod
@@ -669,27 +885,121 @@ class WalkForwardEvaluator:
         return frame[SEAL_TARGET]
 
     # -------- etapa barata: limiar/persistência/confirmação -----------------
+    def diagnostico_baseline(self, grid: str, baseline: BaselinePolicy,
+                            exclude_days: int, exclude_alarm_h: float) -> list[dict]:
+        """Tamanho e alcance do baseline por retreino, SEM ajustar modelo.
+
+        Existe separado de ``raw_scores`` porque é barato (só busca binária) e
+        porque o replay injeta ``parts`` de cache em disco, caminho em que
+        ``raw_scores`` não roda e o diagnóstico ficaria vazio.
+        """
+        chave = (grid, baseline, exclude_days, exclude_alarm_h)
+        if chave in self._diag_calc:
+            return self._diag_calc[chave]
+        frame, oper = self.bundle.grid(grid)
+        step = frame.index.to_series().diff().dt.total_seconds().median() or 30.0
+        elegivel = oper["stable"] & self._baseline_mask(frame.index, exclude_days,
+                                                        exclude_alarm_h)
+        indices = elegivel[elegivel].index
+        saida = []
+        for month in self.months:
+            _, diag = baseline.select(indices, pd.Timestamp(month + "-01"), step)
+            diag["mes"] = month
+            saida.append(diag)
+        self._diag_calc[chave] = saida
+        return saida
+
+    def _suavizado(self, chave_fit: tuple, parts: dict, ewma: str) -> dict:
+        """Baseline e teste já suavizados, por sinal e por retreino.
+
+        Do baseline guarda-se só a CAUDA ordenada (decrescente) e a contagem de
+        pontos válidos, o que basta para qualquer percentil >= 98,8 ou qualquer
+        k-ésimo maior até 8.192 — e custa uma fração da memória do vetor todo.
+        """
+        chave = (*chave_fit, ewma)
+        if chave in self._suave:
+            return self._suave[chave]
+        halflife = pd.Timedelta(ewma)
+
+        def suaviza(serie: pd.Series) -> pd.Series:
+            return serie.ewm(halflife=halflife, times=serie.index).mean()
+
+        pronto: dict[str, list] = {}
+        for name, meses in parts.items():
+            if not meses:
+                continue
+            por_mes = []
+            for baseline, test in meses:
+                valores = suaviza(baseline).to_numpy(dtype=float)
+                valores = valores[np.isfinite(valores)]
+                n = int(valores.size)
+                if n == 0:
+                    continue
+                # cauda suficiente para p>=98,8 e para k<=8.192
+                m = min(n, max(8192, int(n * 0.012) + 16))
+                cauda = np.sort(np.partition(valores, n - m)[n - m:])[::-1]
+                por_mes.append((cauda, n, suaviza(test)))
+            if por_mes:
+                pronto[name] = por_mes
+
+        self._suave[chave] = pronto
+        self._suave_ordem.append(chave)
+        while len(self._suave_ordem) > 4:            # 4 chaves cabem em RAM
+            self._suave.pop(self._suave_ordem.pop(0), None)
+        return pronto
+
+    @staticmethod
+    def _limite(cauda: np.ndarray, n: int, valor: float, kind: str) -> float:
+        """Limiar a partir da cauda ordenada decrescente do baseline.
+
+        ``percentil`` reproduz ``np.nanpercentile(..., interpolation="linear")``
+        exatamente; ``k_maiores`` devolve o k-ésimo maior score, que mantém o
+        orçamento de excedências fixo qualquer que seja o tamanho da janela.
+        """
+        if kind == "k_maiores":
+            k = max(int(valor), 1)
+            return float(cauda[min(k, cauda.size) - 1])
+        # Posição virtual do percentil no vetor ASCENDENTE de n pontos. A ordem
+        # das operações importa: o numpy faz (p/100)*(n-1), e (n-1)*p/100 dá
+        # outro float na última casa — o que já basta para o limiar mudar e os
+        # resultados anteriores não reproduzirem.
+        h = (float(valor) / 100.0) * (n - 1)
+        baixo = int(np.floor(h))
+        frac = h - baixo
+        # índice equivalente na cauda decrescente: asc[i] == cauda[n-1-i]
+        j = n - 1 - baixo
+        if j >= cauda.size:                     # fora da cauda guardada
+            return float(cauda[-1])
+        inferior = float(cauda[j])
+        if frac == 0.0 or j == 0:
+            return inferior
+        superior = float(cauda[j - 1])
+        # A forma da interpolação segue o `_lerp` do numpy, que troca de
+        # expressão em frac=0,5. Não é preciosismo: sem isso o limiar difere na
+        # 12a casa e os resultados das buscas anteriores deixam de reproduzir
+        # bit a bit.
+        if frac >= 0.5:
+            return superior - (superior - inferior) * (1.0 - frac)
+        return inferior + (superior - inferior) * frac
+
     def evaluate(self, trial: Trial) -> TrialResult:
-        parts = self.raw_scores(trial.model, trial.grid, trial.baseline_hours,
-                                trial.exclude_days, trial.exclude_alarm_h,
-                                trial.baseline_mode)
+        chave_fit = (trial.model, trial.grid, trial.baseline,
+                     trial.exclude_days, trial.exclude_alarm_h)
+        parts = self.raw_scores(trial.model, trial.grid, trial.baseline,
+                                trial.exclude_days, trial.exclude_alarm_h)
+        suave = self._suavizado(chave_fit, parts, trial.ewma)
         frame, oper = self.bundle.grid(trial.grid)
         step = frame.index.to_series().diff().dt.total_seconds().median() or 30.0
         n_sustain = max(int(pd.Timedelta(trial.sustain).total_seconds() / step), 1)
-        halflife = pd.Timedelta(trial.ewma)
 
-        def smooth(series: pd.Series) -> pd.Series:
-            return series.ewm(halflife=halflife, times=series.index).mean()
-
-        order = [n for n, months in parts.items() if months]
+        order = list(suave)
         active = []
         for name in order:
-            pct = trial.threshold_for(name, order)
+            alvo = trial.threshold_for(name, order)
             flags = []
-            for baseline, test in parts[name]:
-                # limiar = quantil do baseline suavizado (mesmo EWMA do teste)
-                limit = float(np.nanpercentile(smooth(baseline).to_numpy(), pct))
-                hits = (smooth(test) > limit).astype(int)
+            for cauda, n_base, teste in suave[name]:
+                limit = self._limite(cauda, n_base, alvo, trial.threshold_kind)
+                hits = (teste > limit).astype(int)
                 flags.append(hits.rolling(n_sustain, min_periods=n_sustain).sum() >= n_sustain)
             active.append(pd.concat(flags).sort_index())
 
@@ -704,7 +1014,9 @@ class WalkForwardEvaluator:
             alert = alert.fillna(False)
 
         episodes = self._episodes(alert)
-        stops = self._stops(oper)
+        if trial.grid not in self._stops_cache:   # só depende da grade
+            self._stops_cache[trial.grid] = self._stops(oper)
+        stops = self._stops_cache[trial.grid]
         detected, leads, matched = {}, {}, set()
         for event in self.events:
             window_start = event["inicio"] - pd.Timedelta(DETECTION_WINDOW)
@@ -754,8 +1066,44 @@ class WalkForwardEvaluator:
             if inicio in falsos:
                 horas_fp += (fim - inicio).total_seconds() / 3600
         fp_horas_mes = horas_fp / max(days, 1) * 30
+
+        # --- liveness: o detector continua vivo ao longo da série? ---
+        # Medido no relógio de OPERAÇÃO, porque silêncio com a máquina parada não
+        # é cegueira. Inclui as bordas: ficar mudo desde o início ou até o fim
+        # conta igual a um vazio no meio.
+        operando = oper["in_operation"].reindex(alert.index, fill_value=False)
+        relogio = operando.cumsum().to_numpy(dtype=float) * step / 3600
+        if len(relogio):
+            marcas = [float(relogio[alert.index.get_indexer([ep])[0]]) for ep in episodes]
+            bordas = [0.0, *marcas, float(relogio[-1])]
+            maior_silencio = float(np.max(np.diff(bordas))) if len(bordas) > 1 else 0.0
+        else:
+            maior_silencio = 0.0
+
+        trimestres = pd.PeriodIndex(alert.index[operando.to_numpy()], freq="Q").unique()
+        com_alerta = pd.PeriodIndex(pd.DatetimeIndex(episodes), freq="Q").unique() \
+            if episodes else pd.PeriodIndex([], freq="Q")
+
+        # --- detecção por metade da série ---
+        corte = pd.Timestamp(EVAL_SPLIT)
+        det_1a = sum(1 for k in leads if pd.Timestamp(k) < corte)
+        det_2a = sum(1 for k in leads if pd.Timestamp(k) >= corte)
+
+        # --- diagnóstico da política de baseline ---
+        diags = self._diag.get(chave_fit) or self.diagnostico_baseline(
+            trial.grid, trial.baseline, trial.exclude_days, trial.exclude_alarm_h)
+        horas_medio = float(np.mean([d["horas"] for d in diags])) if diags else 0.0
+        span_medio = float(np.mean([d["span_dias"] for d in diags])) if diags else 0.0
+
+        # Colunas derivadas para o notebook 02 continuar lendo a grade nova com o
+        # mesmo código que lê a antiga.
+        trial_dict = asdict(trial)
+        trial_dict["baseline_label"] = trial.baseline.label
+        trial_dict["baseline_hours"] = trial.baseline.window_hours
+        trial_dict["baseline_mode"] = trial.baseline.modo_legado
+
         result = TrialResult(
-            trial=asdict(trial), eventos_detectados=int(len(leads)),
+            trial=trial_dict, eventos_detectados=int(len(leads)),
             eventos_total=int(len(self.events)),
             lead_medio_h=round(float(np.mean(list(leads.values()))), 1) if leads else None,
             leads={k: float(v) for k, v in leads.items()},
@@ -769,8 +1117,22 @@ class WalkForwardEvaluator:
             dias_avaliados=float(round(days, 1)), episodios_totais=int(len(episodes)),
             baseline_amostras=int(np.mean([len(b) for b, _ in next(iter(parts.values()))]))
             if parts and next(iter(parts.values())) else 0,
+            baseline_horas_medio=round(horas_medio, 1),
+            baseline_span_dias_medio=round(span_medio, 1),
+            retreinos_truncados=int(sum(1 for d in diags if d["truncado"])),
+            retreinos_invalidos=int(sum(1 for d in diags if not d["valido"])),
+            det_1a_metade=int(det_1a), det_2a_metade=int(det_2a),
+            maior_silencio_h=round(maior_silencio, 1),
+            trimestres_com_alerta=int(len(com_alerta)),
+            trimestres_avaliados=int(len(trimestres)),
         )
         result.aprovado = bool(result.fp_por_mes <= self.max_fp_per_month)
+        # "vivo" separa o detector calado do detector cego. Não substitui o teto
+        # de FP, soma a ele: uma config pode ter FP baixíssimo justamente por
+        # nunca alarmar, e era isso que a busca antiga premiava.
+        result.vivo = bool(result.maior_silencio_h <= SILENCE_LIMIT_H
+                           and result.trimestres_com_alerta >= max(
+                               result.trimestres_avaliados - 1, 1))
         return result
 
     @staticmethod
@@ -815,62 +1177,150 @@ class WalkForwardEvaluator:
 # `thresholds` são PERCENTIS do baseline suavizado. p99 deixa ~1% do tempo de
 # baseline acima do limiar; p99,97 deixa ~0,03% — é aí que mora o regime de
 # baixo falso positivo que o projeto exige.
+# Políticas de baseline da varredura. Escala aproximadamente logarítmica em
+# horas (razão ~1,5), mais os equivalentes em dias de calendário para comparar
+# de frente com a parametrização em meses, mais os híbridos.
+# O acumulativo NÃO entra: medido em 19/08/2026, uma janela de 6.000 h reproduz
+# o acumulativo dígito por dígito (5/8, lead 17,9 h, FP 0,77/mês, 21,2 h/mês) —
+# ele é o nível superior da varredura, não um braço separado.
+POLICIES_HORAS = [
+    BaselinePolicy(window_hours=h) for h in (400, 600, 900, 1400, 2000, 3000, 4000)
+]
+POLICIES_DIAS = [BaselinePolicy(window_days=d) for d in (30, 60, 90)]
+# Os pares NÃO são produto cartesiano: medido em 21/08/2026, 90 dias de
+# calendário rendem ~1.500 h de operação elegível nesta série, então
+# (3000 h, 90 d) deixa a restrição em horas inerte — o teto de idade decide
+# sozinho e o braço vira um "90 dias" disfarçado (truncado em 15/15 retreinos).
+# Cada par abaixo tem as duas restrições plausivelmente ativas.
+POLICIES_HIBRIDAS = [
+    BaselinePolicy(window_hours=900, max_age_days=45),
+    BaselinePolicy(window_hours=1400, max_age_days=90),
+    BaselinePolicy(window_hours=2000, max_age_days=120),
+    BaselinePolicy(window_hours=3000, max_age_days=180),
+]
+POLICY_CONTROLE = BaselinePolicy()          # acumulativo, braço de controle
+
 MODES = {
-    "quick": dict(models=["pca"], grids=["2min"], baseline_hours=[300],
-                  baseline_mode=["movel", "acumulativo"], ewma=["1h"],
+    "quick": dict(models=["pca"], grids=["2min"], policies=[BaselinePolicy(window_hours=300), POLICY_CONTROLE], ewma=["1h"],
                   thresholds=[99.0, 99.9], sustain=["30min"], confirm=[1, 2],
                   exclude_days=[0, 7], exclude_alarm_h=[0.0], min_alert=["0min"]),
-    "balanced": dict(models=["pca", "iforest"], grids=["2min"], baseline_hours=[300, 400],
-                     baseline_mode=["movel", "acumulativo"],
+    "balanced": dict(models=["pca", "iforest"], grids=["2min"], policies=[BaselinePolicy(window_hours=300), BaselinePolicy(window_hours=400),
+                                POLICY_CONTROLE],
                      ewma=["30min", "1h"], thresholds=[99.0, 99.5, 99.9, 99.97],
                      sustain=["30min", "1h"], confirm=[2, 3], exclude_days=[0, 7],
                      exclude_alarm_h=[0.0, 1.0], min_alert=["0min", "1h"]),
     # Região de baixo falso positivo: limiar e persistência agressivos, exigindo
     # 2 ou 3 sinais simultâneos. É onde o teto de 1 episódio/mês é alcançável.
-    "fp_first": dict(models=["pca", "iforest"], grids=["2min"], baseline_hours=[300, 400],
-                     baseline_mode=["movel", "acumulativo"],
+    "fp_first": dict(models=["pca", "iforest"], grids=["2min"], policies=[BaselinePolicy(window_hours=300), BaselinePolicy(window_hours=400),
+                                POLICY_CONTROLE],
                      ewma=["1h", "2h"], thresholds=[99.9, 99.97, 99.99, 99.995],
                      sustain=["1h", "2h", "4h"], confirm=[2, 3], exclude_days=[0, 7],
                      exclude_alarm_h=[0.0, 1.0], min_alert=["30min", "1h"]),
     "full": dict(models=["pca", "iforest", "ae"], grids=["30s", "2min"],
-                 baseline_hours=[300, 400], baseline_mode=["movel", "acumulativo"], ewma=["30min", "1h", "2h"],
+                 policies=[BaselinePolicy(window_hours=300), BaselinePolicy(window_hours=400),
+                           POLICY_CONTROLE], ewma=["30min", "1h", "2h"],
                  thresholds=[99.0, 99.5, 99.9, 99.97, 99.99, 99.995],
                  sustain=["30min", "1h", "2h", "4h"], confirm=[2, 3, 4],
                  exclude_days=[0, 7], exclude_alarm_h=[0.0, 1.0],
                  min_alert=["0min", "30min"]),
+    # ESTÁGIO 1 — varredura de POLÍTICA de baseline. Fatores baratos fixos em
+    # poucos centros: o objetivo é ordenar as políticas, não achar o ponto final.
+    # Grade de 2 min só: o ajuste do autoencoder em 30 s com janela de 4.000 h
+    # custa 61 s (contra 4,6 s em 2 min), o que sozinho inviabilizaria a
+    # varredura. A grade de 30 s volta no estágio 2, em torno da vencedora.
+    # IsolationForest fica fora: nunca passa de 2/8 e cai a 1/8 exigindo lead
+    # >= 12 h (30 configs de 31.104).
+    "policy_sweep": dict(
+        models=["pca", "ae"], grids=["2min"],
+        policies=POLICIES_HORAS + POLICIES_DIAS + POLICIES_HIBRIDAS + [POLICY_CONTROLE],
+        ewma=["30min", "1h", "2h"],
+        thresholds=[99.5, 99.9, 99.97], threshold_kinds=["percentil", "k_maiores"],
+        thresholds_k=[10, 30, 100],
+        sustain=["30min", "2h"], confirm=[2, 3],
+        exclude_days=[0, 7], exclude_alarm_h=[1.0], min_alert=["0min"]),
+    # ESTÁGIO 1b — varredura de ARQUITETURA. Cruza as 9 arquiteturas com três
+    # políticas de baseline, e não com uma só: a arquitetura vencedora depende do
+    # tamanho da janela (medido: com a janela do notebook 06 o PCA faz 5/8 e o
+    # autoencoder 6/8; em 3.000 h a ordem se inverte). Cravar uma política aqui
+    # escolheria a arquitetura sob uma condição arbitrária.
+    # As 6 arquiteturas novas custam pouco — Mahalanobis ajusta em 0,06 s contra
+    # 2,1 s do autoencoder —, então o custo continua dominado pelos 3 AE.
+    "arch_sweep": dict(
+        models=list(FamilyScorer.ARQUITETURAS), grids=["2min"],
+        policies=[BaselinePolicy(window_hours=1400),
+                  BaselinePolicy(window_hours=3000), POLICY_CONTROLE],
+        ewma=["30min", "1h", "2h"],
+        thresholds=[99.5, 99.9, 99.97], threshold_kinds=["percentil", "k_maiores"],
+        thresholds_k=[10, 30, 100],
+        sustain=["30min", "2h"], confirm=[2, 3],
+        exclude_days=[0, 7], exclude_alarm_h=[1.0], min_alert=["0min"]),
+    # ESTÁGIO 2 — refino em torno das políticas vencedoras do estágio 1. As
+    # políticas são passadas por --policy-hours; o default é o preview medido.
+    "policy_fine": dict(
+        models=["pca", "mahal", "ae"], grids=["30s", "2min"],
+        policies=[BaselinePolicy(window_hours=2000), BaselinePolicy(window_hours=3000),
+                  BaselinePolicy(window_hours=3000, max_age_days=90)],
+        ewma=["30min", "1h", "2h"],
+        thresholds=[99.0, 99.5, 99.9, 99.97, 99.99, 99.995],
+        sustain=["30min", "1h", "2h", "4h"], confirm=[2, 3, 4],
+        exclude_days=[0, 7], exclude_alarm_h=[0.0, 1.0],
+        min_alert=["0min", "30min"]),
 }
 
 
 def build_trials(mode: str, per_family: bool = False, n_signals: int = 4,
                  single_model: bool = False) -> list[Trial]:
+    """Produto cartesiano do modo, ordenado para aproveitar cache.
+
+    A ordem das chaves não é estética: os fatores CAROS (modelo, grade,
+    política, exclusões) vêm primeiro e o ewma depois, para que os trials que
+    compartilham o mesmo ajuste de modelo e a mesma suavização apareçam
+    juntos — o cache de suavização guarda só 4 chaves e depende dessa
+    localidade. Medido: cada ajuste é reaproveitado por centenas de trials.
+    """
     space = dict(MODES[mode])
     if single_model:
         space["confirm"] = [1]          # com um sinal só, não existe confirmação
-    thresholds: list = list(space["thresholds"])
-    if per_family:
-        # combinações independentes por sinal (produto cartesiano dos percentis)
-        thresholds = [tuple(c) for c in itertools.product(thresholds, repeat=n_signals)]
-    keys = ["models", "grids", "baseline_hours", "baseline_mode", "ewma", "sustain",
-            "confirm", "exclude_days", "exclude_alarm_h", "min_alert"]
-    combos = itertools.product(*(space[k] for k in keys), thresholds)
-    trials = [Trial(model=mo, grid=gr, baseline_hours=bh, baseline_mode=bm, ewma=ew,
-                    sustain=su, confirm=cf, exclude_days=ex, exclude_alarm_h=ea,
-                    min_alert=ma, threshold=th)
-              for mo, gr, bh, bm, ew, su, cf, ex, ea, ma, th in combos]
-    # no acumulativo o tamanho da janela não existe: evita duplicar a mesma busca
-    return [t for t in trials
-            if t.baseline_mode == "movel" or t.baseline_hours == min(space["baseline_hours"])]
+
+    # (tipo de limiar, valor) — os dois eixos são alternativos, não cruzados
+    limiares: list[tuple[str, float | tuple[float, ...]]] = []
+    for kind in space.get("threshold_kinds", ["percentil"]):
+        niveis = space["thresholds"] if kind == "percentil" else space.get("thresholds_k", [])
+        for nivel in niveis:
+            if per_family:
+                limiares += [(kind, tuple(c))
+                             for c in itertools.product(niveis, repeat=n_signals)]
+                break
+            limiares.append((kind, float(nivel)))
+
+    keys = ["models", "grids", "policies", "exclude_days", "exclude_alarm_h",
+            "ewma", "sustain", "confirm", "min_alert"]
+    combos = itertools.product(*(space[k] for k in keys), limiares)
+    return [Trial(model=mo, grid=gr, baseline=po, exclude_days=ex,
+                  exclude_alarm_h=ea, ewma=ew, sustain=su, confirm=cf,
+                  min_alert=ma, threshold=thr, threshold_kind=kind)
+            for mo, gr, po, ex, ea, ew, su, cf, ma, (kind, thr) in combos]
 
 
 def select_best(results: list[TrialResult]) -> TrialResult | None:
-    """Maximiza detecção, depois lead, entre os que respeitam o teto de FP."""
-    approved = [r for r in results if r.aprovado]
-    pool = approved or results
-    return max(pool, key=lambda r: (r.eventos_detectados, r.lead_medio_h or 0.0,
-                                    -r.fp_por_mes))
+    """Maximiza detecção sujeito ao teto de FP **e** ao teste de liveness.
+
+    O ``vivo`` é o que mudou em 19/08/2026. Sem ele, a busca premiava o detector
+    que emudece: o campeão anterior detectava os 5 eventos da 1a metade da série
+    e ficava 3.186 h de operação sem emitir nada — trecho que contém as 3 falhas
+    restantes. Com FP baixo, porque quem não alarma não erra.
+
+    Desempate deliberado por ``det_2a_metade`` antes do lead: entre duas configs
+    com a mesma detecção total, a que distribui no tempo é a defensável.
+    """
+    elegiveis = [r for r in results if r.aprovado and r.vivo]
+    if not elegiveis:                       # sem ninguém vivo, relaxa o liveness
+        elegiveis = [r for r in results if r.aprovado]
+    pool = elegiveis or results
+    return max(pool, key=lambda r: (r.eventos_detectados, r.det_2a_metade,
+                                    r.lead_medio_h or 0.0, -r.fp_por_mes))
 
 
-# ---------------------------------------------------------------------- main
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -881,6 +1331,11 @@ def main() -> None:
     parser.add_argument("--max-fp-per-month", type=float, default=1.0)
     parser.add_argument("--with-vibration", action="store_true",
                         help="tira a vibração da quarentena (não recomendado)")
+    parser.add_argument("--policy-hours", type=float, nargs="*", default=None,
+                        help="sobrescreve as políticas do modo por janelas em "
+                             "horas de operação elegível (ex.: --policy-hours 2000 3000)")
+    parser.add_argument("--policy-max-age-days", type=float, default=None,
+                        help="teto de idade aplicado às janelas de --policy-hours")
     parser.add_argument("--single-model", action="store_true",
                         help="variante de controle: UM multivariado sobre todos os "
                              "sensores, um único score, sem os sinais derivados "
@@ -921,6 +1376,10 @@ def main() -> None:
 
     n_signals = 1 if args.single_model else \
         len(FAMILIES) + (1 if args.with_vibration else 0) + 2   # + spread + selagem
+    if args.policy_hours:
+        MODES[args.mode]["policies"] = [
+            BaselinePolicy(window_hours=h, max_age_days=args.policy_max_age_days)
+            for h in args.policy_hours]
     trials = build_trials(args.mode, args.per_family_thresholds, n_signals,
                           args.single_model)
     if args.limit:
