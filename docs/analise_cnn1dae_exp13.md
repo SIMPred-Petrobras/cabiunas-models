@@ -73,31 +73,32 @@ Mesma base de 40 alarmes, mesmo split OOS (`2025-07-01`), mesmo grupo de
 |---|---|---|
 | AutoML EXP7 item1+2 (multiescala+textura, sem gates) | 92,5\% (37/40) | 1,94\% |
 | AutoML EXP10c (+ 3 gates de pós-processamento) | 92,5\% (37/40) | **0,35\%** |
-| **CNN1D-AE EXP13 (multiescala+textura + gates portados)** | **87,5\% (35/40)** | **1,21\%** |
+| CNN1D-AE EXP13 v1 (`THRESH_STD_K=4`, `POINT_WINDOW=4`) | 87,5\% (35/40) | 1,21\% |
+| **CNN1D-AE EXP13 v2, recalibrado (`THRESH_STD_K=3`, `POINT_WINDOW=2`)** | **90,0\% (36/40)** | **0,94\%** |
 
 **Configuração final validada** (`configs/calibracao_v4_eq/test_grupo_exp13_AE_novo_dataset_gates.json`):
 `TIME_STEPS=60`, `STRIDE=15` (ver rodada 4 -- necessário por limite de
 memória, não por escolha de resolução), `THRESH_MODE=robust_mad`,
-`THRESH_STD_K=4.0`, `POINT_WINDOW=4`/`POINT_MIN_COUNT=1` (escalados por
-`/15` em relação aos valores originais de `STRIDE=1`, pra preservar a
-mesma janela de ~30min em tempo real), `OOS_SPLIT_DATE=2025-07-01`,
-máscara operacional + portão de rampa + portão de volatilidade todos
-ativos com os mesmos valores calibrados no AutoML.
+`THRESH_STD_K=3.0`, `POINT_WINDOW=2`/`POINT_MIN_COUNT=1`,
+`OOS_SPLIT_DATE=2025-07-01`, máscara operacional + portão de rampa +
+portão de volatilidade todos ativos com os mesmos valores calibrados no
+AutoML.
 
 ## Leitura do resultado
 
-O CNN1D-AE chega a 5pp do hit_rate do AutoML com a mesma engenharia de
+O CNN1D-AE chega a 2,5pp do hit_rate do AutoML com a mesma engenharia de
 features e os mesmos gates de pós-processamento -- **não é o mesmo
 modelo vencendo por arquitetura**, é uma arquitetura diferente
 (autoencoder sequencial/janelado, reconstrução multicanal) reproduzindo
 quase o mesmo resultado que um conjunto de modelos ponto-a-ponto
 (dense/ocsvm/iforest) otimizados diretamente para essa métrica. O FP de
-1,21\% fica entre o AutoML sem gates (1,94\%) e com gates calibrados
-(0,35\%) -- os gates claramente ajudam (ver `load_gate_points_blocked=35.147`,
-uma fração grande da série sendo suprimida por manobra de carga), mas
-ainda não foram *recalibrados* especificamente para o CNN1D-AE -- os
-valores de `LOAD_GATE_RAMP_MAX`/`VOLATILITY_GATE_THRESHOLD` foram
-herdados diretamente do AutoML.
+0,94\% já fica **abaixo** do AutoML sem gates (1,94\%), ainda acima do
+AutoML com gates calibrados (0,35\%) -- os gates claramente ajudam (ver
+`load_gate_points_blocked=35.147`, uma fração grande da série sendo
+suprimida por manobra de carga), mas ainda não foram *recalibrados*
+especificamente para o CNN1D-AE -- os valores de
+`LOAD_GATE_RAMP_MAX`/`VOLATILITY_GATE_THRESHOLD` continuam herdados
+diretamente do AutoML (possível próxima etapa de ganho).
 
 ## Recalibração fina (simulação offline)
 
@@ -123,17 +124,17 @@ ancorada no valor real conhecido (`threshold=0,159566` em `k=4,0`).
 AutoML** --, com FP ainda em ~1,2--1,6%. `POINT_WINDOW=2`/
 `POINT_MIN_COUNT=1` superou `4`/`1` em toda a grade testada.
 
-**Ação:** `THRESH_STD_K` reduzido de `4,0` para `3,0` (redução
-proporcional e moderada -- a tradução exata de threshold-simulado para
-`k` real não é confiável sem conhecer a mediana/MAD reais de treino) e
-`POINT_WINDOW` de `4` para `2`. Resultado dessa configuração ainda
-**pendente de confirmação remota** -- a simulação offline usa uma
-aproximação do conjunto de treino, não é garantia do número final.
+**Ação e confirmação remota:** `THRESH_STD_K` reduzido de `4,0` para
+`3,0` e `POINT_WINDOW` de `4` para `2` (task
+`2db0722a20694cdfb47d77e1b07242a6`, commit `b32c5bf`). **Confirmado**:
+hit_rate subiu de 87,5\% para 90,0\% (36/40) **e** FP caiu de 1,21\% para
+0,94\% ao mesmo tempo -- não foi uma troca, os dois eixos melhoraram
+juntos, sinal de que `k=4,0` estava mesmo conservador demais em relação
+ao ponto ótimo. `threshold` final: `0,151967` (bem próximo da faixa
+prevista pela simulação offline, `0,125--0,15`).
 
 ## Pendências / próximos passos
 
-- Confirmar o resultado da recalibração (`THRESH_STD_K=3,0`,
-  `POINT_WINDOW=2`) com uma rodada remota real.
 - Os gates (`LOAD_GATE_RAMP_MAX`, `VOLATILITY_GATE_THRESHOLD`) foram
   herdados do AutoML sem recalibração específica para a arquitetura
   sequencial -- podem não estar no ponto ótimo para o CNN1D-AE.
@@ -153,4 +154,5 @@ aproximação do conjunto de treino, não é garantia do número final.
 4. `9a7ad8b3e099490395e488fe0d513bd0` -- + float32/stride/STRIDE=15, OOM (na inferência)
 5. `61572f45aa3e42febfa79dd4a27a69f0` -- + del parcial, OOM (mesmo ponto)
 6. `f4d092bf69b445e891ed058cbc4f8f2b` -- + varredura completa de del/gc, completou mas 0%/0%
-7. `7fba01f514674418adba71e3149b5e64` -- + fix stride na máscara operacional + robust_mad, **resultado final: 87,5%/1,21%**
+7. `7fba01f514674418adba71e3149b5e64` -- + fix stride na máscara operacional + robust_mad, hit_rate 87,5%/FP 1,21%
+8. `2db0722a20694cdfb47d77e1b07242a6` -- + recalibração (`THRESH_STD_K=3,0`, `POINT_WINDOW=2`), guiada por simulação offline, **resultado final: hit_rate 90,0% (36/40) / FP 0,94%**
