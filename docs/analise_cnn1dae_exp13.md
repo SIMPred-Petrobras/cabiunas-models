@@ -222,13 +222,34 @@ vencedora pode variar entre execuções) -- **não** só o efeito líquido de
 cada recalibração isolada. A média do seed-sweep (86,9%/0,60%) é uma
 leitura mais honesta do candidato do que qualquer rodada isolada.
 
+## Seed global fixada antes do tuner
+
+Aplicado: `keras.utils.set_random_seed(cfg.RANDOM_SEED)` +
+`kt.RandomSearch(..., seed=cfg.RANDOM_SEED)` no início de `run_tuner`
+(`tuning.py`), e reseed de novo logo antes do `refit_best_model` (que
+continua o treino do `best_model` já retornado pela busca -- sem
+reseed, o `.fit()` final reembaralha o dataset consumindo o estado
+aleatório residual deixado pelo número variável de operações da busca,
+que difere entre execuções mesmo com a mesma seed no início).
+
+**Confirmado por smoke test dedicado** (2 execuções completas do mesmo
+pipeline sintético, mesma seed): `best_hp` (arquitetura vencedora do
+tuner) sai **idêntico** entre as duas execuções -- eliminada a maior
+fonte de variância (a "loteria de arquitetura"). O `threshold` final
+ainda varia um pouco (~0,3\% de diferença relativa, contra ~0,65\% antes
+do segundo reseed) -- resíduo de não-determinismo do TensorFlow em
+operações paralelas (Conv1D em CPU), que só fecharia de vez com
+`tf.config.experimental.enable_op_determinism()` (mais invasivo, pode
+custar desempenho de treino; não aplicado aqui). Resultado pendente de
+confirmação com um novo seed-sweep remoto -- espera-se um `hit_rate_std`
+bem menor que os ±3,25pp observados antes deste fix.
+
 ## Pendências / próximos passos
 
-- Considerar fixar a semente global (`keras.utils.set_random_seed`)
-  antes da própria busca do `KerasTuner`, não só no seed-sweep -- hoje a
-  arquitetura vencedora em si pode variar entre execuções, o que é uma
-  fonte de variância maior que a do seed-sweep (que só varia a
-  inicialização *depois* de `best_hp` já fixado).
+- Confirmar remotamente que o novo seed-sweep tem desvio-padrão menor
+  que o anterior (±3,25pp em hit_rate).
+- Considerar `tf.config.experimental.enable_op_determinism()` se o
+  resíduo de variância acima ainda incomodar.
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
   worker remoto), não uma escolha livre -- se a memória deixar de ser
   fator limitante (worker maior, ou uma reescrita de `make_sequences`
