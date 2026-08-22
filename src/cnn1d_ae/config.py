@@ -106,9 +106,9 @@ class PipelineConfig:
     PATIENCE: int = 6
 
     # Threshold
-    THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate" | "mean_std"
+    THRESH_MODE: str = "p99"  # "max_train" | "p95" | "p97" | "p99" | "p99_5" | "target_rate" | "mean_std" | "robust_mad"
     TARGET_ANOMALY_RATE: float = 0.01
-    THRESH_STD_K: float = 3.0  # usado apenas quando THRESH_MODE == "mean_std": threshold = media + K * desvio_padrao
+    THRESH_STD_K: float = 3.0  # "mean_std": media + K*desvio_padrao | "robust_mad": mediana + K*1.4826*MAD
 
     # Regra de ponto
     POINT_RULE: str = "k_of_window"  # "all_of_window" | "k_of_window"

@@ -32,7 +32,20 @@ def compute_threshold(
         return float(np.quantile(train_mae_seq, 1.0 - rate))
     if mode == "mean_std":
         return float(np.mean(train_mae_seq) + float(std_k) * np.std(train_mae_seq))
-    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/mean_std.")
+    if mode == "robust_mad":
+        # Mediana + k*1.4826*MAD -- 1.4826 e a constante que torna o MAD
+        # comparavel ao desvio padrao sob normalidade. Mean/std (mean_std)
+        # sao sensiveis a cauda longa/outliers na distribuicao de erro de
+        # treino -- num grupo com muitas features derivadas (multiescala+
+        # textura), poucos pontos de treino com erro alto ja inflam
+        # mean+k*std a um patamar que a serie inteira nunca cruza (EXP13:
+        # 0 deteccoes em toda a serie com mean_std/std_k=4). Mediana/MAD
+        # ignoram esses outliers, dando um limiar mais fiel ao "typical"
+        # comportamento de erro do treino.
+        median = np.median(train_mae_seq)
+        mad = np.median(np.abs(train_mae_seq - median))
+        return float(median + float(std_k) * 1.4826 * mad)
+    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/mean_std/robust_mad.")
 
 
 def map_seq_to_point_anomalies(
@@ -317,8 +330,17 @@ def mask_anomaly_seq_by_operational_state(
     index: pd.DatetimeIndex,
     time_steps: int,
     state: pd.Series,
+    stride: int = 1,
 ) -> np.ndarray:
-    seq_end_pos = np.arange(time_steps - 1, time_steps - 1 + len(anomaly_seq))
+    # Mesma correcao de map_seq_to_point_anomalies: sequencia i comeca na
+    # posicao original i*stride, termina em i*stride + time_steps - 1. Sem
+    # isso (stride>1), o lookup de estado operacional cai em timestamps
+    # errados -- no EXP13 (stride=15), isso mascarava 100% das deteccoes
+    # (2603 sequencias cruzavam o threshold, 0 sobravam pos-mascara) porque
+    # o calculo antigo so cobria os primeiros ~44 dias da serie (a mesma
+    # contagem de indices, sem multiplicar pelo stride), region que calha
+    # de ser majoritariamente off/transiente.
+    seq_end_pos = np.arange(len(anomaly_seq)) * int(stride) + (time_steps - 1)
     valid = seq_end_pos < len(index)
     out = anomaly_seq.astype(bool).copy()
     if not valid.any():
