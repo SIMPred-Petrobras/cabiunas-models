@@ -183,7 +183,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         )
 
     all_index = df_all_z.index
-    df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq)
+    df_seq_scores = build_sequence_scores_df(all_index, mae_seq_all, anomaly_seq, stride=cfg.STRIDE)
     df_seq_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"), index=False)
 
     df_point = map_seq_to_point_anomalies(
@@ -193,6 +193,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         cfg.POINT_RULE,
         cfg.POINT_WINDOW,
         cfg.POINT_MIN_COUNT,
+        stride=cfg.STRIDE,
     )
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
@@ -533,7 +534,7 @@ def run_one_group(
         )
 
     all_index = df_all_z.index
-    df_seq_scores = build_sequence_scores_df(all_index, mae_for_anom, anomaly_seq)
+    df_seq_scores = build_sequence_scores_df(all_index, mae_for_anom, anomaly_seq, stride=effective_cfg.STRIDE)
     # Colunas de MAE por canal — útil para diagnosticar qual sensor disparou
     for i, s in enumerate(sensors):
         col = np.full(len(df_seq_scores), np.nan)
@@ -545,6 +546,7 @@ def run_one_group(
     df_point = map_seq_to_point_anomalies(
         anomaly_seq, all_index, effective_cfg.TIME_STEPS,
         cfg.POINT_RULE, effective_cfg.POINT_WINDOW, effective_cfg.POINT_MIN_COUNT,
+        stride=effective_cfg.STRIDE,
     )
     if state is not None:
         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")

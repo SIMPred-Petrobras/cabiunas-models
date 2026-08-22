@@ -42,6 +42,7 @@ def map_seq_to_point_anomalies(
     point_rule: str,
     point_window: int,
     point_min_count: int,
+    stride: int = 1,
 ) -> pd.DataFrame:
     seq_series = pd.Series(anomaly_seq.astype(int))
     w = max(1, int(point_window))
@@ -58,7 +59,11 @@ def map_seq_to_point_anomalies(
     df_point = pd.DataFrame(index=index)
     df_point["is_anom_point"] = 0
 
-    end_pos = np.arange(time_steps - 1, time_steps - 1 + len(point_flags))
+    # Sequencia i comeca na posicao original i*stride (make_sequences),
+    # entao termina em i*stride + time_steps - 1 -- para stride=1 isso
+    # colapsa na conta antiga (time_steps - 1 + i). Sem essa correcao,
+    # STRIDE>1 desalinha silenciosamente os timestamps de deteccao.
+    end_pos = np.arange(len(point_flags)) * int(stride) + (time_steps - 1)
     valid = end_pos < len(index)
     valid_positions = end_pos[valid]
     valid_flags = point_flags.values[valid]
@@ -72,12 +77,18 @@ def map_seq_to_point_anomalies(
     return df_point
 
 
-def build_sequence_scores_df(index: pd.DatetimeIndex, mae_seq: np.ndarray, anomaly_seq: np.ndarray) -> pd.DataFrame:
+def build_sequence_scores_df(
+    index: pd.DatetimeIndex, mae_seq: np.ndarray, anomaly_seq: np.ndarray, stride: int = 1
+) -> pd.DataFrame:
+    # Sequencia i comeca na posicao original i*stride -- para stride=1
+    # colapsa em index[:len(mae_seq)] (comportamento antigo).
+    start_pos = np.arange(len(mae_seq)) * int(stride)
+    valid = start_pos < len(index)
     return pd.DataFrame(
         {
-            "seq_start_time": index[: len(mae_seq)],
-            "mae_seq": mae_seq,
-            "is_anom_seq": anomaly_seq.astype(int),
+            "seq_start_time": index[start_pos[valid]],
+            "mae_seq": mae_seq[valid],
+            "is_anom_seq": anomaly_seq[valid].astype(int),
         }
     )
 

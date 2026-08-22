@@ -60,7 +60,7 @@
   "NORMALIZE_MODE": "zscore",
 
   "TIME_STEPS": 60,
-  "STRIDE": 1,
+  "STRIDE": 15,
   "VAL_FRAC": 0.1,
   "SHUFFLE_TRAIN": false,
   "SPLIT_MODE": "temporal",
@@ -75,8 +75,8 @@
   "TARGET_ANOMALY_RATE": 0.003,
   "THRESH_STD_K": 4.0,
   "POINT_RULE": "k_of_window",
-  "POINT_WINDOW": 60,
-  "POINT_MIN_COUNT": 10,
+  "POINT_WINDOW": 4,
+  "POINT_MIN_COUNT": 1,
 
   "ENABLE_OPERATIONAL_MASK": true,
   "OFF_VALUE_QUANTILE": 0.05,
