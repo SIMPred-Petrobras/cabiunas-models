@@ -73,9 +73,9 @@
 
   "THRESH_MODE": "robust_mad",
   "TARGET_ANOMALY_RATE": 0.003,
-  "THRESH_STD_K": 4.0,
+  "THRESH_STD_K": 3.0,
   "POINT_RULE": "k_of_window",
-  "POINT_WINDOW": 4,
+  "POINT_WINDOW": 2,
   "POINT_MIN_COUNT": 1,
 
   "ENABLE_OPERATIONAL_MASK": true,

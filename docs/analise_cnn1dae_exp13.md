@@ -99,12 +99,41 @@ ainda não foram *recalibrados* especificamente para o CNN1D-AE -- os
 valores de `LOAD_GATE_RAMP_MAX`/`VOLATILITY_GATE_THRESHOLD` foram
 herdados diretamente do AutoML.
 
+## Recalibração fina (simulação offline)
+
+Antes de gastar mais uma rodada remota, simulamos offline diferentes
+`THRESH_STD_K`/`POINT_WINDOW`/`POINT_MIN_COUNT` reaproveitando os dados
+já computados pela task 7 (`mae_seq` por sequência de
+`sequence_scores_all.csv`, `operational_state`/`load_gate_blocked`/
+`volatility_gate_blocked` de `point_anomalies_all.csv`) e as **mesmas
+funções de produção** (`mask_anomaly_seq_by_operational_state`,
+`map_seq_to_point_anomalies`, `eval_alarm_hit_rate`,
+`compute_normal_alert_rate`) -- só o valor do `threshold` final e os
+parâmetros de agregação variam, tudo o resto (rede treinada, gates)
+permanece fixo.
+
+**Método:** como reconstruir exatamente o conjunto de treino usado para
+calcular a mediana/MAD do `robust_mad` offline (sem os dados brutos de
+gap/exclusão completos) introduz um erro de aproximação, a varredura foi
+feita diretamente no espaço de **threshold absoluto** (não em `k`),
+ancorada no valor real conhecido (`threshold=0,159566` em `k=4,0`).
+
+**Achado:** há margem real. Descendo o threshold pra ~0,125--0,15 (contra
+0,16 atual), o hit_rate simulado sobe pra **92,5% (37/40) -- o mesmo do
+AutoML** --, com FP ainda em ~1,2--1,6%. `POINT_WINDOW=2`/
+`POINT_MIN_COUNT=1` superou `4`/`1` em toda a grade testada.
+
+**Ação:** `THRESH_STD_K` reduzido de `4,0` para `3,0` (redução
+proporcional e moderada -- a tradução exata de threshold-simulado para
+`k` real não é confiável sem conhecer a mediana/MAD reais de treino) e
+`POINT_WINDOW` de `4` para `2`. Resultado dessa configuração ainda
+**pendente de confirmação remota** -- a simulação offline usa uma
+aproximação do conjunto de treino, não é garantia do número final.
+
 ## Pendências / próximos passos
 
-- **Recalibração fina do threshold** (`THRESH_STD_K`) e do
-  `POINT_WINDOW`/`POINT_MIN_COUNT` agora que o mecanismo de scoring está
-  correto -- não feita ainda, é o próximo passo natural antes de
-  considerar o EXP13 definitivo.
+- Confirmar o resultado da recalibração (`THRESH_STD_K=3,0`,
+  `POINT_WINDOW=2`) com uma rodada remota real.
 - Os gates (`LOAD_GATE_RAMP_MAX`, `VOLATILITY_GATE_THRESHOLD`) foram
   herdados do AutoML sem recalibração específica para a arquitetura
   sequencial -- podem não estar no ponto ótimo para o CNN1D-AE.
