@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import re
+import gc
 from dataclasses import asdict, replace
 from typing import Dict, List, Any, Set
 
@@ -152,9 +153,17 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
 
     plot_hist_mae(train_mae_seq, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
+    # Libera os arrays de sequencia de treino assim que o threshold ja foi
+    # calculado (ver mesma nota em run_one_group).
+    del x_train, x_val, x_train_full
+    gc.collect()
+
     x_all = make_sequences(values_all, cfg.TIME_STEPS, cfg.STRIDE)
     mae_seq_all = reconstruction_mae_per_seq(best_model, x_all, cfg.BATCH_SIZE)
     anomaly_seq = mae_seq_all > threshold
+
+    del x_all
+    gc.collect()
     state = None
     if cfg.ENABLE_OPERATIONAL_MASK:
         ref_sensor = cfg.OPERATIONAL_REF_SENSOR
@@ -493,12 +502,25 @@ def run_one_group(
                                   std_k=effective_cfg.THRESH_STD_K)
     plot_hist_mae(train_mae_thresh, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
 
+    # Libera os arrays de sequencia de treino assim que o threshold ja foi
+    # calculado -- com muitas features derivadas (multiescala+textura),
+    # cada array de sequencia pode chegar a alguns GB, e o Python nao
+    # libera memoria de variaveis locais so porque "ja foram usadas"; sem
+    # isso, x_train_full/x_train_pred/train_abs_err ficam vivos ao mesmo
+    # tempo que x_all/x_all_pred/abs_err_all logo abaixo, somando picos de
+    # memoria que causaram OOM (exit 137) num worker remoto.
+    del x_train, x_val, x_train_full, x_train_pred, train_abs_err
+    gc.collect()
+
     x_all = make_sequences(values_all, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
     x_all_pred = best_model.predict(x_all, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
     abs_err_all = np.abs(x_all_pred - x_all)
     mae_seq_all = np.mean(abs_err_all, axis=(1, 2))          # (n_seq,) — MAE global
     mae_per_ch = np.mean(abs_err_all, axis=1)                 # (n_seq, n_features) — mean no eixo tempo
     mae_for_anom = mae_per_ch[:, target_idx] if target_idx is not None else mae_seq_all
+
+    del x_all, x_all_pred, abs_err_all
+    gc.collect()
 
     anomaly_seq = mae_for_anom > threshold
 
