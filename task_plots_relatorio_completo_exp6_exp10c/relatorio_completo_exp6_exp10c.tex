@@ -165,6 +165,10 @@ aparecer sem explicação no meio do texto.
   \item[UNDER] Alarme de valor abaixo do esperado -- no EXP7, descobrimos
     que essa condição específica é, na prática, sempre falha de
     sensor/comunicação, não queda física real (Seção~\ref{sec:qualidade}).
+  \item[TRIP] Não é uma condição separada do catálogo -- é texto na
+    \emph{descrição} de 3 tags específicos que indicam desligamento real
+    de proteção do equipamento (óleo lubrificante). Ver
+    Seção~\ref{sec:trip}.
 \end{description}
 
 \clearpage
@@ -1172,6 +1176,104 @@ EXP10b, EXP10c) -- queda monotônica, sem retrocesso.}
 \caption{Visão consolidada: detecção (constante) e falso alerta
 (decrescente) lado a lado ao longo de toda a série EXP10.}
 \end{figure}
+
+\section{Achado adicional: alarmes de TRIP -- falha real fora do escopo de avaliação}
+\label{sec:trip}
+
+Além dos 40 alarmes de \texttt{TC382\_03\_A}/\texttt{T5\_AVG\_A} usados para
+calibrar e avaliar o candidato em toda esta Parte, o catálogo completo tem
+uma categoria de alarme que merece atenção à parte: alarmes cuja
+\emph{descrição} contém explicitamente ``TRIP'' -- não uma condição
+separada no catálogo (\texttt{Condição do Alarme} = \texttt{CFN} para
+esses três tags), mas o texto do próprio alarme identifica que ele
+corresponde a um desligamento de proteção real do equipamento, não uma
+leitura fora de faixa qualquer.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lp{7.5cm}@{}}
+\toprule
+\textbf{Tag} & \textbf{Descrição} \\
+\midrule
+\texttt{PALL\_6240340} & TRIP -- Pressão Mt.Bx. Hd. Óleo Lub. (baixa-baixa) \\
+\texttt{TALL\_6240325} & TRIP -- Temp. Mt.Bx.TQ Óleo Lub. \\
+\texttt{PALL\_6240309} & TRIP -- Pressão Mt.Bx. Óleo Lub. Comp. (baixa-baixa) \\
+\bottomrule
+\end{tabular}
+\caption{Os 3 tags com ``TRIP'' na descrição -- todos ligados à proteção de
+óleo lubrificante das caixas de mancal, um subsistema \textbf{diferente}
+do que \texttt{TC382\_03\_A}/\texttt{T5\_AVG\_A} monitoram (temperatura de
+exaustão da turbina).}
+\end{table}
+
+\textbf{Importante: estes alarmes nunca fizeram parte do
+\texttt{eval\_sensors} do candidato} -- não entram no \texttt{hit\_rate}/
+FP de 92,5\%/0,35\% reportados até aqui, porque pertencem a um sistema
+físico diferente do que o modelo foi desenhado para monitorar. A pergunta
+respondida aqui é outra: \emph{dado que são falhas reais e severas
+(disparo de proteção $\Rightarrow$ parada do equipamento), quantas o
+detector de temperatura acaba capturando de qualquer forma}, como sinal
+indireto (um problema sério na lubrificação tende a produzir algum eco
+térmico/vibracional)?
+
+\subsection*{Método}
+
+Dos 303 alarmes \texttt{TRIP} onset (2022--2026), 60 caem no período OOS
+(2025-07-01 em diante). Como o mesmo evento físico dispara o alarme várias
+vezes em sequência rápida (ex.: 12 onsets entre 17:05 e 17:58 de
+05/11/2025 -- a pressão oscilando perto do limiar de trip), agrupamos
+onsets com gap $\leq$30min em um único episódio -- mesmo critério de
+\emph{decluster} já usado na análise de sobrevivência do EXP8
+(\texttt{docs/analise\_automl\_exp8.md}). Resultado: \textbf{20 episódios
+distintos de TRIP} no período OOS. Para cada um, verificamos se o
+candidato EXP10c tem algum ponto anômalo dentro de $\pm$24h -- mesma
+janela e mesma lógica preditivo/reativo/sem-detecção já usada para os 40
+alarmes principais.
+
+\subsection*{Resultado: 5 de 20 capturados}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\textwidth]{figs/trip_cobertura_exp10c.png}
+\caption{Cobertura dos 20 episódios de TRIP pelo candidato EXP10c
+(treinado e calibrado só em \texttt{TC382\_03\_A}/\texttt{T5\_AVG\_A}).}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{Início do episódio} & \textbf{Categoria} & \textbf{Antecedência/atraso} \\
+\midrule
+04/11/2025 06:22 & Preditivo & 11,4h antes \\
+23/01/2026 21:20 & Preditivo & 17,4h antes \\
+26/02/2026 15:34 & Preditivo & 19,6h antes \\
+03/11/2025 06:10 & Reativo & 12,8h depois \\
+30/11/2025 20:51 & Reativo & 20,6h depois \\
+\bottomrule
+\end{tabular}
+\caption{Os 5 episódios de TRIP com alguma detecção em $\pm$24h. Os outros
+15 (incluindo a rajada densa de 05--08/11/2025, o pior trecho de
+instabilidade do óleo lubrificante no período) não tiveram nenhum ponto
+anômalo de \texttt{TC382\_03\_A}/\texttt{T5\_AVG\_A} por perto.}
+\end{table}
+
+\textbf{Síntese:} \textbf{3 preditivos, 2 reativos, 15 sem detecção} --
+25\% de cobertura incidental. Não é uma falha do candidato: ele nunca foi
+treinado, calibrado ou avaliado para prever falha de lubrificação, e a
+maioria dos episódios de TRIP (a rajada de 05--08/11/2025 em particular)
+não tem por que produzir sinal térmico visível em \texttt{TC382\_03\_A}
+antes do desligamento efetivo. Os 3 casos preditivos (11,4--19,6h de
+antecedência) sugerem que, quando a degradação do óleo já vem acompanhada
+de algum efeito térmico/vibracional no trem de força, o candidato pega o
+eco -- mas isso é subproduto, não o que ele foi desenhado para fazer.
+\textbf{Se cobrir falha de lubrificação virar prioridade, o caminho correto
+não é forçar o candidato atual -- é repetir a metodologia completa
+(EXP6--EXP10) com \texttt{eval\_sensors} nos 3 tags de TRIP e os sensores
+brutos de pressão/temperatura de óleo como entrada}, não reaproveitar às
+cegas um detector calibrado para outro subsistema.
 
 \subsection*{O que ainda resta (não endereçado nesta parte)}
 
