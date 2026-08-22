@@ -73,8 +73,9 @@ Mesma base de 40 alarmes, mesmo split OOS (`2025-07-01`), mesmo grupo de
 |---|---|---|
 | AutoML EXP7 item1+2 (multiescala+textura, sem gates) | 92,5\% (37/40) | 1,94\% |
 | AutoML EXP10c (+ 3 gates de pós-processamento) | 92,5\% (37/40) | **0,35\%** |
-| CNN1D-AE EXP13 v1 (`THRESH_STD_K=4`, `POINT_WINDOW=4`) | 87,5\% (35/40) | 1,21\% |
-| **CNN1D-AE EXP13 v2, recalibrado (`THRESH_STD_K=3`, `POINT_WINDOW=2`)** | **90,0\% (36/40)** | **0,94\%** |
+| CNN1D-AE EXP13 v1 (`THRESH_STD_K=4`, `POINT_WINDOW=4`, gates AutoML) | 87,5\% (35/40) | 1,21\% |
+| CNN1D-AE EXP13 v2 (`THRESH_STD_K=3`, `POINT_WINDOW=2`, gates AutoML) | 90,0\% (36/40) | 0,94\% |
+| **CNN1D-AE EXP13 v3 (+ gates recalibrados, 40 trials)** | **90,0\% (36/40)** | **0,80\%** |
 
 **Configuração final validada** (`configs/calibracao_v4_eq/test_grupo_exp13_AE_novo_dataset_gates.json`):
 `TIME_STEPS=60`, `STRIDE=15` (ver rodada 4 -- necessário por limite de
@@ -153,14 +154,20 @@ volatilidade `window=30min/threshold=0,1745`, ambos mais "atentos" que os
 valores do AutoML) o FP simulado cai de 0,84% pra 0,56% (~33% relativo)
 mantendo hit_rate em 92,5%.
 
-**Ação:** config atualizado com os novos valores dos 2 gates.
-`MAX_TRIALS` também dobrado de `20` para `40` (mais combinações de
-hiperparâmetro do KerasTuner, aproveitando a mesma rodada). **Pendente
-de confirmação remota.**
+**Ação e confirmação remota:** config atualizado com os novos valores
+dos 2 gates; `MAX_TRIALS` também dobrado de `20` para `40` (task
+`9ff669b9a83f4ad7bb0fefc01aead335`, commit `e31fa0f`). **Confirmado**:
+hit_rate ficou igual (90,0%, 36/40 -- os 40 trials extras não acharam
+arquitetura melhor), mas FP caiu de 0,94% para **0,80%** (~15%
+relativo) -- menos dramático que a simulação offline previu (que
+apontava ~0,56% mantendo 92,5%), mas confirma a mesma direção: os
+gates herdados do AutoML não eram o ponto ótimo. `load_gate_points_blocked`
+subiu de 35.147 para 110.550 (portão de rampa recalibrado bloqueia 3x
+mais pontos) sem custar nenhuma detecção -- sinal de que o ganho veio
+de FP genuíno, não de sorte.
 
 ## Pendências / próximos passos
 
-- Confirmar remotamente o resultado da recalibração dos gates.
 - Checagem de variância de semente (seed-sweep) do candidato final --
   ainda não feita para o CNN1D-AE (já é rotina no AutoML desde o EXP5).
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
@@ -178,4 +185,5 @@ de confirmação remota.**
 5. `61572f45aa3e42febfa79dd4a27a69f0` -- + del parcial, OOM (mesmo ponto)
 6. `f4d092bf69b445e891ed058cbc4f8f2b` -- + varredura completa de del/gc, completou mas 0%/0%
 7. `7fba01f514674418adba71e3149b5e64` -- + fix stride na máscara operacional + robust_mad, hit_rate 87,5%/FP 1,21%
-8. `2db0722a20694cdfb47d77e1b07242a6` -- + recalibração (`THRESH_STD_K=3,0`, `POINT_WINDOW=2`), guiada por simulação offline, **resultado final: hit_rate 90,0% (36/40) / FP 0,94%**
+8. `2db0722a20694cdfb47d77e1b07242a6` -- + recalibração (`THRESH_STD_K=3,0`, `POINT_WINDOW=2`), guiada por simulação offline, hit_rate 90,0% (36/40) / FP 0,94%
+9. `9ff669b9a83f4ad7bb0fefc01aead335` -- + gates recalibrados (rampa/volatilidade) + `MAX_TRIALS=40`, guiada por simulação offline, **resultado final: hit_rate 90,0% (36/40) / FP 0,80%**
