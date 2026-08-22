@@ -9,10 +9,11 @@ from typing import Dict, List, Any, Set
 
 import numpy as np
 import pandas as pd
+from tensorflow import keras
 
 from .config import PipelineConfig
 from .io import ensure_sensor_dirs, save_run_config, load_data, resolve_output_dir
-from .model import setup_gpu
+from .model import setup_gpu, build_cnn1d_autoencoder, build_callbacks
 from .preprocess import (
     build_sensor_dataframe,
     build_group_dataframe,
@@ -327,6 +328,55 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     return report
 
 
+def _refit_cnn1dae_with_seed(
+    effective_cfg: PipelineConfig,
+    best_hp,
+    x_train: np.ndarray,
+    x_val: np.ndarray,
+    x_train_full: np.ndarray,
+    values_all: np.ndarray,
+    target_idx: "int | None",
+    seed: int,
+) -> "tuple[np.ndarray, float]":
+    """Reconstroi a MESMA arquitetura (best_hp, ja escolhida pelo tuner) com
+    uma seed especifica, re-treina do zero e recalcula threshold/MAE sobre a
+    serie inteira -- usado no seed-sweep pra medir o quanto hit_rate/
+    normal_alert_rate variam so por causa da aleatoriedade de inicializacao/
+    treino (mesma motivacao do seed-sweep do automl_pipeline.py, ver
+    analise_automl_lara.md secao 2). Nao repete a busca de hiperparametros
+    (custaria MAX_TRIALS vezes mais) -- so a inicializacao+treino da
+    arquitetura ja vencedora.
+    """
+    keras.utils.set_random_seed(seed)
+    model = build_cnn1d_autoencoder(best_hp, effective_cfg.TIME_STEPS, x_train.shape[-1])
+    callbacks = build_callbacks(effective_cfg.PATIENCE)
+    model.fit(
+        x_train, x_train, validation_data=(x_val, x_val),
+        epochs=effective_cfg.EPOCHS, batch_size=effective_cfg.BATCH_SIZE,
+        callbacks=callbacks, verbose=0,
+    )
+
+    x_train_pred = model.predict(x_train_full, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
+    train_abs_err = np.abs(x_train_pred - x_train_full)
+    train_mae_thresh = (np.mean(train_abs_err[:, :, target_idx], axis=1)
+                         if target_idx is not None else np.mean(train_abs_err, axis=(1, 2)))
+    threshold = compute_threshold(train_mae_thresh, effective_cfg.THRESH_MODE,
+                                   target_rate=effective_cfg.TARGET_ANOMALY_RATE,
+                                   std_k=effective_cfg.THRESH_STD_K)
+    del x_train_pred, train_abs_err
+    gc.collect()
+
+    x_all = make_sequences(values_all, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
+    x_all_pred = model.predict(x_all, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
+    abs_err_all = np.abs(x_all_pred - x_all)
+    mae_for_anom = (np.mean(abs_err_all[:, :, target_idx], axis=1)
+                    if target_idx is not None else np.mean(abs_err_all, axis=(1, 2)))
+    del x_all, x_all_pred, abs_err_all, model
+    gc.collect()
+
+    return mae_for_anom, threshold
+
+
 def run_one_group(
     cfg: PipelineConfig,
     df_alarm: pd.DataFrame,
@@ -497,6 +547,116 @@ def run_one_group(
     df_all = df_all[sensors]
     gc.collect()
 
+    # Infraestrutura de avaliacao (mascara operacional, portoes, alarmes/
+    # janela OOS) construida ANTES do treino -- nenhuma dessas etapas
+    # depende do modelo, e monta-las aqui permite reusa-las tanto no
+    # modelo principal quanto no seed-sweep (mais abaixo) sem precisar
+    # manter x_train_full/x_train/x_val/values_all vivos ate o fim da
+    # funcao so por causa do seed-sweep.
+    state = None
+    if cfg.ENABLE_OPERATIONAL_MASK:
+        ref_sensor = cfg.OPERATIONAL_REF_SENSOR
+        if ref_sensor and ref_sensor not in sensors:
+            df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
+            ref_series = df_ref[ref_sensor]
+        else:
+            # Usa o sensor de referência se estiver no grupo, senão o primeiro sensor
+            ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
+            ref_series = df_all[ref_col]
+        secondary_series = None
+        if effective_cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_all.columns:
+            secondary_series = df_all[target_sensor]
+        state = build_operational_state(
+            index=all_index,
+            sensor_series=ref_series,
+            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
+            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
+            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
+            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+            secondary_series=secondary_series,
+            secondary_off_abs_threshold=effective_cfg.OFF_TARGET_ABS_THRESHOLD,
+        )
+
+    load_gate_series = None
+    if effective_cfg.ENABLE_LOAD_GATE:
+        gate_sensor = effective_cfg.LOAD_GATE_SENSOR
+        if not gate_sensor:
+            raise ValueError("ENABLE_LOAD_GATE=true exige LOAD_GATE_SENSOR (ou load_gate_sensor no grupo).")
+        if gate_sensor in df_all.columns:
+            load_gate_series = df_all[gate_sensor]
+        else:
+            df_gate, _ = build_sensor_dataframe(cfg, df_feat, df_raw, gate_sensor)
+            load_gate_series = df_gate[gate_sensor]
+
+    volatility_index = None
+    if effective_cfg.ENABLE_VOLATILITY_GATE:
+        vol_sensors = effective_cfg.VOLATILITY_GATE_SENSORS
+        if not vol_sensors:
+            raise ValueError("ENABLE_VOLATILITY_GATE=true exige VOLATILITY_GATE_SENSORS (ou volatility_gate_sensors no grupo).")
+        missing_vol = [s for s in vol_sensors if s not in df_all.columns]
+        if missing_vol:
+            raise ValueError(f"VOLATILITY_GATE_SENSORS fora de `sensors` do grupo: {missing_vol}")
+        volatility_index = compute_volatility_index(df_all[vol_sensors], effective_cfg.VOLATILITY_GATE_WINDOW_MINUTES)
+
+    # Avaliacao restrita ao periodo OOS (se OOS_SPLIT_DATE definido): so
+    # alarmes/pontos posteriores ao corte contam no hit_rate/
+    # normal_alert_rate/composite_score -- alarmes/pontos que o modelo
+    # nunca viu no ajuste. Mesmo mecanismo do automl_pipeline.py.
+    if oos_start is not None:
+        df_alarm_eval = df_alarm_group.loc[df_alarm_group["Data da Ocorrencia"] >= oos_start]
+        df_point_eval_idx = all_index[all_index >= oos_start]
+    else:
+        df_alarm_eval = df_alarm_group
+        df_point_eval_idx = all_index
+
+    near_alarm_mask = build_exclusion_mask(
+        all_index,
+        df_alarm_group["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_group.columns
+        else pd.Series(dtype="datetime64[ns]"),
+        cfg.EXCLUDE_MINUTES_AROUND_ALARM,
+    )
+
+    def _score_to_report(anomaly_seq_raw: np.ndarray):
+        """Aplica mascara operacional + mapeamento pra ponto + portoes +
+        avaliacao -- usado tanto pro modelo principal quanto por cada
+        seed do seed-sweep, garantindo que os dois recebam exatamente o
+        mesmo pos-processamento."""
+        anomaly_seq_local = anomaly_seq_raw
+        if state is not None:
+            anomaly_seq_local = mask_anomaly_seq_by_operational_state(
+                anomaly_seq=anomaly_seq_local, index=all_index,
+                time_steps=effective_cfg.TIME_STEPS, state=state, stride=effective_cfg.STRIDE,
+            )
+        df_p = map_seq_to_point_anomalies(
+            anomaly_seq_local, all_index, effective_cfg.TIME_STEPS,
+            cfg.POINT_RULE, effective_cfg.POINT_WINDOW, effective_cfg.POINT_MIN_COUNT,
+            stride=effective_cfg.STRIDE,
+        )
+        if state is not None:
+            df_p["operational_state"] = state.reindex(df_p.index).fillna("on")
+            df_p.loc[df_p["operational_state"] != "on", "is_anom_point"] = 0
+        if load_gate_series is not None:
+            df_p = apply_load_gate(
+                df_p, load_gate_series, ramp_max=effective_cfg.LOAD_GATE_RAMP_MAX,
+                level_min=effective_cfg.LOAD_GATE_LEVEL_MIN,
+                ramp_halflife_minutes=effective_cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
+                window_minutes=effective_cfg.LOAD_GATE_WINDOW_MINUTES,
+            )
+        if volatility_index is not None:
+            df_p = apply_volatility_gate(df_p, volatility_index, effective_cfg.VOLATILITY_GATE_THRESHOLD)
+
+        eval_stats_local = eval_alarm_hit_rate(df_alarm_eval, df_p, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+        composite_local = compute_composite_score(
+            detection_rate=eval_stats_local["hit_rate"] or 0.0,
+            normal_alert_rate=compute_normal_alert_rate(
+                df_p.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
+            ),
+            fp_penalty=cfg.AUTOML_FP_PENALTY,
+            min_detection_rate=cfg.AUTOML_MIN_DETECTION_RATE,
+        )
+        return df_p, eval_stats_local, composite_local
+
     x_train_full = make_sequences(values_normal, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
     del values_normal
     gc.collect()
@@ -529,20 +689,10 @@ def run_one_group(
                                   target_rate=effective_cfg.TARGET_ANOMALY_RATE,
                                   std_k=effective_cfg.THRESH_STD_K)
     plot_hist_mae(train_mae_thresh, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
-
-    # Libera os arrays de sequencia de treino assim que o threshold ja foi
-    # calculado -- com muitas features derivadas (multiescala+textura),
-    # cada array de sequencia pode chegar a alguns GB, e o Python nao
-    # libera memoria de variaveis locais so porque "ja foram usadas"; sem
-    # isso, x_train_full/x_train_pred/train_abs_err ficam vivos ao mesmo
-    # tempo que x_all/x_all_pred/abs_err_all logo abaixo, somando picos de
-    # memoria que causaram OOM (exit 137) num worker remoto.
-    del x_train, x_val, x_train_full, x_train_pred, train_abs_err
+    del x_train_pred, train_abs_err
     gc.collect()
 
     x_all = make_sequences(values_all, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
-    del values_all
-    gc.collect()
     x_all_pred = best_model.predict(x_all, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
     abs_err_all = np.abs(x_all_pred - x_all)
     mae_seq_all = np.mean(abs_err_all, axis=(1, 2))          # (n_seq,) — MAE global
@@ -554,38 +704,6 @@ def run_one_group(
 
     anomaly_seq = mae_for_anom > threshold
 
-    state = None
-    if cfg.ENABLE_OPERATIONAL_MASK:
-        ref_sensor = cfg.OPERATIONAL_REF_SENSOR
-        if ref_sensor and ref_sensor not in sensors:
-            df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
-            ref_series = df_ref[ref_sensor]
-        else:
-            # Usa o sensor de referência se estiver no grupo, senão o primeiro sensor
-            ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
-            ref_series = df_all[ref_col]
-        secondary_series = None
-        if effective_cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_all.columns:
-            secondary_series = df_all[target_sensor]
-        state = build_operational_state(
-            index=all_index,
-            sensor_series=ref_series,
-            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
-            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
-            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
-            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
-            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
-            secondary_series=secondary_series,
-            secondary_off_abs_threshold=effective_cfg.OFF_TARGET_ABS_THRESHOLD,
-        )
-        anomaly_seq = mask_anomaly_seq_by_operational_state(
-            anomaly_seq=anomaly_seq,
-            index=all_index,
-            time_steps=effective_cfg.TIME_STEPS,
-            state=state,
-            stride=effective_cfg.STRIDE,
-        )
-
     df_seq_scores = build_sequence_scores_df(all_index, mae_for_anom, anomaly_seq, stride=effective_cfg.STRIDE)
     # Colunas de MAE por canal — útil para diagnosticar qual sensor disparou
     for i, s in enumerate(sensors):
@@ -595,42 +713,7 @@ def run_one_group(
         df_seq_scores[f"mae_{s}"] = col
     df_seq_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"), index=False)
 
-    df_point = map_seq_to_point_anomalies(
-        anomaly_seq, all_index, effective_cfg.TIME_STEPS,
-        cfg.POINT_RULE, effective_cfg.POINT_WINDOW, effective_cfg.POINT_MIN_COUNT,
-        stride=effective_cfg.STRIDE,
-    )
-    if state is not None:
-        df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
-        df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
-
-    if effective_cfg.ENABLE_LOAD_GATE:
-        gate_sensor = effective_cfg.LOAD_GATE_SENSOR
-        if not gate_sensor:
-            raise ValueError("ENABLE_LOAD_GATE=true exige LOAD_GATE_SENSOR (ou load_gate_sensor no grupo).")
-        if gate_sensor in df_all.columns:
-            gate_series = df_all[gate_sensor]
-        else:
-            df_gate, _ = build_sensor_dataframe(cfg, df_feat, df_raw, gate_sensor)
-            gate_series = df_gate[gate_sensor]
-        df_point = apply_load_gate(
-            df_point, gate_series,
-            ramp_max=effective_cfg.LOAD_GATE_RAMP_MAX,
-            level_min=effective_cfg.LOAD_GATE_LEVEL_MIN,
-            ramp_halflife_minutes=effective_cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES,
-            window_minutes=effective_cfg.LOAD_GATE_WINDOW_MINUTES,
-        )
-
-    if effective_cfg.ENABLE_VOLATILITY_GATE:
-        vol_sensors = effective_cfg.VOLATILITY_GATE_SENSORS
-        if not vol_sensors:
-            raise ValueError("ENABLE_VOLATILITY_GATE=true exige VOLATILITY_GATE_SENSORS (ou volatility_gate_sensors no grupo).")
-        missing_vol = [s for s in vol_sensors if s not in df_all.columns]
-        if missing_vol:
-            raise ValueError(f"VOLATILITY_GATE_SENSORS fora de `sensors` do grupo: {missing_vol}")
-        volatility_index = compute_volatility_index(df_all[vol_sensors], effective_cfg.VOLATILITY_GATE_WINDOW_MINUTES)
-        df_point = apply_volatility_gate(df_point, volatility_index, effective_cfg.VOLATILITY_GATE_THRESHOLD)
-
+    df_point, eval_stats, composite = _score_to_report(anomaly_seq)
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -661,33 +744,45 @@ def run_one_group(
             operational_state=state,
         )
 
-    # Avaliacao restrita ao periodo OOS (se OOS_SPLIT_DATE definido): so
-    # alarmes/pontos posteriores ao corte contam no hit_rate/
-    # normal_alert_rate/composite_score -- alarmes/pontos que o modelo
-    # nunca viu no ajuste. Mesmo mecanismo do automl_pipeline.py.
-    if oos_start is not None:
-        df_alarm_eval = df_alarm_group.loc[df_alarm_group["Data da Ocorrencia"] >= oos_start]
-        df_point_eval_idx = df_point.index[df_point.index >= oos_start]
-    else:
-        df_alarm_eval = df_alarm_group
-        df_point_eval_idx = df_point.index
+    # Checagem de variancia de semente: re-treina a MESMA arquitetura
+    # (best_hp) com N seeds extras, ANTES de liberar x_train/x_val/
+    # x_train_full/values_all (ainda precisamos deles aqui) -- ver
+    # SEED_SWEEP_N em config.py e analise_automl_lara.md secao 2.
+    seed_sweep = None
+    if effective_cfg.SEED_SWEEP_N > 0:
+        seed_sweep_runs = []
+        for i in range(1, effective_cfg.SEED_SWEEP_N + 1):
+            seed = cfg.RANDOM_SEED + i
+            mae_for_anom_seed, threshold_seed = _refit_cnn1dae_with_seed(
+                effective_cfg, best_hp, x_train, x_val, x_train_full, values_all, target_idx, seed,
+            )
+            anomaly_seq_seed = mae_for_anom_seed > threshold_seed
+            _, eval_stats_seed, composite_seed = _score_to_report(anomaly_seq_seed)
+            seed_sweep_runs.append({
+                "seed": seed,
+                "hit_rate": eval_stats_seed["hit_rate"],
+                "normal_alert_rate": composite_seed["normal_alert_rate"],
+            })
+            del mae_for_anom_seed, anomaly_seq_seed
+            gc.collect()
+        hit_rates = [r["hit_rate"] for r in seed_sweep_runs if r["hit_rate"] is not None]
+        normal_rates = [r["normal_alert_rate"] for r in seed_sweep_runs]
+        seed_sweep = {
+            "runs": seed_sweep_runs,
+            "hit_rate_mean": float(np.mean(hit_rates)) if hit_rates else None,
+            "hit_rate_std": float(np.std(hit_rates)) if hit_rates else None,
+            "hit_rate_min": float(np.min(hit_rates)) if hit_rates else None,
+            "hit_rate_max": float(np.max(hit_rates)) if hit_rates else None,
+            "normal_alert_rate_mean": float(np.mean(normal_rates)) if normal_rates else None,
+            "normal_alert_rate_std": float(np.std(normal_rates)) if normal_rates else None,
+        }
+        with open(os.path.join(out_dirs["csv"], "seed_sweep.json"), "w", encoding="utf-8") as f:
+            json.dump(seed_sweep, f, indent=2, ensure_ascii=False)
 
-    near_alarm_mask = build_exclusion_mask(
-        df_point.index,
-        df_alarm_group["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_group.columns
-        else pd.Series(dtype="datetime64[ns]"),
-        cfg.EXCLUDE_MINUTES_AROUND_ALARM,
-    )
-
-    eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
-    composite = compute_composite_score(
-        detection_rate=eval_stats["hit_rate"] or 0.0,
-        normal_alert_rate=compute_normal_alert_rate(
-            df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
-        ),
-        fp_penalty=cfg.AUTOML_FP_PENALTY,
-        min_detection_rate=cfg.AUTOML_MIN_DETECTION_RATE,
-    )
+    # Libera os arrays de sequencia de treino/inferencia agora que o
+    # modelo principal E o seed-sweep ja terminaram de usa-los.
+    del x_train, x_val, x_train_full, values_all
+    gc.collect()
 
     calibration_report = {
         "group": group_name,
@@ -720,6 +815,8 @@ def run_one_group(
         calibration_report["load_gate_ramp_max"] = float(effective_cfg.LOAD_GATE_RAMP_MAX)
         calibration_report["load_gate_level_min"] = float(effective_cfg.LOAD_GATE_LEVEL_MIN)
         calibration_report["load_gate_points_blocked"] = int(df_point["load_gate_blocked"].sum())
+    if seed_sweep is not None:
+        calibration_report["seed_sweep"] = seed_sweep
     with open(os.path.join(out_dirs["csv"], "calibration_report.json"), "w", encoding="utf-8") as f:
         json.dump(calibration_report, f, indent=2, ensure_ascii=False)
 

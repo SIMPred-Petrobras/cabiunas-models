@@ -243,6 +243,14 @@ class PipelineConfig:
     # AutoML (ver docs/analise_automl_exp5.md).
     OOS_SPLIT_DATE: Optional[str] = None
 
+    # Checagem de variancia de semente pro CNN1D-AE (run_one_group):
+    # re-treina a MESMA arquitetura (best_hp do tuner) com N seeds extras,
+    # medindo o quanto hit_rate/normal_alert_rate variam so por causa da
+    # aleatoriedade de inicializacao/treino -- mesmo mecanismo/motivacao do
+    # AUTOML_SEED_SWEEP_N (ver analise_automl_lara.md secao 2), campo
+    # separado pelo mesmo motivo de OOS_SPLIT_DATE. 0 = desliga.
+    SEED_SWEEP_N: int = 0
+
     # Checagem de variancia de semente: apos escolher o melhor trial, se o
     # modelo vencedor for "iforest" (unico com randomness controlada
     # diretamente por RANDOM_SEED nesta pipeline), re-treina o mesmo

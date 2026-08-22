@@ -166,10 +166,33 @@ subiu de 35.147 para 110.550 (portão de rampa recalibrado bloqueia 3x
 mais pontos) sem custar nenhuma detecção -- sinal de que o ganho veio
 de FP genuíno, não de sorte.
 
+## Seed-sweep (checagem de variância de semente)
+
+Portado `_refit_cnn1dae_with_seed`/seed-sweep pro CNN1D-AE (novo campo
+`SEED_SWEEP_N`, espelha `AUTOML_SEED_SWEEP_N`), mesma motivação do
+AutoML desde o EXP5: re-treinar a MESMA arquitetura (`best_hp` já
+escolhida pelo tuner) com N seeds extras, sem repetir a busca de
+hiperparâmetros, pra medir quanto `hit_rate`/`normal_alert_rate` variam
+só por causa da aleatoriedade de inicialização/treino.
+
+**Detalhe de implementação:** diferente do AutoML (onde `_seed_sweep` só
+precisa dos arrays já prontos), o CNN1D-AE precisa treinar uma rede do
+zero por seed -- isso exigiu mover a construção da máscara operacional e
+dos gates pra **antes** do treino (nenhum dos dois depende do modelo),
+permitindo reusar a mesma infraestrutura de avaliação (`_score_to_report`,
+função local) tanto no modelo principal quanto em cada seed, sem manter
+`x_train_full`/`x_train`/`x_val`/`values_all` vivos até o fim da função
+inteira -- os arrays só são liberados depois que o seed-sweep termina de
+usá-los.
+
+`SEED_SWEEP_N=4` adicionado ao config -- cada seed é um retreino
+completo (mais caro que o do AutoML), então o custo é ~4x o tempo de
+refit em vez de quase gratuito. Resultado pendente de confirmação
+remota.
+
 ## Pendências / próximos passos
 
-- Checagem de variância de semente (seed-sweep) do candidato final --
-  ainda não feita para o CNN1D-AE (já é rotina no AutoML desde o EXP5).
+- Confirmar remotamente o resultado do seed-sweep.
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
   worker remoto), não uma escolha livre -- se a memória deixar de ser
   fator limitante (worker maior, ou uma reescrita de `make_sequences`
