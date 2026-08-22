@@ -234,6 +234,15 @@ class PipelineConfig:
     # no mesmo periodo do treino (numero apenas indicativo, nao validado).
     AUTOML_OOS_SPLIT_DATE: Optional[str] = None
 
+    # Mesmo mecanismo de split OOS acima, mas para o pipeline CNN1D-AE
+    # sequencial (run_one_sensor/run_one_group) -- campo separado porque as
+    # duas pipelines sao configuradas/rodadas independentemente (uma tem
+    # ENABLE_AUTOML=false). Sem isso, o CNN1D-AE avalia hit_rate/
+    # normal_alert_rate contra TODOS os alarmes do periodo carregado, sem
+    # nenhum holdout temporal -- nao comparavel com a disciplina OOS do
+    # AutoML (ver docs/analise_automl_exp5.md).
+    OOS_SPLIT_DATE: Optional[str] = None
+
     # Checagem de variancia de semente: apos escolher o melhor trial, se o
     # modelo vencedor for "iforest" (unico com randomness controlada
     # diretamente por RANDOM_SEED nesta pipeline), re-treina o mesmo

@@ -33,6 +33,8 @@ from .scoring import (
     compute_volatility_index,
     apply_volatility_gate,
     eval_alarm_hit_rate,
+    compute_normal_alert_rate,
+    compute_composite_score,
 )
 from .plots import (
     plot_loss,
@@ -105,14 +107,18 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
 
-    if len(df_normal) < cfg.TIME_STEPS + 10:
-        print(f"[SKIP] {sensor} (poucos dados normais apos exclusao)")
-        return {"sensor": sensor, "skipped": True, "reason": "few_normal_points"}
+    # Split OOS: ver mesmo mecanismo em run_one_group.
+    oos_start = pd.Timestamp(cfg.OOS_SPLIT_DATE) if cfg.OOS_SPLIT_DATE else None
+    df_normal_fit = df_normal.loc[df_normal.index < oos_start] if oos_start is not None else df_normal
 
-    df_normal = clip_outliers(df_normal, cfg)
+    if len(df_normal_fit) < cfg.TIME_STEPS + 10:
+        print(f"[SKIP] {sensor} (poucos dados normais antes do split OOS)")
+        return {"sensor": sensor, "skipped": True, "reason": "few_normal_points_before_oos_split"}
+
+    df_normal_fit = clip_outliers(df_normal_fit, cfg)
     df_all = clip_outliers(df_all, cfg)
 
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all)
+    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all)
 
     values_normal = df_normal_z.values.astype(np.float32)
     values_all = df_all_z.values.astype(np.float32)
@@ -241,7 +247,29 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         operational_state=state,
     )
 
-    eval_stats = eval_alarm_hit_rate(df_alarm_sensor, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    if oos_start is not None:
+        df_alarm_eval = df_alarm_sensor.loc[df_alarm_sensor["Data da Ocorrencia"] >= oos_start]
+        df_point_eval_idx = df_point.index[df_point.index >= oos_start]
+    else:
+        df_alarm_eval = df_alarm_sensor
+        df_point_eval_idx = df_point.index
+
+    near_alarm_mask = build_exclusion_mask(
+        df_point.index,
+        df_alarm_sensor["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_sensor.columns
+        else pd.Series(dtype="datetime64[ns]"),
+        cfg.EXCLUDE_MINUTES_AROUND_ALARM,
+    )
+
+    eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    composite = compute_composite_score(
+        detection_rate=eval_stats["hit_rate"] or 0.0,
+        normal_alert_rate=compute_normal_alert_rate(
+            df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
+        ),
+        fp_penalty=cfg.AUTOML_FP_PENALTY,
+        min_detection_rate=cfg.AUTOML_MIN_DETECTION_RATE,
+    )
 
     calibration_report = {
         "sensor": sensor,
@@ -252,10 +280,13 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "POINT_RULE": cfg.POINT_RULE,
         "POINT_WINDOW": int(cfg.POINT_WINDOW),
         "POINT_MIN_COUNT": int(cfg.POINT_MIN_COUNT),
-        "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
+        "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point.loc[df_point_eval_idx]),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
         "load_gate_enabled": bool(cfg.ENABLE_LOAD_GATE),
+        "oos_split_date": cfg.OOS_SPLIT_DATE,
+        "oos_validated": oos_start is not None,
         **eval_stats,
+        **composite,
     }
     if state is not None:
         counts = state.value_counts().to_dict()
@@ -275,6 +306,7 @@ def run_one_sensor(cfg: PipelineConfig, df_alarm: pd.DataFrame, df_feat: pd.Data
         "threshold": float(threshold),
         "THRESH_MODE": cfg.THRESH_MODE,
         **eval_stats,
+        **composite,
         "skipped": False,
     }
     with open(os.path.join(out_dirs["csv"], "evaluation_alarm_hit_rate.json"), "w", encoding="utf-8") as f:
@@ -397,15 +429,23 @@ def run_one_group(
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
 
-    if len(df_normal) < effective_cfg.TIME_STEPS + 10:
-        print(f"[SKIP] group={group_name} (poucos dados normais: {len(df_normal)})")
-        return {"group": group_name, "sensors": sensors, "skipped": True,
-                "reason": "few_normal_points"}
+    # Split OOS: se definido, treino (modelo + normalizacao + threshold) so
+    # enxerga dados anteriores a OOS_SPLIT_DATE; a avaliacao (hit_rate/
+    # normal_alert_rate/composite_score, mais abaixo) so considera alarmes e
+    # pontos posteriores -- mesmo mecanismo do automl_pipeline.py
+    # (AUTOML_OOS_SPLIT_DATE), portado aqui pro CNN1D-AE.
+    oos_start = pd.Timestamp(cfg.OOS_SPLIT_DATE) if cfg.OOS_SPLIT_DATE else None
+    df_normal_fit = df_normal.loc[df_normal.index < oos_start] if oos_start is not None else df_normal
 
-    df_normal = clip_outliers(df_normal, cfg)
+    if len(df_normal_fit) < effective_cfg.TIME_STEPS + 10:
+        print(f"[SKIP] group={group_name} (poucos dados normais antes do split OOS: {len(df_normal_fit)})")
+        return {"group": group_name, "sensors": sensors, "skipped": True,
+                "reason": "few_normal_points_before_oos_split"}
+
+    df_normal_fit = clip_outliers(df_normal_fit, cfg)
     df_all = clip_outliers(df_all, cfg)
 
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal, df_all)
+    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all)
 
     values_normal = df_normal_z.values.astype(np.float32)
     values_all = df_all_z.values.astype(np.float32)
@@ -556,7 +596,33 @@ def run_one_group(
             operational_state=state,
         )
 
-    eval_stats = eval_alarm_hit_rate(df_alarm_group, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    # Avaliacao restrita ao periodo OOS (se OOS_SPLIT_DATE definido): so
+    # alarmes/pontos posteriores ao corte contam no hit_rate/
+    # normal_alert_rate/composite_score -- alarmes/pontos que o modelo
+    # nunca viu no ajuste. Mesmo mecanismo do automl_pipeline.py.
+    if oos_start is not None:
+        df_alarm_eval = df_alarm_group.loc[df_alarm_group["Data da Ocorrencia"] >= oos_start]
+        df_point_eval_idx = df_point.index[df_point.index >= oos_start]
+    else:
+        df_alarm_eval = df_alarm_group
+        df_point_eval_idx = df_point.index
+
+    near_alarm_mask = build_exclusion_mask(
+        df_point.index,
+        df_alarm_group["Data da Ocorrencia"] if "Data da Ocorrencia" in df_alarm_group.columns
+        else pd.Series(dtype="datetime64[ns]"),
+        cfg.EXCLUDE_MINUTES_AROUND_ALARM,
+    )
+
+    eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    composite = compute_composite_score(
+        detection_rate=eval_stats["hit_rate"] or 0.0,
+        normal_alert_rate=compute_normal_alert_rate(
+            df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
+        ),
+        fp_penalty=cfg.AUTOML_FP_PENALTY,
+        min_detection_rate=cfg.AUTOML_MIN_DETECTION_RATE,
+    )
 
     calibration_report = {
         "group": group_name,
@@ -572,10 +638,13 @@ def run_one_group(
         "POINT_RULE": cfg.POINT_RULE,
         "POINT_WINDOW": int(effective_cfg.POINT_WINDOW),
         "POINT_MIN_COUNT": int(effective_cfg.POINT_MIN_COUNT),
-        "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point),
+        "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point.loc[df_point_eval_idx]),
         "operational_mask_enabled": bool(cfg.ENABLE_OPERATIONAL_MASK),
         "load_gate_enabled": bool(effective_cfg.ENABLE_LOAD_GATE),
+        "oos_split_date": cfg.OOS_SPLIT_DATE,
+        "oos_validated": oos_start is not None,
         **eval_stats,
+        **composite,
     }
     if state is not None:
         calibration_report["operational_state_counts"] = {
@@ -598,6 +667,7 @@ def run_one_group(
         "THRESH_MODE": effective_cfg.THRESH_MODE,
         "TIME_STEPS": int(effective_cfg.TIME_STEPS),
         **eval_stats,
+        **composite,
         "skipped": False,
     }
     with open(os.path.join(out_dirs["csv"], "evaluation_alarm_hit_rate.json"), "w", encoding="utf-8") as f:

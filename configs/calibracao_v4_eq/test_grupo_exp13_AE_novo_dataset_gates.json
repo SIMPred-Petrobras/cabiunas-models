@@ -16,6 +16,7 @@
 
   "DATA_START_DATE": "2024-07-01",
   "DATA_END_DATE": null,
+  "OOS_SPLIT_DATE": "2025-07-01",
 
   "OUTPUT_ROOT": "runs_exp13_AE_novo_dataset_gates",
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
