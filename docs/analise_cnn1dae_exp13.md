@@ -133,11 +133,34 @@ juntos, sinal de que `k=4,0` estava mesmo conservador demais em relação
 ao ponto ótimo. `threshold` final: `0,151967` (bem próximo da faixa
 prevista pela simulação offline, `0,125--0,15`).
 
+## Recalibração dos gates (rampa + volatilidade)
+
+Os valores de `LOAD_GATE_RAMP_MAX`/`VOLATILITY_GATE_THRESHOLD` até aqui
+eram herdados diretamente do AutoML (EXP10b/10c), nunca recalibrados
+especificamente pro CNN1D-AE. Repetimos offline a mesma busca sequencial
+do EXP10b/10c (rampa primeiro, depois volatilidade com a rampa fixa no
+melhor achado), reconstruindo o sinal *pré-gate* (threshold+máscara
+operacional já aplicados, com `THRESH_STD_K=3,0`/`POINT_WINDOW=2`) e
+aplicando `apply_load_gate`/`apply_volatility_gate` reais sobre os dados
+brutos de `T5_AVG_A`/vibração já cacheados localmente.
+
+**Achado:** o sinal pré-gate já teria hit_rate 92,5% (37/40) e FP 0,92%
+nessa reconstrução -- mais otimista que a rodada real (90,0%/0,94%), a
+mesma imprecisão de aproximação já observada na recalibração de
+threshold (Seção acima). Ainda assim, a *direção* é clara: com os gates
+recalibrados (rampa `ramp_max=50/halflife=10min/window=60min`;
+volatilidade `window=30min/threshold=0,1745`, ambos mais "atentos" que os
+valores do AutoML) o FP simulado cai de 0,84% pra 0,56% (~33% relativo)
+mantendo hit_rate em 92,5%.
+
+**Ação:** config atualizado com os novos valores dos 2 gates.
+`MAX_TRIALS` também dobrado de `20` para `40` (mais combinações de
+hiperparâmetro do KerasTuner, aproveitando a mesma rodada). **Pendente
+de confirmação remota.**
+
 ## Pendências / próximos passos
 
-- Os gates (`LOAD_GATE_RAMP_MAX`, `VOLATILITY_GATE_THRESHOLD`) foram
-  herdados do AutoML sem recalibração específica para a arquitetura
-  sequencial -- podem não estar no ponto ótimo para o CNN1D-AE.
+- Confirmar remotamente o resultado da recalibração dos gates.
 - Checagem de variância de semente (seed-sweep) do candidato final --
   ainda não feita para o CNN1D-AE (já é rotina no AutoML desde o EXP5).
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
