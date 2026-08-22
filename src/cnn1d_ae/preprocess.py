@@ -13,6 +13,21 @@ from .config import PipelineConfig
 TEXTURE_MIN_WINDOW = 60
 
 
+def _downcast_float32(df: pd.DataFrame) -> pd.DataFrame:
+    """Reduz colunas float64 para float32 -- corta o uso de memoria pela
+    metade. Aplicado depois de todas as features derivadas serem criadas
+    (rolling std/kurt/skew do pandas frequentemente promovem o resultado
+    de volta a float64 mesmo com entrada float32), pois um grupo com
+    ENABLE_DERIVED_FEATURES+DERIVED_ROLLING_WINDOWS multi-escala pode
+    multiplicar o numero de colunas por ~20x (ex: 12 sensores brutos ->
+    ~276 com multiescala+textura) sobre series de milhoes de linhas --
+    causou OOM (exit 137) num worker remoto sem esse downcast."""
+    float_cols = df.select_dtypes(include=["float64"]).columns
+    if len(float_cols):
+        df[float_cols] = df[float_cols].astype(np.float32)
+    return df
+
+
 def _build_derived_features(
     df: pd.DataFrame, sensor: str, windows: List[int], include_texture: bool = True
 ) -> pd.DataFrame:
@@ -190,6 +205,7 @@ def build_sensor_dataframe(
             long_window=cfg.CHANGEPOINT_LONG_WINDOW, cusum_k=cfg.CHANGEPOINT_CUSUM_K,
         )
 
+    df_use = _downcast_float32(df_use)
     return df_use, long_gap_raw
 
 
@@ -240,6 +256,7 @@ def build_group_dataframe(
     if cfg.ENABLE_THERMAL_ARRAY_SPREAD and cfg.THERMAL_ARRAY_SENSORS:
         df_use = _build_thermal_array_spread(cfg, df_use, source_df, cfg.THERMAL_ARRAY_SENSORS)
 
+    df_use = _downcast_float32(df_use)
     return df_use, long_gap_union
 
 
@@ -291,17 +308,22 @@ def clip_outliers(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
         return df
 
     out = df.copy()
+    # .quantile()/.median() sempre retornam float64, entao clip(...) promove
+    # o resultado de volta a float64 mesmo com entrada float32 -- .astype
+    # no final restaura o dtype original (importante pra grupos com muitas
+    # features derivadas, onde float64 dobra o uso de memoria e pode
+    # OOMar num worker remoto).
     if mode == "quantile":
         q_low = out.quantile(cfg.OUTLIER_Q_LOW)
         q_high = out.quantile(cfg.OUTLIER_Q_HIGH)
-        return out.clip(lower=q_low, upper=q_high, axis=1)
+        return out.clip(lower=q_low, upper=q_high, axis=1).astype(df.dtypes)
 
     if mode == "mad":
         med = out.median(axis=0)
         mad = (out - med).abs().median(axis=0).replace(0, 1e-9)
         low = med - cfg.OUTLIER_MAD_K * 1.4826 * mad
         high = med + cfg.OUTLIER_MAD_K * 1.4826 * mad
-        return out.clip(lower=low, upper=high, axis=1)
+        return out.clip(lower=low, upper=high, axis=1).astype(df.dtypes)
 
     raise ValueError("OUTLIER_MODE invalido. Use 'none', 'quantile' ou 'mad'.")
 
@@ -322,7 +344,9 @@ def normalize_train_only(
     else:
         raise ValueError("NORMALIZE_MODE invalido. Use 'zscore' ou 'robust'.")
 
-    df_normal_z = (df_normal - center) / scale
-    df_all_z = (df_all - center) / scale
+    # mean/std/median/quantile retornam float64 -- .astype no final
+    # restaura o dtype original (ver nota em clip_outliers).
+    df_normal_z = ((df_normal - center) / scale).astype(df_normal.dtypes)
+    df_all_z = ((df_all - center) / scale).astype(df_all.dtypes)
 
     return df_normal_z, df_all_z, center, scale
