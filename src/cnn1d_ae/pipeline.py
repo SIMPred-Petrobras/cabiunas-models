@@ -18,6 +18,7 @@ from .preprocess import (
     build_exclusion_mask,
     clip_outliers,
     normalize_train_only,
+    select_feature_columns,
 )
 from .sequences import make_sequences, train_val_split
 from .tuning import run_tuner, refit_best_model
@@ -386,7 +387,13 @@ def run_one_group(
         return {"group": group_name, "sensors": sensors, "skipped": True,
                 "reason": "all_sensors_low_std"}
     sensors = valid_sensors
-    df_use = df_use[sensors]
+    # feature_cols = sensores brutos + derivadas habilitadas (mesma logica
+    # do automl_pipeline.py, via select_feature_columns) -- sem isso,
+    # ENABLE_DERIVED_FEATURES/DERIVED_ROLLING_WINDOWS nao tinha nenhum
+    # efeito aqui: df_use[sensors] descartava as colunas derivadas logo
+    # apos build_group_dataframe cria-las.
+    feature_cols = select_feature_columns(cfg, df_use, sensors)
+    df_use = df_use[feature_cols]
 
     # Sensor alvo: threshold e detecção baseados no MAE deste canal.
     # Se não definido, usa MAE global (média de todos os canais).
@@ -394,7 +401,11 @@ def run_one_group(
     if target_sensor and target_sensor not in sensors:
         print(f"[WARN] group={group_name}: target_sensor={target_sensor!r} removido por low_std — usando MAE global")
         target_sensor = None
-    target_idx = sensors.index(target_sensor) if target_sensor else None
+    # target_idx indexa feature_cols (nao so `sensors`) -- os sensores
+    # brutos ocupam sempre as primeiras len(sensors) posicoes de
+    # feature_cols, entao o indice do canal bruto continua correto mesmo
+    # com colunas derivadas anexadas depois.
+    target_idx = feature_cols.index(target_sensor) if target_sensor else None
     if target_idx is not None:
         print(f"[TARGET] sensor alvo: {target_sensor!r} (canal {target_idx}) — anomalia baseada no MAE deste canal")
 
