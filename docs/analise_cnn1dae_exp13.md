@@ -75,7 +75,14 @@ Mesma base de 40 alarmes, mesmo split OOS (`2025-07-01`), mesmo grupo de
 | AutoML EXP10c (+ 3 gates de pós-processamento) | 92,5\% (37/40) | **0,35\%** |
 | CNN1D-AE EXP13 v1 (`THRESH_STD_K=4`, `POINT_WINDOW=4`, gates AutoML) | 87,5\% (35/40) | 1,21\% |
 | CNN1D-AE EXP13 v2 (`THRESH_STD_K=3`, `POINT_WINDOW=2`, gates AutoML) | 90,0\% (36/40) | 0,94\% |
-| **CNN1D-AE EXP13 v3 (+ gates recalibrados, 40 trials)** | **90,0\% (36/40)** | **0,80\%** |
+| CNN1D-AE EXP13 v3 (+ gates recalibrados, 40 trials) | 90,0\% (36/40) | 0,80\% |
+| **CNN1D-AE EXP13 v4, média do seed-sweep (5 seeds, ver Seção seed-sweep)** | **86,9\% ± 3,25pp** | **0,60\% ± 0,13pp** |
+
+Ressalva importante lida na íntegra na seção "Seed-sweep" abaixo: as
+linhas v1--v3 são cada uma um único run/uma única semente -- parte da
+diferença entre elas é ruído de treino, não só o efeito da
+recalibração. A linha v4 (média de 5 sementes sobre a MESMA
+configuração de v3) é a leitura estatisticamente mais honesta.
 
 **Configuração final validada** (`configs/calibracao_v4_eq/test_grupo_exp13_AE_novo_dataset_gates.json`):
 `TIME_STEPS=60`, `STRIDE=15` (ver rodada 4 -- necessário por limite de
@@ -187,12 +194,41 @@ usá-los.
 
 `SEED_SWEEP_N=4` adicionado ao config -- cada seed é um retreino
 completo (mais caro que o do AutoML), então o custo é ~4x o tempo de
-refit em vez de quase gratuito. Resultado pendente de confirmação
-remota.
+refit em vez de quase gratuito.
+
+**Resultado (task `8b97c625af78431e88b912c6e9288332`, commit `cf37da6`)
+-- achado importante: o CNN1D-AE NÃO tem variância zero.**
+
+| Seed | hit\_rate | FP |
+|---|---|---|
+| 42 (principal) | 85,0% | 0,59% |
+| 43 | 85,0% | 0,72% |
+| 44 | 85,0% | 0,69% |
+| 45 | 85,0% | 0,39% |
+| 46 | 92,5% | 0,60% |
+| **Média (4 extras) / desvio** | **86,9% / ±3,25pp** | **0,60% / ±0,13pp** |
+
+Diferente do AutoML (`iforest`/`ocsvm`, variância **zero** em `hit_rate`
+desde o EXP5 -- ver `docs/analise_automl_exp5.md`), a rede neural do
+CNN1D-AE varia de verdade entre sementes -- inicialização de pesos +
+estocasticidade do treino (dropout, ordem de batch) produzem resultados
+genuinamente diferentes mesmo com a mesma arquitetura (`best_hp`) e os
+mesmos dados. Isso muda a leitura de toda a série de recalibrações
+anteriores: os números que fomos reportando a cada rodada (87,5% →
+90,0% → 85,0% nesta) provavelmente refletem, em boa parte, esse ruído de
+semente/busca de hiperparâmetro (o `KerasTuner` também não tem sua
+própria aleatoriedade fixada antes da busca, então até a arquitetura
+vencedora pode variar entre execuções) -- **não** só o efeito líquido de
+cada recalibração isolada. A média do seed-sweep (86,9%/0,60%) é uma
+leitura mais honesta do candidato do que qualquer rodada isolada.
 
 ## Pendências / próximos passos
 
-- Confirmar remotamente o resultado do seed-sweep.
+- Considerar fixar a semente global (`keras.utils.set_random_seed`)
+  antes da própria busca do `KerasTuner`, não só no seed-sweep -- hoje a
+  arquitetura vencedora em si pode variar entre execuções, o que é uma
+  fonte de variância maior que a do seed-sweep (que só varia a
+  inicialização *depois* de `best_hp` já fixado).
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
   worker remoto), não uma escolha livre -- se a memória deixar de ser
   fator limitante (worker maior, ou uma reescrita de `make_sequences`
@@ -209,4 +245,5 @@ remota.
 6. `f4d092bf69b445e891ed058cbc4f8f2b` -- + varredura completa de del/gc, completou mas 0%/0%
 7. `7fba01f514674418adba71e3149b5e64` -- + fix stride na máscara operacional + robust_mad, hit_rate 87,5%/FP 1,21%
 8. `2db0722a20694cdfb47d77e1b07242a6` -- + recalibração (`THRESH_STD_K=3,0`, `POINT_WINDOW=2`), guiada por simulação offline, hit_rate 90,0% (36/40) / FP 0,94%
-9. `9ff669b9a83f4ad7bb0fefc01aead335` -- + gates recalibrados (rampa/volatilidade) + `MAX_TRIALS=40`, guiada por simulação offline, **resultado final: hit_rate 90,0% (36/40) / FP 0,80%**
+9. `9ff669b9a83f4ad7bb0fefc01aead335` -- + gates recalibrados (rampa/volatilidade) + `MAX_TRIALS=40`, guiada por simulação offline, hit_rate 90,0% (36/40) / FP 0,80%
+10. `8b97c625af78431e88b912c6e9288332` -- + seed-sweep (`SEED_SWEEP_N=4`), **achado final: CNN1D-AE NÃO tem variância zero (hit_rate 85,0%--92,5% entre sementes, média 86,9%±3,25pp) -- diferente do AutoML, cuja variância de semente é zero desde o EXP5**
