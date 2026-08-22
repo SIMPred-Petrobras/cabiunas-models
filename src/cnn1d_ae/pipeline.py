@@ -449,6 +449,8 @@ def run_one_group(
 
     df_normal = df_use.loc[~exclude].copy()
     df_all = df_use.copy()
+    del df_use
+    gc.collect()
 
     # Split OOS: se definido, treino (modelo + normalizacao + threshold) so
     # enxerga dados anteriores a OOS_SPLIT_DATE; a avaliacao (hit_rate/
@@ -456,7 +458,11 @@ def run_one_group(
     # pontos posteriores -- mesmo mecanismo do automl_pipeline.py
     # (AUTOML_OOS_SPLIT_DATE), portado aqui pro CNN1D-AE.
     oos_start = pd.Timestamp(cfg.OOS_SPLIT_DATE) if cfg.OOS_SPLIT_DATE else None
-    df_normal_fit = df_normal.loc[df_normal.index < oos_start] if oos_start is not None else df_normal
+    if oos_start is not None:
+        df_normal_fit = df_normal.loc[df_normal.index < oos_start]
+        del df_normal
+    else:
+        df_normal_fit = df_normal
 
     if len(df_normal_fit) < effective_cfg.TIME_STEPS + 10:
         print(f"[SKIP] group={group_name} (poucos dados normais antes do split OOS: {len(df_normal_fit)})")
@@ -467,11 +473,32 @@ def run_one_group(
     df_all = clip_outliers(df_all, cfg)
 
     df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all)
+    del df_normal_fit
+    gc.collect()
 
+    # all_index extraido antes de descartar o corpo de df_all_z -- as
+    # unicas outras leituras de df_all_z mais abaixo eram sempre `.index`,
+    # nunca dados; extrair aqui evita manter ~276 colunas x 1,9M linhas
+    # vivas so pelo indice.
+    all_index = df_all_z.index
     values_normal = df_normal_z.values.astype(np.float32)
     values_all = df_all_z.values.astype(np.float32)
+    del df_normal_z, df_all_z
+    gc.collect()
+
+    # A partir daqui, df_all so precisa das colunas BRUTAS dos sensores --
+    # mascara operacional/portoes/plots mais abaixo referenciam sempre
+    # nomes de sensor (ref_col/target_sensor/gate_sensor/vol_sensors/s),
+    # nunca as colunas derivadas (roll_med/roll_std/trend/textura). Reduz
+    # de feature_cols (~276 com multiescala+textura) para len(sensors)
+    # (~12) -- a maior fonte de memoria "morta" que sobrava ate o fim da
+    # funcao e causava OOM (exit 137) num worker remoto.
+    df_all = df_all[sensors]
+    gc.collect()
 
     x_train_full = make_sequences(values_normal, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
+    del values_normal
+    gc.collect()
     x_train, x_val = train_val_split(
         x_train_full, cfg.VAL_FRAC, cfg.SHUFFLE_TRAIN, cfg.RANDOM_SEED,
         split_mode=cfg.SPLIT_MODE,
@@ -513,6 +540,8 @@ def run_one_group(
     gc.collect()
 
     x_all = make_sequences(values_all, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
+    del values_all
+    gc.collect()
     x_all_pred = best_model.predict(x_all, batch_size=effective_cfg.BATCH_SIZE, verbose=0)
     abs_err_all = np.abs(x_all_pred - x_all)
     mae_seq_all = np.mean(abs_err_all, axis=(1, 2))          # (n_seq,) — MAE global
@@ -538,7 +567,7 @@ def run_one_group(
         if effective_cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_all.columns:
             secondary_series = df_all[target_sensor]
         state = build_operational_state(
-            index=df_all_z.index,
+            index=all_index,
             sensor_series=ref_series,
             off_value_quantile=cfg.OFF_VALUE_QUANTILE,
             off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
@@ -550,12 +579,11 @@ def run_one_group(
         )
         anomaly_seq = mask_anomaly_seq_by_operational_state(
             anomaly_seq=anomaly_seq,
-            index=df_all_z.index,
+            index=all_index,
             time_steps=effective_cfg.TIME_STEPS,
             state=state,
         )
 
-    all_index = df_all_z.index
     df_seq_scores = build_sequence_scores_df(all_index, mae_for_anom, anomaly_seq, stride=effective_cfg.STRIDE)
     # Colunas de MAE por canal — útil para diagnosticar qual sensor disparou
     for i, s in enumerate(sensors):
