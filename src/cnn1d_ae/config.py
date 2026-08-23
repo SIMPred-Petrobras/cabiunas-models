@@ -97,6 +97,13 @@ class PipelineConfig:
     VAL_FRAC: float = 0.10
     SHUFFLE_TRAIN: bool = False
     SPLIT_MODE: str = "temporal"  # "temporal" | "random"
+    # Fatia adicional reservada para calibracao conformal (THRESH_MODE=
+    # "conformal"), nunca vista pelo fit nem pelo early stopping -- fica
+    # com o trecho mais recente (mais proximo do corte OOS), pois e o que
+    # mais precisa se parecer com o periodo avaliado. 0.0 = desligado,
+    # comportamento identico ao split treino/val de sempre (nenhum config
+    # existente e afetado). Ver compute_threshold() em scoring.py.
+    CALIBRATION_FRAC: float = 0.0
 
     # Tuning
     MAX_TRIALS: int = 10

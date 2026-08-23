@@ -45,7 +45,24 @@ def compute_threshold(
         median = np.median(train_mae_seq)
         mad = np.median(np.abs(train_mae_seq - median))
         return float(median + float(std_k) * 1.4826 * mad)
-    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/mean_std/robust_mad.")
+    if mode == "conformal":
+        # Split conformal: threshold = quantil empirico com correcao de
+        # amostra finita sobre um conjunto de CALIBRACAO nunca visto pelo
+        # fit nem pelo early stopping (train_mae_seq aqui deve ser esse
+        # conjunto, nao o treino inteiro -- ver train_val_calib_split em
+        # sequences.py). Da garantia formal P(score > threshold) <= alpha
+        # sob exchangeability, sem assumir forma de distribuicao -- ataca
+        # a fragilidade do robust_mad/mean_std, cujo multiplicador k precisa
+        # ser recalibrado por tentativa-e-erro a cada retreino (mediana/MAD
+        # do treino mudam de modelo pra modelo).
+        n = len(train_mae_seq)
+        if n == 0:
+            raise ValueError("THRESH_MODE='conformal' exige um conjunto de calibracao nao-vazio (CALIBRATION_FRAC > 0).")
+        alpha = float(np.clip(target_rate, 1e-6, 0.5))
+        q_idx = min(int(np.ceil((n + 1) * (1.0 - alpha))), n)
+        sorted_scores = np.sort(train_mae_seq)
+        return float(sorted_scores[q_idx - 1])
+    raise ValueError("THRESH_MODE invalido. Use max_train/p95/p97/p99/p99_5/target_rate/mean_std/robust_mad/conformal.")
 
 
 def map_seq_to_point_anomalies(

@@ -22,7 +22,7 @@ from .preprocess import (
     normalize_train_only,
     select_feature_columns,
 )
-from .sequences import make_sequences, train_val_split
+from .sequences import make_sequences, train_val_split, train_val_calib_split
 from .tuning import run_tuner, refit_best_model
 from .scoring import (
     reconstruction_mae_per_seq,
@@ -337,6 +337,7 @@ def _refit_cnn1dae_with_seed(
     values_all: np.ndarray,
     target_idx: "int | None",
     seed: int,
+    n_calib: int = 0,
 ) -> "tuple[np.ndarray, float]":
     """Reconstroi a MESMA arquitetura (best_hp, ja escolhida pelo tuner) com
     uma seed especifica, re-treina do zero e recalcula threshold/MAE sobre a
@@ -360,7 +361,8 @@ def _refit_cnn1dae_with_seed(
     train_abs_err = np.abs(x_train_pred - x_train_full)
     train_mae_thresh = (np.mean(train_abs_err[:, :, target_idx], axis=1)
                          if target_idx is not None else np.mean(train_abs_err, axis=(1, 2)))
-    threshold = compute_threshold(train_mae_thresh, effective_cfg.THRESH_MODE,
+    threshold_scores = train_mae_thresh[-n_calib:] if effective_cfg.THRESH_MODE.lower() == "conformal" else train_mae_thresh
+    threshold = compute_threshold(threshold_scores, effective_cfg.THRESH_MODE,
                                    target_rate=effective_cfg.TARGET_ANOMALY_RATE,
                                    std_k=effective_cfg.THRESH_STD_K)
     del x_train_pred, train_abs_err
@@ -660,10 +662,12 @@ def run_one_group(
     x_train_full = make_sequences(values_normal, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
     del values_normal
     gc.collect()
-    x_train, x_val = train_val_split(
-        x_train_full, cfg.VAL_FRAC, cfg.SHUFFLE_TRAIN, cfg.RANDOM_SEED,
+    x_train, x_val, x_calib = train_val_calib_split(
+        x_train_full, cfg.VAL_FRAC, effective_cfg.CALIBRATION_FRAC, cfg.SHUFFLE_TRAIN, cfg.RANDOM_SEED,
         split_mode=cfg.SPLIT_MODE,
     )
+    n_calib = x_calib.shape[0]
+    del x_calib
     n_features = x_train.shape[-1]
 
     best_hp, best_model, df_trials = run_tuner(effective_cfg, out_dirs, x_train, x_val, n_features)
@@ -685,7 +689,11 @@ def run_one_group(
     # Se target_sensor definido, usa MAE desse canal para o threshold
     train_mae_thresh = (np.mean(train_abs_err[:, :, target_idx], axis=1)
                         if target_idx is not None else train_mae_seq)
-    threshold = compute_threshold(train_mae_thresh, effective_cfg.THRESH_MODE,
+    # x_train_full = [train | val | calib] nessa ordem (train_val_calib_split);
+    # a fatia de calibracao (nunca vista pelo fit nem pelo early stopping) e
+    # os ultimos n_calib scores de train_mae_thresh -- sem inferencia extra.
+    threshold_scores = train_mae_thresh[-n_calib:] if effective_cfg.THRESH_MODE.lower() == "conformal" else train_mae_thresh
+    threshold = compute_threshold(threshold_scores, effective_cfg.THRESH_MODE,
                                   target_rate=effective_cfg.TARGET_ANOMALY_RATE,
                                   std_k=effective_cfg.THRESH_STD_K)
     plot_hist_mae(train_mae_thresh, threshold, os.path.join(out_dirs["figs"], "train_mae_hist.png"))
@@ -754,7 +762,7 @@ def run_one_group(
         for i in range(1, effective_cfg.SEED_SWEEP_N + 1):
             seed = cfg.RANDOM_SEED + i
             mae_for_anom_seed, threshold_seed = _refit_cnn1dae_with_seed(
-                effective_cfg, best_hp, x_train, x_val, x_train_full, values_all, target_idx, seed,
+                effective_cfg, best_hp, x_train, x_val, x_train_full, values_all, target_idx, seed, n_calib,
             )
             anomaly_seq_seed = mae_for_anom_seed > threshold_seed
             _, eval_stats_seed, composite_seed = _score_to_report(anomaly_seq_seed)

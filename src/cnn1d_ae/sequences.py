@@ -41,3 +41,41 @@ def train_val_split(
         return x[train_idx], x[val_idx]
 
     raise ValueError("SPLIT_MODE invalido. Use 'temporal' ou 'random'.")
+
+
+def train_val_calib_split(
+    x: np.ndarray,
+    val_frac: float,
+    calib_frac: float,
+    shuffle: bool,
+    seed: int,
+    split_mode: str = "temporal",
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Como train_val_split, mas reserva uma 3a fatia (calibracao) para o
+    THRESH_MODE="conformal". Ordem temporal: train | val | calib -- calib
+    fica com o trecho mais recente (mais proximo do corte OOS), val fica no
+    meio (mesma posicao de sempre quando calib_frac=0, preservando o
+    comportamento existente byte-a-byte)."""
+    n_total = x.shape[0]
+    n_calib = int(np.floor(calib_frac * n_total))
+    n_val = int(np.floor(val_frac * n_total))
+    n_train = n_total - n_val - n_calib
+
+    if n_train <= 0 or n_val <= 0 or (calib_frac > 0 and n_calib <= 0):
+        raise ValueError("VAL_FRAC/CALIBRATION_FRAC resultou em split invalido para a quantidade de sequencias.")
+
+    mode = split_mode.lower()
+    if mode == "temporal":
+        return x[:n_train], x[n_train:n_train + n_val], x[n_train + n_val:]
+
+    if mode == "random":
+        idx = np.arange(n_total)
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            rng.shuffle(idx)
+        train_idx = idx[:n_train]
+        val_idx = idx[n_train:n_train + n_val]
+        calib_idx = idx[n_train + n_val:]
+        return x[train_idx], x[val_idx], x[calib_idx]
+
+    raise ValueError("SPLIT_MODE invalido. Use 'temporal' ou 'random'.")

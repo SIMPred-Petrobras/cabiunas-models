@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from src.cnn1d_ae.sequences import train_val_split
+from src.cnn1d_ae.sequences import train_val_split, train_val_calib_split
 from src.cnn1d_ae.scoring import compute_threshold, apply_load_gate
 
 
@@ -27,6 +27,48 @@ class TestSplitAndThreshold(unittest.TestCase):
         self.assertAlmostEqual(compute_threshold(arr, "p97"), np.percentile(arr, 97))
         self.assertAlmostEqual(compute_threshold(arr, "p99_5"), np.percentile(arr, 99.5))
         self.assertAlmostEqual(compute_threshold(arr, "target_rate", target_rate=0.2), np.quantile(arr, 0.8))
+
+    def test_train_val_calib_split_zero_calib_matches_train_val_split(self):
+        # CALIBRATION_FRAC=0.0 (default) tem que reproduzir exatamente o
+        # split treino/val de sempre -- nenhum config existente pode mudar
+        # de comportamento so por essa funcao existir.
+        x = np.arange(100).reshape(20, 5)
+        x_train_old, x_val_old = train_val_split(x, val_frac=0.2, shuffle=False, seed=42, split_mode="temporal")
+        x_train_new, x_val_new, x_calib_new = train_val_calib_split(
+            x, val_frac=0.2, calib_frac=0.0, shuffle=False, seed=42, split_mode="temporal",
+        )
+        self.assertTrue(np.array_equal(x_train_old, x_train_new))
+        self.assertTrue(np.array_equal(x_val_old, x_val_new))
+        self.assertEqual(x_calib_new.shape[0], 0)
+
+    def test_train_val_calib_split_temporal_order(self):
+        # ordem train | val | calib -- calib fica com o trecho mais recente
+        x = np.arange(100).reshape(20, 5)
+        x_train, x_val, x_calib = train_val_calib_split(
+            x, val_frac=0.2, calib_frac=0.15, shuffle=False, seed=42, split_mode="temporal",
+        )
+        self.assertEqual(x_train.shape[0], 13)  # 20 - 4 (val) - 3 (calib)
+        self.assertEqual(x_val.shape[0], 4)
+        self.assertEqual(x_calib.shape[0], 3)
+        self.assertTrue(np.array_equal(x_train[-1], x[12]))
+        self.assertTrue(np.array_equal(x_val[0], x[13]))
+        self.assertTrue(np.array_equal(x_val[-1], x[16]))
+        self.assertTrue(np.array_equal(x_calib[0], x[17]))
+        self.assertTrue(np.array_equal(x_calib[-1], x[19]))
+
+    def test_conformal_threshold_matches_manual_quantile(self):
+        rng = np.random.default_rng(0)
+        calib_scores = rng.normal(loc=0.1, scale=0.02, size=999)
+        alpha = 0.05
+        threshold = compute_threshold(calib_scores, "conformal", target_rate=alpha)
+        n = len(calib_scores)
+        q_idx = int(np.ceil((n + 1) * (1 - alpha)))
+        expected = np.sort(calib_scores)[q_idx - 1]
+        self.assertAlmostEqual(threshold, expected)
+
+    def test_conformal_threshold_empty_calib_raises(self):
+        with self.assertRaises(ValueError):
+            compute_threshold(np.array([]), "conformal", target_rate=0.05)
 
     def test_load_gate_blocks_only_during_ramp(self):
         idx = pd.date_range("2025-01-01", periods=60, freq="1min")
