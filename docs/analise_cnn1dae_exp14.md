@@ -164,31 +164,79 @@ ficou **idêntico** (`1,2654956579208374`) ao cenário limpo sem nenhuma
 parada injetada — confirma que o filtro isola corretamente o período
 off da calibração, sem afetar o resultado quando não há contaminação.
 
-## Vantagem prática esperada
+## Segunda submissão remota (com o fix): resultado e busca offline de α
 
-Como o threshold deixa de ser um hiperparâmetro (`k`) a ser adivinhado
-por tentativa-e-erro remota, a expectativa é que **uma única submissão
-remota** já baste pra validar o candidato — ao contrário do EXP13, que
-precisou de 2 rodadas só na recalibração final.
+Task `6f03233fa64a4967b7acbe034d212ad7` (commit `b6330b0`, `α=0,003`,
+com o filtro de `operational_state` aplicado): threshold saiu em
+**0,1711** (sensato, dentro da faixa dos candidatos do EXP13), hit_rate
+72,5% (29/40), `normal_alert_rate` 0,26%. Investigação caso a caso:
 
-## Pendências / próximos passos
+| Candidato | Genuíno | Suspeito | Reativo | Cobertura genuína | FP |
+|---|---|---|---|---|---|
+| AutoML EXP10c | 24 | 5 | 8 | **80,0%** | 0,35% |
+| CNN1D-AE `k=3,0` | 7 | 22 | 9 | 40,0% | 1,66% |
+| CNN1D-AE `k=6,0` | 10 | 12 | 9 | 47,5% | 0,30% |
+| **CNN1D-AE `k=7,0` (candidato final EXP13)** | **14** | **3** | **10** | **60,0%** | **0,17%** |
+| CNN1D-AE conformal (`α=0,003`, com fix) | 9 | 10 | 10 | 47,5% | 0,26% |
 
-- Resubmeter `test_grupo_exp14_conformal.json` (com o fix de filtragem
-  por `operational_state`) e comparar hit_rate/cobertura genuína/FP
-  contra o candidato final do EXP13 (`k=7,0`: cobertura genuína
-  60,0%/FP 0,17%) e contra o AutoML EXP10c (80,0%/0,35%).
-- Repetir a investigação caso a caso (genuíno vs. suspeito/artefato de
-  janela) sobre o resultado do conformal, mesmo critério do EXP13.
+Abaixo do candidato final do EXP13. **Achado adicional preocupante:**
+o seed-sweep desta task mostrou variância muito maior que qualquer
+candidato anterior — `hit_rate_std` **±18,9pp** (seeds 37,5%-90,0%),
+contra ±2,5-10,5pp nos candidatos `robust_mad`. Hipótese: filtrar a
+calibração por `"on"` reduz o tamanho efetivo da amostra (61,6% da
+fatia sobrou após o filtro nesta task — 4.316/7.008), tornando o
+quantil extremo mais sensível a variação de treino entre sementes.
+
+**Busca offline de α (reaproveitando os dados desta task, sem gastar
+rodada remota):** grid de `α` de 0,001 a 0,4. Cobertura genuína **atinge
+um teto de ~50% em `α≈0,0075-0,15` e depois CAI** (FP sobe rápido sem
+trazer mais detecção genuína — em `α=0,4`, FP=2,33% e cobertura caiu
+pra 30%). Em nenhum ponto do intervalo testado o conformal alcança os
+60%/0,17% do `k=7,0`.
+
+## Conclusão desta rodada
+
+O conformal, uma vez corrigido o bug de contaminação por parada longa,
+funciona corretamente (threshold sensato, garantia de FPR se comporta
+como esperado no smoke test sintético) mas **não superou** o candidato
+`k=7,0` do EXP13 nesta comparação. Duas explicações não mutuamente
+exclusivas, nenhuma delas desqualificando o método:
+1. **Variância normal de retreino:** cada submissão treina o modelo do
+   zero; a variância entre sementes desta task específica (±18,9pp) é
+   grande o bastante pra que o modelo principal tenha sido só um "sorteio
+   ruim", não uma limitação estrutural do conformal.
+2. **Descasamento de métrica:** `α` mira a taxa de excedência bruta
+   *por sequência*, calculada sobre o score cru de reconstrução —
+   diferente da "cobertura genuína" (métrica final, pós-agregação por
+   ponto/`POINT_WINDOW`/gates/janela de ±24h). Os dois não mapeiam de
+   forma perfeitamente monotônica; otimizar um não garante otimizar o
+   outro.
+
+**Decisão do usuário:** manter `k=7,0` (EXP13, `robust_mad`) como
+candidato de produção por ora. O conformal fica documentado como
+infraestrutura corrigida e validada (evita o ciclo de tentativa-e-erro
+de `k` em retreinos futuros) — não é descartado, só não é a escolha
+desta rodada. Não haverá nova submissão remota do EXP14 por enquanto.
+
+## Pendências / próximos passos (se retomado no futuro)
+
+- Investigar se a alta variância do seed-sweep (±18,9pp) é intrínseca
+  ao conformal com calibração filtrada por `"on"` ou coincidência desta
+  task — rodar um seed-sweep dedicado maior antes de decidir.
+- Verificar se algum dos modelos já treinados pelo seed-sweep desta
+  task (seed=46 teve hit_rate 90%, bem acima do modelo principal)
+  também tem cobertura genuína alta — se sim, reforça a hipótese de
+  "sorteio ruim" do modelo principal, não limitação do método.
 - Decidir se vale portar `THRESH_MODE="conformal"` também para
   `run_one_sensor` (não feito nesta rodada, mesmo escopo restrito do
   seed-sweep no EXP13).
-- Considerar se o `x_train`/`x_val` também deveriam excluir
-  off/transiente (não só a calibração) -- fora de escopo por ora, mas
-  o mesmo mecanismo de contaminação de regime pode, em tese, afetar o
-  fit do modelo (não só o threshold).
-- Se o resultado remoto confirmar a garantia de FPR do `α` escolhido,
-  considerar isso a métrica preferencial de calibração daqui pra
-  frente (substituindo o ciclo de `THRESH_STD_K` por tentativa-e-erro).
+- Considerar se `x_train`/`x_val` também deveriam excluir
+  off/transiente (não só a calibração) — fora de escopo por ora, mas o
+  mesmo mecanismo de contaminação de regime pode, em tese, afetar o fit
+  do modelo (não só o threshold).
+- Considerar aplicar conformal sobre a métrica final (pós-agregação/
+  gates) em vez do score cru por sequência, pra eliminar o
+  descasamento de métrica apontado acima.
 
 ## Tasks ClearML (ordem cronológica)
 
@@ -196,6 +244,10 @@ precisou de 2 rodadas só na recalibração final.
    submissão, `α=0,003`, **sem** filtro de operational_state na
    calibração: threshold 0,6318 (contaminado por parada longa
    2025-06-05), hit_rate 0% -- descartada, levou ao fix acima.
+2. `6f03233fa64a4967b7acbe034d212ad7` (commit `b6330b0`) -- com o fix
+   de filtragem por `operational_state`: threshold 0,1711, hit_rate
+   72,5%, cobertura genuína 47,5% (19/40), FP 0,26% -- abaixo do
+   candidato final do EXP13; seed-sweep com variância alta (±18,9pp).
 
 ## Branch e commits
 
