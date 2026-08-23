@@ -240,16 +240,71 @@ ainda varia um pouco (~0,3\% de diferença relativa, contra ~0,65\% antes
 do segundo reseed) -- resíduo de não-determinismo do TensorFlow em
 operações paralelas (Conv1D em CPU), que só fecharia de vez com
 `tf.config.experimental.enable_op_determinism()` (mais invasivo, pode
-custar desempenho de treino; não aplicado aqui). Resultado pendente de
-confirmação com um novo seed-sweep remoto -- espera-se um `hit_rate_std`
-bem menor que os ±3,25pp observados antes deste fix.
+custar desempenho de treino; não aplicado aqui).
+
+**Confirmado remotamente (task `2d63b3fbe1ff43459f8db28283910c49`,
+`THRESH_STD_K=3,0` inalterado -- só o fix de seed):** hit_rate_std caiu
+de ±3,25pp para ±2,50pp (5 valores agora oscilam só entre 85\% e 90\%,
+sumiu o outlier de 92,5\% visto antes) -- melhora real, mas **FP piorou**
+(média 0,60\%→1,23\%, chegando a 1,66\% no modelo principal). Threshold
+resultante (0,135) saiu bem mais baixo que o da rodada anterior (0,157) --
+mesmo com arquitetura fixa, o resíduo de não-determinismo desloca o
+ponto na curva threshold→hit\_rate/FP o suficiente pra mudar o
+resultado visivelmente (a curva é íngreme nessa faixa, ver seção
+seguinte).
+
+## Achado crítico: artefato de antecedência perto do teto da janela
+
+Investigação caso a caso (pedida pelo usuário antes de recalibrar de
+novo) revelou que boa parte dos "preditivos" do candidato de
+`THRESH_STD_K=3,0` é **artefato de janela**, não sinal genuíno -- o
+mesmo padrão já documentado no EXP8/EXP11: com FP alto (1,66\%), pontos
+de falso alerta espalhados pela série têm boa chance de cair, por
+coincidência, perto do início da janela de $\pm$24h ao redor de um
+alarme, sendo contados como "antecedência" sem ser precursor real.
+
+**Evidência:** dos 27 casos "preditivos" do threshold 0,135, **22 têm
+antecedência entre 20h e 24h** (mediana geral = 23,9h, colada no teto).
+Comparando com o EXP10c (AutoML): só 5 de 29 preditivos (17\%) caem
+nessa faixa suspeita -- o EXP10c é majoritariamente genuíno (mediana
+real, excluindo suspeitos, 13,4h), consistente com seu FP baixo (0,35\%).
+
+**Critério de recalibração revisado:** em vez de só `composite_score`
+(cego a esse artefato), simulação offline em grade de threshold
+classificou cada um dos 40 alarmes em preditivo genuíno (antecedência
+<20h), preditivo suspeito (≥20h), reativo ou sem detecção, e escolheu o
+threshold que maximiza **cobertura genuína** ((preditivo genuíno +
+reativo) / 40), não hit_rate bruto.
+
+| Candidato | Preditivo genuíno | Reativo | Cobertura genuína | FP |
+|---|---|---|---|---|
+| AutoML EXP10c | 24 | 8 | **80,0\% (32/40)** | 0,35\% |
+| CNN1D-AE (threshold 0,135, `k=3,0`) | 7 | 9 | 40,0\% (16/40) | 1,66\% |
+| CNN1D-AE recalibrado (threshold≈0,265, `k≈6,0` estimado) | 14 | 10 | 60,0\% (24/40) | 0,19\% |
+
+Mesmo depois da recalibração, o CNN1D-AE fica genuinamente atrás do
+AutoML (60\% vs 80\% de cobertura real) -- a vantagem do EXP10c não é
+artefato, é detecção real mais forte. Mas a recalibração ainda vale: FP
+de 0,19\% é **mais baixo que o do próprio EXP10c** (0,35\%), e a
+cobertura genuína sobe de 40\% para 60\%.
+
+**Tradução threshold→`THRESH_STD_K`:** como `robust_mad` depende da
+mediana/MAD reais do treino (que variam levemente entre execuções, ver
+seção anterior), a tradução de "quero threshold≈0,265" para um `k`
+exato não é determinística -- usamos uma extrapolação proporcional a
+partir do ponto conhecido (`k=3,0` → threshold real `0,135`):
+`k ≈ 3,0 × (0,265/0,135) ≈ 5,9`, arredondado para `THRESH_STD_K=6,0`.
+**Resultado pendente de confirmação remota** -- o threshold real
+resultante pode não bater exatamente em 0,265 dado o resíduo de
+variância entre execuções.
 
 ## Pendências / próximos passos
 
-- Confirmar remotamente que o novo seed-sweep tem desvio-padrão menor
-  que o anterior (±3,25pp em hit_rate).
+- Confirmar remotamente o resultado da recalibração `THRESH_STD_K=6,0`
+  (mirando threshold≈0,265, cobertura genuína≈60\%, FP≈0,19\%).
 - Considerar `tf.config.experimental.enable_op_determinism()` se o
-  resíduo de variância acima ainda incomodar.
+  resíduo de variância de threshold entre execuções continuar
+  incomodando a calibração.
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
   worker remoto), não uma escolha livre -- se a memória deixar de ser
   fator limitante (worker maior, ou uma reescrita de `make_sequences`
