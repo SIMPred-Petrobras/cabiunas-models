@@ -22,16 +22,20 @@ from ablacao import canonico, roda, mascara_pontuacao
 from ablacao4 import BRACO
 from auto_reset import trunca
 
-K_BASE, K_VIB, LIM = 1.3, 2.2, 12
+# Ponto de operacao vigente (ablacao4): k_base escolhido no treino, k_vib desacoplado.
+# Ate 2026-08-22 este script rodava com k_base=1.3 e contava FP por mes de CALENDARIO,
+# o que produzia numeros (3,2 FP/mes, 81 h/mes) que nao batem com os do relatorio --
+# a regua do projeto (avalia.py) conta por mes de OPERACAO. Corrigido nos dois pontos.
+K_BASE, K_VIB, LIM = 1.7, 2.2, 12
 AZUL, LARANJA, VERDE, VERM = "#2E5E6E", "#C4703A", "#1F7A5E", "#9E2B2B"
 
 
 def main():
     df = canonico()
     ftodas = pd.read_csv("falhas.csv", parse_dates=["evento"])["evento"].dt.tz_convert("UTC")
-    falhas = ftodas[ftodas >= "2025-01-01"].reset_index(drop=True)
+    falhas = ftodas.reset_index(drop=True)          # os 9 eventos, nao so os de 2025+
     mask = mascara_pontuacao(df); idx = mask.index
-    cal = (idx[-1] - idx[0]).total_seconds() / 3600 / 730
+    meses_op = mask.sum() * 2 / 60 / 730.0          # mes de OPERACAO, como em avalia.py
     jan48 = [(t - pd.Timedelta(hours=48), t) for t in ftodas]
 
     out = roda(BRACO, df, ftodas)
@@ -54,13 +58,18 @@ def main():
 
     # ---------------------------------------------------------- figura 1
     fig, axes = plt.subplots(2, 1, figsize=(15, 6.6), sharex=True)
+    h_sem = sum((b - a).total_seconds()/3600 + 2/60 for a, b in fps(al_sem))
+    h_com = sum((b - a).total_seconds()/3600 + 2/60 for a, b in fps(al_com))
+    corte = 100 * (1 - h_com / max(h_sem, 1e-9))
     for ax, al, titulo in [
-        (axes[0], al_sem, "Detector atual — sem limite de permanência"),
-        (axes[1], al_com, f"Com limite de {LIM} h — alarme 72% mais curto; um trip sai da janela de 48 h "
-         f"(o alerta disparou, mas 91 h antes)"),
+        (axes[0], al_sem, "Detector no ponto de operação — sem limite de permanência"),
+        (axes[1], al_com, f"Com limite de {LIM} h — {corte:.0f}% menos horas de alarme, "
+                          f"ao custo de um trip que sai da janela de 48 h"),
     ]:
         fp = fps(al)
         h = sum((b - a).total_seconds()/3600 + 2/60 for a, b in fp)
+        det = sum(1 for ev in falhas
+                  if al[(al.index >= ev - pd.Timedelta(hours=48)) & (al.index < ev)].any())
         ax.fill_between(n.index, 0, n.where(al, 0).to_numpy(), step="mid",
                         color=AZUL, lw=0, alpha=.9)
         ax.fill_between(n.index, 0, n.to_numpy(), step="mid", color=AZUL, lw=0, alpha=.18)
@@ -71,8 +80,9 @@ def main():
             ax.axvline(ev, color=VERDE if pego else VERM, lw=1.5, ls="--", alpha=.9)
         ax.set_ylim(0, 4.4); ax.set_yticks([0, 2, 4])
         ax.set_ylabel("sinais\nsimultâneos", fontsize=9)
-        ax.set_title(f"{titulo}   —   {len(fp)/cal:.1f} alarmes falsos/mês, "
-                     f"{h/cal:.0f} h/mês em alarme", fontsize=10.5, loc="left")
+        ax.set_title(f"{titulo}   —   {det}/{len(falhas)} trips, "
+                     f"{len(fp)/meses_op:.1f} alarmes falsos e {h/meses_op:.0f} h de alarme "
+                     f"por mês de operação", fontsize=10.5, loc="left")
         ax.grid(axis="y", alpha=.2, lw=.6)
 
     axes[0].plot([], [], color=VERM, alpha=.22, lw=8, label="episódio de alarme falso")
