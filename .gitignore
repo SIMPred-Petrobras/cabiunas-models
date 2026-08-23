@@ -23,3 +23,7 @@ __pycache__/
 *.log
 *.tmp
 .env
+
+# caches locais do pdm_fisico (regeraveis por build_cache.py / diego_stack.py)
+scripts/pdm_fisico/*.parquet
+scripts/pdm_fisico/falhas.csv
