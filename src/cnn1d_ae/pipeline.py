@@ -22,7 +22,7 @@ from .preprocess import (
     normalize_train_only,
     select_feature_columns,
 )
-from .sequences import make_sequences, train_val_split, train_val_calib_split
+from .sequences import make_sequences, train_val_split, train_val_calib_split, sequence_all_true
 from .tuning import run_tuner, refit_best_model
 from .scoring import (
     reconstruction_mae_per_seq,
@@ -338,6 +338,7 @@ def _refit_cnn1dae_with_seed(
     target_idx: "int | None",
     seed: int,
     n_calib: int = 0,
+    calib_on_mask: "np.ndarray | None" = None,
 ) -> "tuple[np.ndarray, float]":
     """Reconstroi a MESMA arquitetura (best_hp, ja escolhida pelo tuner) com
     uma seed especifica, re-treina do zero e recalcula threshold/MAE sobre a
@@ -361,7 +362,12 @@ def _refit_cnn1dae_with_seed(
     train_abs_err = np.abs(x_train_pred - x_train_full)
     train_mae_thresh = (np.mean(train_abs_err[:, :, target_idx], axis=1)
                          if target_idx is not None else np.mean(train_abs_err, axis=(1, 2)))
-    threshold_scores = train_mae_thresh[-n_calib:] if effective_cfg.THRESH_MODE.lower() == "conformal" else train_mae_thresh
+    if effective_cfg.THRESH_MODE.lower() == "conformal":
+        threshold_scores = train_mae_thresh[-n_calib:]
+        if calib_on_mask is not None:
+            threshold_scores = threshold_scores[calib_on_mask]
+    else:
+        threshold_scores = train_mae_thresh
     threshold = compute_threshold(threshold_scores, effective_cfg.THRESH_MODE,
                                    target_rate=effective_cfg.TARGET_ANOMALY_RATE,
                                    std_k=effective_cfg.THRESH_STD_K)
@@ -532,8 +538,16 @@ def run_one_group(
     # all_index extraido antes de descartar o corpo de df_all_z -- as
     # unicas outras leituras de df_all_z mais abaixo eram sempre `.index`,
     # nunca dados; extrair aqui evita manter ~276 colunas x 1,9M linhas
-    # vivas so pelo indice.
+    # vivas so pelo indice. normal_index (so quando THRESH_MODE=conformal
+    # com calibracao ligada) permite alinhar operational_state aos pontos
+    # de values_normal mais abaixo -- sem isso a fatia de calibracao pode
+    # cair inteira num periodo "off" (ex: parada longa), inflando o
+    # threshold com reconstrucao ruim de um regime que nunca conta como FP
+    # na avaliacao (ja mascarado por operational_state la na frente).
     all_index = df_all_z.index
+    normal_index = (df_normal_z.index
+                     if (effective_cfg.THRESH_MODE.lower() == "conformal" and effective_cfg.CALIBRATION_FRAC > 0)
+                     else None)
     values_normal = df_normal_z.values.astype(np.float32)
     values_all = df_all_z.values.astype(np.float32)
     del df_normal_z, df_all_z
@@ -579,6 +593,12 @@ def run_one_group(
             secondary_series=secondary_series,
             secondary_off_abs_threshold=effective_cfg.OFF_TARGET_ABS_THRESHOLD,
         )
+
+    # Mascara "on" alinhada a values_normal (posicao a posicao), usada so
+    # pra filtrar a fatia de calibracao conformal (ver normal_index acima).
+    normal_on_mask = None
+    if normal_index is not None and state is not None:
+        normal_on_mask = (state.reindex(normal_index).fillna("on").values == "on")
 
     load_gate_series = None
     if effective_cfg.ENABLE_LOAD_GATE:
@@ -670,6 +690,18 @@ def run_one_group(
     del x_calib
     n_features = x_train.shape[-1]
 
+    # Sequencias da fatia de calibracao inteiramente em operational_state
+    # "on" -- exclui periodos off/transiente (ex: parada longa) que o
+    # modelo reconstroi mal por mudanca de regime, nao por anomalia real,
+    # e que nunca contam como FP na avaliacao (ja mascarados la na frente).
+    # Sem isso, um unico episodio "off" raro dentro da fatia de calibracao
+    # pode dominar o quantil extremo do conformal (alpha baixo = poucos
+    # pontos no topo, facil de ser "sequestrado" por um regime diferente).
+    calib_on_mask = None
+    if n_calib > 0 and normal_on_mask is not None:
+        seq_is_on = sequence_all_true(normal_on_mask, effective_cfg.TIME_STEPS, effective_cfg.STRIDE)
+        calib_on_mask = seq_is_on[-n_calib:]
+
     best_hp, best_model, df_trials = run_tuner(effective_cfg, out_dirs, x_train, x_val, n_features)
     df_trials.to_csv(os.path.join(out_dirs["csv"], "trials_ranking.csv"), index=False)
 
@@ -692,7 +724,13 @@ def run_one_group(
     # x_train_full = [train | val | calib] nessa ordem (train_val_calib_split);
     # a fatia de calibracao (nunca vista pelo fit nem pelo early stopping) e
     # os ultimos n_calib scores de train_mae_thresh -- sem inferencia extra.
-    threshold_scores = train_mae_thresh[-n_calib:] if effective_cfg.THRESH_MODE.lower() == "conformal" else train_mae_thresh
+    # calib_on_mask filtra sequencias off/transiente de dentro dessa fatia.
+    if effective_cfg.THRESH_MODE.lower() == "conformal":
+        threshold_scores = train_mae_thresh[-n_calib:]
+        if calib_on_mask is not None:
+            threshold_scores = threshold_scores[calib_on_mask]
+    else:
+        threshold_scores = train_mae_thresh
     threshold = compute_threshold(threshold_scores, effective_cfg.THRESH_MODE,
                                   target_rate=effective_cfg.TARGET_ANOMALY_RATE,
                                   std_k=effective_cfg.THRESH_STD_K)
@@ -762,7 +800,7 @@ def run_one_group(
         for i in range(1, effective_cfg.SEED_SWEEP_N + 1):
             seed = cfg.RANDOM_SEED + i
             mae_for_anom_seed, threshold_seed = _refit_cnn1dae_with_seed(
-                effective_cfg, best_hp, x_train, x_val, x_train_full, values_all, target_idx, seed, n_calib,
+                effective_cfg, best_hp, x_train, x_val, x_train_full, values_all, target_idx, seed, n_calib, calib_on_mask,
             )
             anomaly_seq_seed = mae_for_anom_seed > threshold_seed
             _, eval_stats_seed, composite_seed = _score_to_report(anomaly_seq_seed)

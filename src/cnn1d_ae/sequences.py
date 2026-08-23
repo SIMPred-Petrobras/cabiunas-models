@@ -13,6 +13,20 @@ def make_sequences(values_2d: np.ndarray, time_steps: int, stride: int) -> np.nd
     return np.stack(out, axis=0)
 
 
+def sequence_all_true(mask_1d: np.ndarray, time_steps: int, stride: int) -> np.ndarray:
+    """Para cada janela que make_sequences() geraria a partir de um array do
+    mesmo tamanho de mask_1d (mesmos time_steps/stride), retorna True se
+    TODOS os pontos da janela sao True em mask_1d. Usado para filtrar a
+    fatia de calibracao conformal por operational_state=="on" -- indices
+    de saida alinhados 1:1 com make_sequences(mesmo array-base)."""
+    n = len(mask_1d)
+    last = n - time_steps
+    starts = np.arange(0, last + 1, stride)
+    cum = np.concatenate(([0], np.cumsum(mask_1d.astype(np.int64))))
+    window_sum = cum[starts + time_steps] - cum[starts]
+    return window_sum == time_steps
+
+
 def train_val_split(
     x: np.ndarray,
     val_frac: float,

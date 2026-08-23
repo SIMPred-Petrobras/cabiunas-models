@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from src.cnn1d_ae.sequences import train_val_split, train_val_calib_split
+from src.cnn1d_ae.sequences import train_val_split, train_val_calib_split, sequence_all_true
 from src.cnn1d_ae.scoring import compute_threshold, apply_load_gate
 
 
@@ -69,6 +69,21 @@ class TestSplitAndThreshold(unittest.TestCase):
     def test_conformal_threshold_empty_calib_raises(self):
         with self.assertRaises(ValueError):
             compute_threshold(np.array([]), "conformal", target_rate=0.05)
+
+    def test_sequence_all_true_matches_make_sequences_alignment(self):
+        # mask com um bloco "off" (False) no meio -- so as janelas que nao
+        # tocam nesse bloco devem sair True.
+        mask = np.ones(30, dtype=bool)
+        mask[10:15] = False  # bloco "off" de 5 pontos
+        time_steps, stride = 6, 3
+        out = sequence_all_true(mask, time_steps, stride)
+        # janela em i=6 cobre [6:12) -> toca o bloco off (10:15) -> False
+        # janela em i=0 cobre [0:6) -> longe do bloco -> True
+        # janela em i=15 cobre [15:21) -> depois do bloco -> True
+        starts = np.arange(0, (30 - time_steps) + 1, stride)
+        expected = np.array([not (max(s, 10) < min(s + time_steps, 15)) for s in starts])
+        self.assertTrue(np.array_equal(out, expected))
+        self.assertEqual(len(out), len(starts))
 
     def test_load_gate_blocks_only_during_ramp(self):
         idx = pd.date_range("2025-01-01", periods=60, freq="1min")

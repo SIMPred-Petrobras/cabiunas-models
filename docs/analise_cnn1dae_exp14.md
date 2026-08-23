@@ -104,6 +104,66 @@ reproduz o comportamento anterior byte-a-byte — ver testes).
   distribuição inteira — threshold saiu diferente do cenário 2, como
   esperado).
 
+## Achado crítico (primeira submissão remota): calibração contaminada por parada longa
+
+Primeira submissão remota (task `130ed7b5cf9447889443800f8d624b1a`,
+commit `f7d81f3`, `α=0,003`) deu um resultado claramente errado:
+threshold saiu em **0,6318** — bem mais alto que qualquer candidato
+anterior (0,135-0,261 no EXP13) — e o modelo principal teve **hit_rate
+0% (0/40)**, enquanto os modelos do seed-sweep (retreinados) detectaram
+normalmente (22,5%-50%). O histograma de MAE de treino (`train_mae_hist.png`)
+mostrou a linha do threshold muito além do que era visualmente
+perceptível na distribuição — sinal de outlier extremo raro na cauda.
+
+**Investigação:** baixando `sequence_scores_all.csv`/`point_anomalies_all.csv`
+da task real, localizamos os valores mais altos de MAE do canal-alvo
+dentro da janela de calibração (últimos ~10% do período normal
+pré-OOS) concentrados em **2025-06-05, madrugada** (MAE até 0,643).
+Checando `operational_state` nesse intervalo: **100% `off_longo`** —
+uma parada longa da turbina. O autoencoder, treinado majoritariamente
+com a turbina ligada, reconstrói mal esse regime (não é anomalia real).
+
+**Causa raiz:** a fatia de calibração é definida por corte temporal
+(últimos `CALIBRATION_FRAC` do período normal pré-OOS), sem filtrar por
+`operational_state`. A máscara operacional só zera `is_anom_point` na
+hora da *avaliação* — nunca filtrou o que entra no treino ou na
+calibração. Com `α=0,003` muito baixo, o quantil conformal é literalmente
+uma estatística de ordem extrema (~21 pontos entre 7.008 no calibration
+set desta task); um único episódio "off" com dezenas de janelas
+sobrepostas (mesma parada, `STRIDE=15`/`TIME_STEPS=60`) foi suficiente
+pra dominar esses ~21 pontos e inflar o threshold muito além do que a
+operação normal jamais atinge. O `robust_mad` não sofre tanto com isso
+porque mediana+k×MAD é dominado pelo grosso da distribuição, não pela
+cauda extrema.
+
+**Fix (mesma branch, sem nova branch):** filtrar a fatia de calibração
+por `operational_state=="on"` antes de calcular o quantil conformal —
+alinha o que o threshold "vê" com o que de fato é avaliado (pontos
+off/transiente nunca contam como FP).
+- `sequences.py`: nova `sequence_all_true(mask_1d, time_steps, stride)`
+  — vetorizada (cumsum), retorna por sequência se TODOS os pontos da
+  janela são `True`, com indexação idêntica a `make_sequences` (garante
+  alinhamento 1:1).
+- `pipeline.py` (`run_one_group`): captura `normal_index` (índice de
+  `df_normal_z`, só quando `THRESH_MODE=="conformal"` e
+  `CALIBRATION_FRAC>0`, pra não pagar custo em nenhum outro caso) antes
+  de descartar o dataframe; computa `normal_on_mask` alinhando
+  `operational_state` a esse índice; usa `sequence_all_true` pra saber
+  quais sequências da fatia de calibração são 100% `"on"`, filtrando
+  antes de `compute_threshold`. Mesmo tratamento em
+  `_refit_cnn1dae_with_seed` (seed-sweep), passando a máscara já
+  calculada (não recalcula por seed).
+- **Escopo do fix:** só filtra a *calibração* (o cálculo do threshold).
+  `x_train`/`x_val` continuam incluindo períodos off/transiente sem
+  mudança — não é o escopo desta correção (evita mudança brusca maior).
+
+**Validação do fix:** smoke test dedicado injetando uma parada
+sintética (`RUNNING_A=0`, sensor-alvo cai pra "ambiente") bem dentro da
+fatia de calibração. Threshold resultante **com contaminação + fix**
+ficou **idêntico** (`1,2654956579208374`) ao cenário limpo sem nenhuma
+parada injetada — confirma que o filtro isola corretamente o período
+off da calibração, sem afetar o resultado quando não há contaminação.
+
 ## Vantagem prática esperada
 
 Como o threshold deixa de ser um hiperparâmetro (`k`) a ser adivinhado
@@ -113,18 +173,29 @@ precisou de 2 rodadas só na recalibração final.
 
 ## Pendências / próximos passos
 
-- Submeter `test_grupo_exp14_conformal.json` remotamente e comparar
-  hit_rate/cobertura genuína/FP contra o candidato final do EXP13
-  (`k=7,0`: cobertura genuína 60,0%/FP 0,17%) e contra o AutoML EXP10c
-  (80,0%/0,35%).
+- Resubmeter `test_grupo_exp14_conformal.json` (com o fix de filtragem
+  por `operational_state`) e comparar hit_rate/cobertura genuína/FP
+  contra o candidato final do EXP13 (`k=7,0`: cobertura genuína
+  60,0%/FP 0,17%) e contra o AutoML EXP10c (80,0%/0,35%).
 - Repetir a investigação caso a caso (genuíno vs. suspeito/artefato de
   janela) sobre o resultado do conformal, mesmo critério do EXP13.
 - Decidir se vale portar `THRESH_MODE="conformal"` também para
   `run_one_sensor` (não feito nesta rodada, mesmo escopo restrito do
   seed-sweep no EXP13).
+- Considerar se o `x_train`/`x_val` também deveriam excluir
+  off/transiente (não só a calibração) -- fora de escopo por ora, mas
+  o mesmo mecanismo de contaminação de regime pode, em tese, afetar o
+  fit do modelo (não só o threshold).
 - Se o resultado remoto confirmar a garantia de FPR do `α` escolhido,
   considerar isso a métrica preferencial de calibração daqui pra
   frente (substituindo o ciclo de `THRESH_STD_K` por tentativa-e-erro).
+
+## Tasks ClearML (ordem cronológica)
+
+1. `130ed7b5cf9447889443800f8d624b1a` (commit `f7d81f3`) -- primeira
+   submissão, `α=0,003`, **sem** filtro de operational_state na
+   calibração: threshold 0,6318 (contaminado por parada longa
+   2025-06-05), hit_rate 0% -- descartada, levou ao fix acima.
 
 ## Branch e commits
 
