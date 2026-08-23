@@ -282,12 +282,21 @@ reativo) / 40), não hit_rate bruto.
 | CNN1D-AE (threshold 0,135, `k=3,0`) | 7 | 9 | 40,0\% (16/40) | 1,66\% |
 | CNN1D-AE recalibrado (threshold≈0,265, `k≈6,0` estimado) | 14 | 10 | 60,0\% (24/40) | 0,19\% |
 | CNN1D-AE recalibrado (threshold real 0,2294, `k=6,0` confirmado) | 10 | 9 | 47,5\% (19/40) | 0,30\% |
+| **CNN1D-AE recalibrado (threshold real 0,2609, `k=7,0` confirmado)** | **14** | **10** | **60,0\% (24/40)** | **0,17\%** |
 
-Mesmo depois da recalibração, o CNN1D-AE fica genuinamente atrás do
-AutoML (60\% vs 80\% de cobertura real) -- a vantagem do EXP10c não é
-artefato, é detecção real mais forte. Mas a recalibração ainda vale: FP
-de 0,19\% é **mais baixo que o do próprio EXP10c** (0,35\%), e a
-cobertura genuína sobe de 40\% para 60\%.
+A segunda rodada de recalibração (`k=7,0`) bateu a meta: threshold real
+`0,2609` ficou praticamente idêntico ao ótimo previsto pelo regrid
+offline (`0,260`). Resultado: cobertura genuína **60,0\% (24/40)**, com
+FP **0,17\%** -- menos da metade do FP do próprio EXP10c (0,35\%). O
+número de casos "suspeitos" (artefato de janela) também caiu bastante,
+de 12 (em `k=6,0`) para **3**, ou seja a cobertura genuína agora é
+majoritariamente detecção real, não ruído perto do teto da janela.
+
+Mesmo assim, o CNN1D-AE fica genuinamente atrás do AutoML (60\% vs 80\%
+de cobertura real) -- a vantagem do EXP10c não é artefato, é detecção
+real mais forte. Mas a recalibração ainda vale: FP de 0,17\% é **menos
+da metade do FP do EXP10c** (0,35\%), e a cobertura genuína subiu de
+40\% (candidato original) para 60\%.
 
 **Tradução threshold→`THRESH_STD_K`:** como `robust_mad` depende da
 mediana/MAD reais do treino (que variam levemente entre execuções, ver
@@ -318,18 +327,20 @@ exato).
 **Achado adicional (seed-sweep pós-recalibração):** com `k=6,0`, a
 variância do seed-sweep aumentou bastante -- `hit_rate_std` foi de
 ±2,50pp (resultado anterior, `k=3,0` pós-fix de seed) para **±10,51pp**
-(seeds 43-46: 42,5\%-70,0\%). Sinal de que threshold mais alto cai numa
-região da curva mais sensível a variação de treino/seed -- vale
-monitorar se isso se repete com `k=7,0`.
+(seeds 43-46: 42,5\%-70,0\%). Com `k=7,0` (task
+`8a95bccb0e40461ea9caea20c94dae10`, commit `b1b4fff`), a variância caiu
+um pouco (**±7,15pp**, seeds 37,5\%-57,5\%) mas segue bem acima do
+±2,50pp original -- não foi um efeito pontual só do `k=6,0`; threshold
+mais alto nesta base parece consistentemente mais sensível a variação
+de treino/seed do que o threshold mais baixo de antes da recalibração.
 
 ## Pendências / próximos passos
 
-- Confirmar remotamente o resultado da recalibração `THRESH_STD_K=7,0`
-  (mirando threshold≈0,260, cobertura genuína≈60\%, FP≈0,20\%).
-- Investigar por que a variância do seed-sweep aumentou tanto em
-  `k=6,0` (±10,51pp vs ±2,50pp) -- se persistir em `k=7,0`, pode
-  indicar que threshold alto nesta base é uma região inerentemente
-  instável, não só um efeito pontual da extrapolação.
+- Investigar por que threshold mais alto (`k≥6,0`) aumenta a
+  variância do seed-sweep de forma persistente (±7-10,5pp vs
+  ±2,5pp) -- não resolvido, pode ser uma característica estrutural da
+  região da curva threshold→hit_rate onde o candidato final agora
+  opera, não um artefato de uma execução específica.
 - Considerar `tf.config.experimental.enable_op_determinism()` se o
   resíduo de variância de threshold entre execuções continuar
   incomodando a calibração.
@@ -353,3 +364,4 @@ monitorar se isso se repete com `k=7,0`.
 10. `8b97c625af78431e88b912c6e9288332` -- + seed-sweep (`SEED_SWEEP_N=4`), **achado final: CNN1D-AE NÃO tem variância zero (hit_rate 85,0%--92,5% entre sementes, média 86,9%±3,25pp) -- diferente do AutoML, cuja variância de semente é zero desde o EXP5**
 11. `2d63b3fbe1ff43459f8db28283910c49` -- + seed global fixada antes do tuner (2 pontos de reseed), reduz variância (`hit_rate_std` 3,25→2,50pp) mas threshold reproduzível (0,135) caiu numa faixa de FP mais alta (0,60%→1,23% de FP médio)
 12. `48119896110c4ccfa2581ab2087f4d88` -- + recalibração pós-artefato de janela (`THRESH_STD_K=6,0`, mirando cobertura genuína), threshold real 0,2294 (não 0,265 estimado), cobertura genuína 47,5% (19/40) / FP 0,30% -- melhora sobre baseline mas abaixo da meta de 60%; seed-sweep mostra variância bem maior (`hit_rate_std` ±10,51pp)
+13. `8a95bccb0e40461ea9caea20c94dae10` -- + segunda recalibração (`THRESH_STD_K=7,0`, guiada por regrid offline sobre dados reais da task 12), threshold real 0,2609 (quase exato ao previsto 0,260), **candidato final: cobertura genuína 60,0% (24/40) / FP 0,17%** -- bate a meta, FP menos da metade do EXP10c; seed-sweep melhora um pouco mas segue elevado (`hit_rate_std` ±7,15pp)
