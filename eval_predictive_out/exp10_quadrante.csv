@@ -1,0 +1,5 @@
+detector,mascara,n,pred,reat,nada,hit,taxa_pred,lead_med,atraso_med
+4 sinais,mascara nossa,32,16,5,11,65.625,50.0,10.395555555555555,2.3119444444444444
+4 sinais,mascara dele (operando),32,16,5,11,65.625,50.0,10.395555555555555,2.3119444444444444
+4 sinais + teto 12h,mascara nossa,32,11,7,14,56.25,34.375,9.199166666666667,4.508055555555556
+4 sinais + teto 12h,mascara dele (operando),32,11,7,14,56.25,34.375,9.199166666666667,4.508055555555556
