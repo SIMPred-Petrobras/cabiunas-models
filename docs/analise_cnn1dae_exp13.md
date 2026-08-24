@@ -657,6 +657,133 @@ lugar da task 14: supera em cobertura bruta (77,5% vs 75,0%) E em todos
 os pontos do seed-sweep (seed principal, média, mínimo, máximo), com FP
 ~37% maior mas ainda bem abaixo do AutoML EXP10c.
 
+## Investigação de melhorias para reativos/não-detectados no EXP15b (3 achados negativos)
+
+Depois de promover o EXP15b, investigamos três caminhos de baixo custo
+(todos offline, sem gastar rodada remota) pra melhorar os casos
+`reativo` (detecção só depois do alarme) e `sem_detecção` do EXP15b.
+Os três vieram negativos -- documentados aqui pra não serem
+retestados sem uma nova ideia.
+
+### 1. Segundo `GATE_ESCAPE_MULTIPLIER` para 2026-03-25 -- não se aplica mais
+
+**Correção de uma pendência anterior deste doc.** A hipótese original
+(baseada no comportamento da task 14) era que 2026-03-25 continuava
+sendo um caso de "MAE cruza o threshold mas fica bloqueado por um
+portão com margem pequena demais pro gate-escape (1,5x) alcançar" --
+exatamente o mesmo mecanismo do 2026-01-29. **Isso não é mais verdade
+no EXP15b.** Checando a task real (`a273ea8c9f674e8ba04ac291f45d2795`):
+o pico de MAE do canal-alvo em 2026-03-25 é **0,633 -- só 58% do
+threshold (1,089), nem chega a cruzar o threshold normal**, muito menos
+precisar do multiplicador de escape. `volatility_gate_blocked=True` na
+janela toda, mas isso é irrelevante aqui: gate-escape só resgata pontos
+que já passaram do threshold e foram bloqueados; sem cruzamento, não há
+bloqueio a resgatar.
+
+O interessante: os canais de **vibração** disparam muito mais forte
+nessa mesma janela sob a normalização on-state (`TV_354Y_A`=6,24,
+`TV_354X_A`=3,40, contra 0,53-0,61 na task 14) -- é por isso que o
+portão de volatilidade está ativo. Mas como a detecção usa só o MAE do
+canal-alvo (`TC382_03_A`), esse sinal de vibração forte não conta pro
+score. A normalização on-state amplificou a sensibilidade de forma
+desigual entre canais: ajudou a deriva lenta de temperatura
+(2026-04-14) mas não esse episódio dominado por vibração. Um segundo
+`GATE_ESCAPE_MULTIPLIER` não resolve -- não há gate bloqueando nada
+aqui, o problema é upstream do portão.
+
+### 2. Pontuação combinada (canal-alvo + T5_AVG_A / vibração) -- troca, não ganha
+
+Testado offline sobre `sequence_scores_all.csv` do EXP15b (já tem MAE
+por canal, os 12 canais do grupo), reaproveitando a réplica exata da
+avaliação oficial já validada (bate bit-a-bit com
+`evaluation_alarm_hit_rate.json`). Candidatos de score, avaliados no
+mesmo FP do baseline (~0,30%) pra comparação justa:
+
+| Score | hit\_rate (FP≈0,30%) | 2026-03-25 |
+|---|---|---|
+| `TC382_03_A` só (atual) | **77,5% (31/40)** | não |
+| `max(alvo, T5_AVG_A)` | 77,5% (31/40) -- idêntico | não |
+| `max(alvo, todos os 12 canais)` | **72,5% (29/40)** | **sim** |
+
+Combinar com `T5_AVG_A` não muda nada (ele já anda colado com o alvo --
+mesmo teto de MAE, 0,622 no pico de 2026-03-25, também abaixo do
+threshold). Combinar com o máximo entre os canais de vibração **resgata
+2026-03-25**, mas custa **2 outros alarmes** na mesma taxa de FP -- não
+é ganho líquido, é troca. Mecanismo provável: vibração é ruidosa o
+bastante pra "gastar" o orçamento de FP em falsos alarmes de vibração
+não relacionados, empurrando o threshold geral pra cima e perdendo
+sensibilidade em casos de temperatura que o score atual já pegava.
+Descartado como está -- incorporar vibração no score exigiria pesar/
+filtrar o sinal de vibração de um jeito mais seletivo que "máximo bruto"
+antes de valer a pena, o que é uma mudança de arquitetura/scoring, não
+um ajuste de threshold.
+
+### 3. Varredura de sensores brutos como precursor -- nenhum sinal limpo encontrado
+
+Motivado por notar (durante a auditoria original) que alarmes de
+pressão de gás combustível (`PAL_6240315`, `PI_6240319_AL`) às vezes
+precedem o alarme de temperatura por horas. Investigação:
+
+- **Sensores diretos** (`954005_624_PI_0315`/`PI_0319`, mapeamento
+  confirmado contra a descrição do alarme): `PI_0315` fica praticamente
+  constante (16,7--17,5) nas 10h antes de **todos** os episódios
+  testados, sem diferença entre os que detectamos e os que perdemos.
+  `PI_0319` tem distribuição bimodal ruidosa (salta entre ~-0,6 e
+  ~44,8) igualmente em todos os episódios -- confirma o achado do EXP11
+  (`docs/analise_automl_exp11.md`): esse tag é dominado por artefato de
+  desligamento/variável de estado, não é uma leitura de pressão
+  contínua e limpa.
+- **Spread entre os 6 termopares do anel** (`TC382_01..06_A`, feature
+  clássica de \emph{condition monitoring} de exaustão de turbina):
+  checado nos 5 episódios reativos/não-detectados vs. 4 episódios já
+  detectados como controle. Os z-scores do pico de spread nas 24h antes
+  do alarme ficam **baixos e parecidos entre os dois grupos** (miss:
+  0,6--1,9; controle: 0,6--4,3, às vezes maior no controle) -- sem
+  poder discriminante.
+- **Varredura sistemática dos ~19 sensores de pressão/temperatura
+  restantes** (não usados hoje no grupo do CNN1D-AE): para cada sensor,
+  comparamos o desvio máximo (z-score robusto) nas 18h antes do alarme
+  entre o grupo "perdido/reativo" (n=5) e o grupo "já detectado" (n=4,
+  controle). Na maioria dos sensores o desvio é **maior no grupo
+  controle**, não no grupo perdido -- interpretação: quando outros
+  sensores também se mexem, é sinal de uma perturbação física mais
+  ampla, que é justamente o que o modelo já capta hoje. O único
+  candidato com diferença positiva (`954005_624_PDIT_0305`, diferencial
+  de pressão da linha de balanceamento de gás) não resistiu à checagem
+  direta da série: no episódio de 2025-10-20 ele sobe **junto** com o
+  alarme de temperatura (16h14--16h18, mesma janela de 5 minutos) -- é
+  sintoma simultâneo, não precursor; em 2026-03-25 nem sai do nível
+  normal.
+- **`HSX_6240001A`** (flag binária, provável trip/lockout): fica em
+  **zero (sem ativação) nos 24h antes de todos os 9 episódios
+  testados**, perdidos e controle igualmente -- sinal morto nesse
+  período, não discrimina nada.
+- **Os 6 termopares do anel checados individualmente** (não só o
+  agregado de spread acima): confirmam e reforçam a conclusão. Nos 5
+  episódios perdidos/reativos, os 6 canais têm z-score baixo e
+  homogêneo entre si (média ~1,5--1,8 por canal). No grupo controle
+  (já detectado), a média sobe pra ~6,3--8,0 por canal (dois dos 4
+  casos de controle, 2026-01-29 e 2026-04-08, chegam a z~13--14). Ou
+  seja: não é que falte o termopar certo -- **nenhum dos 6 canais**
+  reage nos casos perdidos, consistente com esses episódios sendo
+  genuinamente mais brandos em magnitude térmica (não maiores, apenas
+  mais difíceis de separar do ruído) em qualquer canal de temperatura
+  disponível.
+
+**Conclusão:** com a instrumentação hoje coletada (12 sensores do grupo
++ os outros ~23 disponíveis no CSV bruto -- todos checados: 19
+sensores de pressão/temperatura individualmente, os 6 termopares do
+anel individualmente, e a flag `HSX_6240001A`), não há evidência de um
+precursor mensurável para os episódios que ficam reativos ou sem
+detecção no EXP15b. É plausível que essas falhas específicas
+simplesmente não tenham assinatura antecipada em nenhum instrumento
+disponível -- limitação de instrumentação/física do processo, não de
+modelo. Os três achados negativos desta seção fecham o ciclo de
+melhorias baratas (pós-processamento/features já disponíveis); o que
+sobra de caminho plausível é mudança de arquitetura (ex: canal de saída
+dedicado à vibração no próprio autoencoder, não um score combinado
+pós-hoc) -- fora do escopo de uma investigação offline.
+
 ## Pendências / próximos passos
 
 - **EXP15b promovido a candidato final consolidado.** Se quiser reduzir
@@ -667,9 +794,10 @@ os pontos do seed-sweep (seed principal, média, mínimo, máximo), com FP
   entre os modelos do seed-sweep (média/mediana do MAE entre os 4-5
   modelos) -- essa última exigiria salvar os scores por semente como
   artefato, hoje descartados após o cálculo de hit_rate/normal_alert_rate.
-- **2026-03-25**: revisitar a calibração do `GATE_ESCAPE_MULTIPLIER` (ou
-  um segundo multiplicador mais permissivo, específico pra margens
-  pequenas) -- ver seção acima, não precisa de ensemble/arquitetura.
+- **2026-03-25**: os três caminhos baratos investigados (gate-escape,
+  score combinado, precursor de sensor bruto) vieram negativos -- ver
+  seção acima. Sem uma nova ideia concreta, fica como limitação
+  documentada do EXP15b, não uma pendência ativa.
 - **2026-04-14**: resolvido pelo EXP15b (ver acima).
 - Formalizar a exclusão de alarmes `Comm Fail`/`Out of Serv` na
   metodologia de avaliação (hoje só documentado, não implementado em
