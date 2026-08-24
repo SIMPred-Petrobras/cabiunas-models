@@ -567,21 +567,56 @@ Extrapolação linear a partir do único ponto real conhecido
 (mesma ressalva de sempre: o modelo real vai ter mediana/MAD levemente
 diferentes ao retreinar).
 
-**Rodada 2 (recalibração):** config
-`test_grupo_exp15b_normalizacao_on_state_recalibrado.json` (cópia do
-EXP15 + `THRESH_STD_K=4,5`), submetida remota. Resultado pendente.
+**Rodada 2 (recalibração, task `a273ea8c9f674e8ba04ac291f45d2795`,
+2026-08-24): confirma a hipótese, bate a extrapolação quase exata e
+resgata o 2026-04-14.**
+
+Threshold real saiu em **1,0892** -- praticamente idêntico à
+extrapolação offline (previsto 1,10). Resultado:
+
+| Candidato | hit_rate bruto | FP (`normal_alert_rate`) |
+|---|---|---|
+| Anterior (task 14, sem normalização on-state) | 75,0% (30/40) | 0,22% |
+| EXP15 rodada 1 (`K=7,0`, threshold 1,5704) | 27,5% (11/40) | 0,08% |
+| **EXP15b (`K=4,5`, threshold 1,0892)** | **77,5% (31/40)** | **0,30%** |
+
+`hit_rate` bruto supera o candidato anterior (77,5% vs 75,0%), com FP
+ainda bem abaixo do AutoML EXP10c (0,35%) apesar de ~37% maior que o
+candidato anterior (0,30% vs 0,22%). **2026-04-14 confirmado como
+detectado**: os dois picos de MAE (1,93 e 1,68, ambos > threshold 1,0892
+e > `threshold×GATE_ESCAPE_MULTIPLIER`=1,634) geram 138 e 161 pontos
+anômalos nas janelas de ±24h dos alarmes (`point_anomalies_all.csv`),
+mesmo com `load_gate`/`volatility_gate` ativos na região -- resgatados
+pelo gate-escape, mesmo mecanismo do episódio 2026-01-29.
+
+**Ressalva:** `seed_sweep` (`SEED_SWEEP_N=4`) mostra variância alta
+nesta configuração -- hit_rate 47,5%-75,0% entre sementes (média
+60,6%±9,9pp), abaixo da seed principal (77,5%). Consistente com o
+padrão já documentado de que thresholds mais altos (`K` maior) tendem a
+aumentar a variância de semente -- não invalida o resultado da seed
+principal, mas indica que a robustez do candidato a retreinos ainda não
+está no nível do candidato anterior (task 14, `hit_rate_std`≈7-10pp em
+thresholds comparáveis, porém partindo de uma média mais alta).
+
+**Conclusão da investigação dos 2 episódios do início desta seção:**
+2026-03-25 não precisava de mudança de modelo (era bloqueio de gate);
+2026-04-14 foi resgatado pela normalização on-state-only + recalibração
+de `THRESH_STD_K`. EXP15b é o novo candidato de referência do EXP13,
+com cobertura bruta superior ao anterior mas FP e variância de semente
+levemente piores -- decisão de qual promover a "candidato final"
+consolidado fica em aberto (ver pendências).
 
 ## Pendências / próximos passos
 
+- **Decidir entre task 14 (FP menor, mais estável entre sementes) e
+  EXP15b (hit_rate maior, FP e variância de semente piores) como novo
+  candidato final do EXP13** -- ou investigar se dá pra reduzir a
+  variância de semente do EXP15b (ex: `tf.config.experimental.enable_op_determinism()`,
+  já cogitado antes) antes de decidir.
 - **2026-03-25**: revisitar a calibração do `GATE_ESCAPE_MULTIPLIER` (ou
   um segundo multiplicador mais permissivo, específico pra margens
   pequenas) -- ver seção acima, não precisa de ensemble/arquitetura.
-- **2026-04-14**: aguardar resultado do EXP15b (`THRESH_STD_K=4,5`,
-  recalibração do EXP15/normalização on-state-only).
-  Se não resolver sozinho, o próximo candidato é ensemble entre os
-  modelos do seed-sweep ou revisão de arquitetura -- mas o experimento
-  mais barato (mudança de normalização, sem mexer em arquitetura) vem
-  primeiro.
+- **2026-04-14**: resolvido pelo EXP15b (ver acima).
 - Formalizar a exclusão de alarmes `Comm Fail`/`Out of Serv` na
   metodologia de avaliação (hoje só documentado, não implementado em
   código -- `eval_alarm_hit_rate` ainda conta esses 4 alarmes no
@@ -618,4 +653,4 @@ EXP15 + `THRESH_STD_K=4,5`), submetida remota. Resultado pendente.
 14. `f8b884932a2441b987086b611182fe1d` (commit `dc15daa`) -- + auditoria caso a caso (exclui 4 alarmes de erro de sensor confirmados por código `Comm Fail`/`Out of Serv` no dado bruto) + bloqueio gradual dos gates (`GATE_ESCAPE_MULTIPLIER=1,5`, resgata o episódio 2026-01-29 antes suprimido por load_gate+volatility_gate simultâneos), guiado por simulação offline. Threshold reproduziu idêntico (0,2609), FP bateu exato (0,2204% vs 0,221% previsto). **Candidato final consolidado: cobertura genuína 75,8% (25/33, excluindo erro de sensor) / FP 0,22%** -- gap pro AutoML EXP10c caiu de 13,3pp para 4,2pp, com FP ainda 37% menor
 15. `651553afb8444d62972a3ca14d209b95` -- falhou (config nao existia no git ainda -- worker remoto clona do repo, faltou commit+push antes de submeter).
 16. `39d73f7cb7ae4ce7845903246edd5df9` -- EXP15 (resubmetida apos commit `59021ee`): `NORMALIZE_ON_STATE_ONLY=true`. Resultado misto -- pico de MAE do episodio 2026-04-14 confirmado acima do threshold usado (1,93/1,68 vs 1,5704, contra 0,12 vs 0,26 antes do fix), mas hit_rate bruto do grupo caiu de 75,0% pra 27,5% (11/40): THRESH_STD_K=7,0 herdado do EXP13 ficou alto demais pra nova escala do MAE. Regrid offline (reproduz exato o resultado oficial) aponta K≈4,5 pra recuperar hit_rate competitivo.
-17. `a273ea8c9f674e8ba04ac291f45d2795` -- EXP15b (`test_grupo_exp15b_normalizacao_on_state_recalibrado.json`, `THRESH_STD_K=4,5`) -- recalibracao guiada por regrid offline sobre os dados reais da task 16. Submetida 2026-08-24, resultado pendente.
+17. `a273ea8c9f674e8ba04ac291f45d2795` -- EXP15b (`test_grupo_exp15b_normalizacao_on_state_recalibrado.json`, `THRESH_STD_K=4,5`) -- recalibracao guiada por regrid offline sobre os dados reais da task 16. Threshold real 1,0892 (quase exato ao previsto 1,10). **hit_rate 77,5% (31/40) / FP 0,30%** -- supera task 14 em cobertura bruta (75,0%), FP ~37% maior mas ainda bem abaixo do AutoML EXP10c (0,35%). 2026-04-14 confirmado detectado (138/161 pontos anomalos nas janelas dos 2 alarmes). Seed-sweep com variancia alta (hit_rate 47,5%-75,0%, media 60,6%±9,9pp) -- ressalva de robustez a retreino.
