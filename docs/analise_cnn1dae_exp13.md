@@ -525,17 +525,59 @@ mantido como ponto de partida, mas a escala do MAE deve mudar com a nova
 normalização -- espera-se precisar de pelo menos uma rodada de
 recalibração, como em todo o histórico do EXP13.
 
-**Submetido remoto:** task `651553afb8444d62972a3ca14d209b95` (fila
-`default`), 2026-08-24. Pendente: confirmar se resgata o episódio
-2026-04-14 sem estourar `normal_alert_rate`, recalibrar `THRESH_STD_K`
-se necessário.
+**Rodada 1 (task `651553afb8444d62972a3ca14d209b95`, 2026-08-24):
+resultado misto.** O pico de MAE do episódio 2026-04-14 nas duas janelas
+de alarme (00h12 e 12h01) subiu pra **1,93 e 1,68 -- acima do threshold
+usado (1,5704)**, contra 0,12 (bem abaixo de 0,26) antes do fix: a
+normalização on-state-only funcionou pro efeito pretendido. Mas
+`hit_rate` bruto do grupo caiu de 75,0% pra **27,5% (11/40)** --
+`THRESH_STD_K=7,0` (herdado do EXP13) ficou alto demais na nova escala
+do MAE (threshold real saiu em 1,5704, não mais 0,2609).
+
+**Causa raiz da mudança de escala não ser um simples reescalonamento
+linear:** `NORMALIZE_ON_STATE_ONLY` só filtra as ESTATÍSTICAS
+(center/scale), não as linhas de `df_normal_fit` -- as sequências de
+treino continuam incluindo os períodos off/partida. Com desvio-padrão
+calculado só do "on" (~51 em vez de ~323 pra TC382_03_A), um valor off
+típico (~33°C) agora normaliza pra z-score **≈-12,7** em vez de ≈-1,1.
+O autoencoder é treinado tendo que reconstruir essas transições
+artificialmente amplificadas, o que infla o MAE de forma não-uniforme
+entre os canais/episódios -- por isso a recalibração de K não é uma
+extrapolação proporcional trivial como nas rodadas anteriores do EXP13
+(que só mudavam o modelo, não a distribuição de entrada).
+
+**Regrid offline (reproduz exato o resultado oficial: hit_rate 0,275
+batendo 11/40 bit-a-bit contra `evaluation_alarm_hit_rate.json`)** sobre
+`sequence_scores_all.csv`/`point_anomalies_all.csv` desta mesma task,
+reaplicando `map_seq_to_point_anomalies`/gates/`GATE_ESCAPE_MULTIPLIER`
+exatamente como `pipeline.py`:
+
+| threshold | hit_rate bruto | FP (`normal_alert_rate`) |
+|---|---|---|
+| 0,90 | 82,5% (33/40) | 0,57% |
+| 1,00 | 82,5% (33/40) | 0,46% |
+| **1,10** | **77,5% (31/40)** | **0,29%** |
+| 1,20 | 60,0% (24/40) | 0,20% |
+| candidato anterior (task 14, ref.) | 75,0% (30/40) | 0,22% |
+
+`threshold≈1,10` bate/supera o candidato anterior nos dois eixos, e os
+dois picos do episódio 2026-04-14 (1,93/1,68) ficam bem acima dele.
+Extrapolação linear a partir do único ponto real conhecido
+(`K=7,0`→1,5704) aponta pra **`K≈4,5`** -- aproximação, não valor exato
+(mesma ressalva de sempre: o modelo real vai ter mediana/MAD levemente
+diferentes ao retreinar).
+
+**Rodada 2 (recalibração):** config
+`test_grupo_exp15b_normalizacao_on_state_recalibrado.json` (cópia do
+EXP15 + `THRESH_STD_K=4,5`), submetida remota. Resultado pendente.
 
 ## Pendências / próximos passos
 
 - **2026-03-25**: revisitar a calibração do `GATE_ESCAPE_MULTIPLIER` (ou
   um segundo multiplicador mais permissivo, específico pra margens
   pequenas) -- ver seção acima, não precisa de ensemble/arquitetura.
-- **2026-04-14**: aguardar resultado do EXP15 (normalização on-state-only).
+- **2026-04-14**: aguardar resultado do EXP15b (`THRESH_STD_K=4,5`,
+  recalibração do EXP15/normalização on-state-only).
   Se não resolver sozinho, o próximo candidato é ensemble entre os
   modelos do seed-sweep ou revisão de arquitetura -- mas o experimento
   mais barato (mudança de normalização, sem mexer em arquitetura) vem
@@ -574,4 +616,6 @@ se necessário.
 12. `48119896110c4ccfa2581ab2087f4d88` -- + recalibração pós-artefato de janela (`THRESH_STD_K=6,0`, mirando cobertura genuína), threshold real 0,2294 (não 0,265 estimado), cobertura genuína 47,5% (19/40) / FP 0,30% -- melhora sobre baseline mas abaixo da meta de 60%; seed-sweep mostra variância bem maior (`hit_rate_std` ±10,51pp)
 13. `8a95bccb0e40461ea9caea20c94dae10` -- + segunda recalibração (`THRESH_STD_K=7,0`, guiada por regrid offline sobre dados reais da task 12), threshold real 0,2609 (quase exato ao previsto 0,260), cobertura genuína 60,0% (24/40) / FP 0,17% -- bate a meta, FP menos da metade do EXP10c; seed-sweep melhora um pouco mas segue elevado (`hit_rate_std` ±7,15pp)
 14. `f8b884932a2441b987086b611182fe1d` (commit `dc15daa`) -- + auditoria caso a caso (exclui 4 alarmes de erro de sensor confirmados por código `Comm Fail`/`Out of Serv` no dado bruto) + bloqueio gradual dos gates (`GATE_ESCAPE_MULTIPLIER=1,5`, resgata o episódio 2026-01-29 antes suprimido por load_gate+volatility_gate simultâneos), guiado por simulação offline. Threshold reproduziu idêntico (0,2609), FP bateu exato (0,2204% vs 0,221% previsto). **Candidato final consolidado: cobertura genuína 75,8% (25/33, excluindo erro de sensor) / FP 0,22%** -- gap pro AutoML EXP10c caiu de 13,3pp para 4,2pp, com FP ainda 37% menor
-15. `651553afb8444d62972a3ca14d209b95` -- EXP15: `NORMALIZE_ON_STATE_ONLY=true` (normalização restrita ao período 'on' do treino, corrige contaminação do desvio-padrão por período off/partida ~42% do treino), alvo é resgatar o episódio 2026-04-14 (deriva lenta invisível ao z-score contaminado). Submetida 2026-08-24, resultado pendente.
+15. `651553afb8444d62972a3ca14d209b95` -- falhou (config nao existia no git ainda -- worker remoto clona do repo, faltou commit+push antes de submeter).
+16. `39d73f7cb7ae4ce7845903246edd5df9` -- EXP15 (resubmetida apos commit `59021ee`): `NORMALIZE_ON_STATE_ONLY=true`. Resultado misto -- pico de MAE do episodio 2026-04-14 confirmado acima do threshold usado (1,93/1,68 vs 1,5704, contra 0,12 vs 0,26 antes do fix), mas hit_rate bruto do grupo caiu de 75,0% pra 27,5% (11/40): THRESH_STD_K=7,0 herdado do EXP13 ficou alto demais pra nova escala do MAE. Regrid offline (reproduz exato o resultado oficial) aponta K≈4,5 pra recuperar hit_rate competitivo.
+17. EXP15b (`test_grupo_exp15b_normalizacao_on_state_recalibrado.json`, `THRESH_STD_K=4,5`) -- recalibracao guiada por regrid offline sobre os dados reais da task 16. Submetida 2026-08-24, resultado pendente.
