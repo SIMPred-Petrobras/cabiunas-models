@@ -88,6 +88,14 @@ class PipelineConfig:
     OUTLIER_Q_HIGH: float = 0.995
     OUTLIER_MAD_K: float = 6.0
     NORMALIZE_MODE: str = "zscore"  # "zscore" | "robust"
+    # Restringe as estatisticas de normalizacao (center/scale) ao periodo
+    # operacional ("on") do treino, em vez de todo df_normal_fit -- exige
+    # ENABLE_OPERATIONAL_MASK=true. EXP13 (k=7,0): parada/partida ocupa ~42%
+    # do treino, inflando o desvio-padrao global de TC382_03_A de ~51 (so
+    # 'on') para ~323 -- um desvio real de +115C dentro da operacao vira
+    # z-score 1,22 em vez de 2,22, ficando abaixo do ruido normal do sinal e
+    # invisivel ao reconstruction error. Ver docs/analise_cnn1dae_exp13.md.
+    NORMALIZE_ON_STATE_ONLY: bool = False
 
     # Sequencias
     TIME_STEPS: int = 60

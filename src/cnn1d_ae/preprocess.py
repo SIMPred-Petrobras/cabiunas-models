@@ -329,17 +329,32 @@ def clip_outliers(df: pd.DataFrame, cfg: PipelineConfig) -> pd.DataFrame:
 
 
 def normalize_train_only(
-    cfg: PipelineConfig, df_normal: pd.DataFrame, df_all: pd.DataFrame
+    cfg: PipelineConfig,
+    df_normal: pd.DataFrame,
+    df_all: pd.DataFrame,
+    stats_mask: pd.Series | None = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """`stats_mask` (opcional, indexado como `df_normal`): restringe as
+    linhas usadas para calcular center/scale, sem alterar quais linhas sao
+    normalizadas/retornadas. Motivado por NORMALIZE_ON_STATE_ONLY -- ver
+    config.py -- mistura de periodo off/partida com operacao normal no
+    treino infla o desvio-padrao e comprime o z-score de desvios reais
+    dentro da operacao."""
     mode = cfg.NORMALIZE_MODE.lower()
+    df_stats = df_normal.loc[stats_mask] if stats_mask is not None else df_normal
+    if stats_mask is not None and len(df_stats) < cfg.TIME_STEPS + 10:
+        raise ValueError(
+            f"NORMALIZE_ON_STATE_ONLY: poucos pontos 'on' no treino para "
+            f"calcular estatisticas de normalizacao ({len(df_stats)})."
+        )
 
     if mode == "zscore":
-        center = df_normal.mean(axis=0)
-        scale = df_normal.std(axis=0).replace(0, 1.0)
+        center = df_stats.mean(axis=0)
+        scale = df_stats.std(axis=0).replace(0, 1.0)
     elif mode == "robust":
-        center = df_normal.median(axis=0)
-        q1 = df_normal.quantile(0.25)
-        q3 = df_normal.quantile(0.75)
+        center = df_stats.median(axis=0)
+        q1 = df_stats.quantile(0.25)
+        q3 = df_stats.quantile(0.75)
         scale = (q3 - q1).replace(0, 1.0)
     else:
         raise ValueError("NORMALIZE_MODE invalido. Use 'zscore' ou 'robust'.")

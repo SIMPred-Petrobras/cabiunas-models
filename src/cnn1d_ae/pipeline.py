@@ -523,7 +523,45 @@ def run_one_group(
     df_normal_fit = clip_outliers(df_normal_fit, cfg)
     df_all = clip_outliers(df_all, cfg)
 
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all)
+    # Mascara operacional calculada aqui (pos-clip, igual ao comportamento
+    # de sempre -- so foi antecipada pra antes do normalize_train_only, que
+    # antes rodava sem ela, para poder alimentar NORMALIZE_ON_STATE_ONLY.
+    state = None
+    if cfg.ENABLE_OPERATIONAL_MASK:
+        ref_sensor = cfg.OPERATIONAL_REF_SENSOR
+        if ref_sensor and ref_sensor not in sensors:
+            df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
+            ref_series = df_ref[ref_sensor]
+        else:
+            # Usa o sensor de referência se estiver no grupo, senão o primeiro sensor
+            ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
+            ref_series = df_all[ref_col]
+        secondary_series = None
+        if effective_cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_all.columns:
+            secondary_series = df_all[target_sensor]
+        state = build_operational_state(
+            index=df_all.index,
+            sensor_series=ref_series,
+            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
+            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
+            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
+            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
+            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
+            secondary_series=secondary_series,
+            secondary_off_abs_threshold=effective_cfg.OFF_TARGET_ABS_THRESHOLD,
+        )
+
+    # NORMALIZE_ON_STATE_ONLY: restringe center/scale ao periodo 'on' do
+    # treino -- ver nota em config.py. Nao filtra df_normal_fit em si (as
+    # sequencias de treino continuam contiguas), so as estatisticas do
+    # zscore/robust.
+    stats_mask = None
+    if cfg.NORMALIZE_ON_STATE_ONLY:
+        if state is None:
+            raise ValueError("NORMALIZE_ON_STATE_ONLY=true exige ENABLE_OPERATIONAL_MASK=true.")
+        stats_mask = state.reindex(df_normal_fit.index).fillna("on") == "on"
+
+    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all, stats_mask=stats_mask)
     del df_normal_fit
     gc.collect()
 
@@ -547,36 +585,12 @@ def run_one_group(
     df_all = df_all[sensors]
     gc.collect()
 
-    # Infraestrutura de avaliacao (mascara operacional, portoes, alarmes/
-    # janela OOS) construida ANTES do treino -- nenhuma dessas etapas
-    # depende do modelo, e monta-las aqui permite reusa-las tanto no
-    # modelo principal quanto no seed-sweep (mais abaixo) sem precisar
-    # manter x_train_full/x_train/x_val/values_all vivos ate o fim da
-    # funcao so por causa do seed-sweep.
-    state = None
-    if cfg.ENABLE_OPERATIONAL_MASK:
-        ref_sensor = cfg.OPERATIONAL_REF_SENSOR
-        if ref_sensor and ref_sensor not in sensors:
-            df_ref, _ = build_sensor_dataframe(cfg, df_feat, df_raw, ref_sensor)
-            ref_series = df_ref[ref_sensor]
-        else:
-            # Usa o sensor de referência se estiver no grupo, senão o primeiro sensor
-            ref_col = ref_sensor if (ref_sensor and ref_sensor in sensors) else sensors[0]
-            ref_series = df_all[ref_col]
-        secondary_series = None
-        if effective_cfg.OFF_TARGET_ABS_THRESHOLD is not None and target_sensor and target_sensor in df_all.columns:
-            secondary_series = df_all[target_sensor]
-        state = build_operational_state(
-            index=all_index,
-            sensor_series=ref_series,
-            off_value_quantile=cfg.OFF_VALUE_QUANTILE,
-            off_abs_threshold=cfg.OFF_ABS_THRESHOLD,
-            off_long_min_hours=cfg.OFF_LONG_MIN_HOURS,
-            transient_padding_minutes=cfg.TRANSIENT_PADDING_MINUTES,
-            transient_diff_quantile=cfg.TRANSIENT_DIFF_QUANTILE,
-            secondary_series=secondary_series,
-            secondary_off_abs_threshold=effective_cfg.OFF_TARGET_ABS_THRESHOLD,
-        )
+    # Infraestrutura de avaliacao (portoes, alarmes/janela OOS) construida
+    # ANTES do treino -- nenhuma dessas etapas depende do modelo, e monta-las
+    # aqui permite reusa-las tanto no modelo principal quanto no seed-sweep
+    # (mais abaixo) sem precisar manter x_train_full/x_train/x_val/
+    # values_all vivos ate o fim da funcao so por causa do seed-sweep.
+    # `state` (mascara operacional) ja foi calculado antes do normalize_train_only.
 
     load_gate_series = None
     if effective_cfg.ENABLE_LOAD_GATE:

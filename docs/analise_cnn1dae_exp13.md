@@ -467,13 +467,79 @@ O gap pro AutoML caiu de 13,3pp para **4,2pp**, com FP ainda 37%
 menor que o EXP10c (0,22% vs 0,35%). Este é o **candidato final
 consolidado do EXP13**.
 
+## Investigação dos 2 episódios não detectados (2026-03-25, 2026-04-14)
+
+Puxados os artefatos da task final (`f8b884932a2441b987086b611182fe1d`,
+commit `dc15daa`) + dataset bruto do ClearML pra investigar caso a caso.
+**As duas causas são diferentes entre si -- e diferentes do que a
+pendência original supunha.**
+
+### 2026-03-25 -- não é falha do modelo, é o mesmo bug do 2026-01-29
+
+`mae_seq` pico às 11h30 = **0,26107, ACIMA do threshold (0,26091)** --
+`is_anom_seq=1`, o autoencoder detectou. Mas `volatility_gate_blocked=True`
+durante toda a janela (11h15-11h45+), com elevação de vibração real (MAE
+dos canais `TV_353Y_A`/`TV_354X_A`/`TV_354Y_A` entre 0,51-0,61, não
+artefato). `GATE_ESCAPE_MULTIPLIER=1,5` exige MAE > threshold×1,5 = 0,391
+pra resgatar -- essa detecção cruzou o threshold normal por uma margem de
+apenas **0,00015**, muito longe dos 0,391 necessários. Mesmo mecanismo do
+episódio 2026-01-29 (dois gates bloqueando uma detecção real), só que
+aqui a margem de cruzamento é pequena demais pro resgate atual alcançar.
+Não é um alvo de ensemble/arquitetura -- é uma questão de calibração do
+gate-escape para margens pequenas.
+
+### 2026-04-14 -- falha real, causa raiz identificada
+
+MAE nunca passou de 0,123 (thr 0,261) nos 4 alarmes do dia -- não é
+questão de gate. É uma **deriva lenta**: `TC382_03_A` sobe suavemente de
+~677°C (13/04 12h) pra ~793°C (14/04 12h) ao longo de ~24h, sem
+descontinuidade local -- nada pro reconstruction error de uma janela de
+30min (`TIME_STEPS=60` a 30s) pegar.
+
+Causa raiz do porquê nem o z-score capturou a magnitude: `normalize_train_only`
+calculava `center`/`scale` sobre **todo** `df_normal_fit`, incluindo os
+períodos off/partida (~42% do treino têm `TC382_03_A<100°C`). Isso infla
+o desvio-padrão de `TC382_03_A` de **51,1°C** (só operando) para
+**323,0°C** (misturado com off) -- quase 6,3x. O pico de 793,8°C vira
+z-score **1,22** com as stats contaminadas, contra **2,22** se usasse só
+o período "on" -- a deriva real fica estatisticamente escondida atrás da
+variação off↔on, que domina o desvio-padrão usado pra normalizar TODO o
+sinal (inclusive as features derivadas).
+
+## EXP15 -- normalização restrita ao período operacional
+
+Fix implementado: novo campo `NORMALIZE_ON_STATE_ONLY` (`config.py`) --
+quando `true` (exige `ENABLE_OPERATIONAL_MASK=true`), `normalize_train_only`
+(`preprocess.py`) recebe um `stats_mask` opcional e calcula `center`/`scale`
+só sobre as linhas `operational_state=='on'` de `df_normal_fit`. Não filtra
+`df_normal_fit` em si (as sequências de treino continuam contíguas, sem
+gaps artificiais de janelas off removidas) -- só as estatísticas do
+zscore/robust mudam. Em `pipeline.py` (`run_one_group`), o cálculo de
+`state` foi antecipado pra antes do `normalize_train_only` (mesmos inputs
+de sempre, pós-`clip_outliers` -- comportamento idêntico ao anterior
+quando a flag nova está desligada, só a ordem mudou).
+
+Config: `configs/calibracao_v4_eq/test_grupo_exp15_normalizacao_on_state.json`
+(cópia do EXP13 + `NORMALIZE_ON_STATE_ONLY: true`). `THRESH_STD_K=7,0`
+mantido como ponto de partida, mas a escala do MAE deve mudar com a nova
+normalização -- espera-se precisar de pelo menos uma rodada de
+recalibração, como em todo o histórico do EXP13.
+
+**Submetido remoto:** task `651553afb8444d62972a3ca14d209b95` (fila
+`default`), 2026-08-24. Pendente: confirmar se resgata o episódio
+2026-04-14 sem estourar `normal_alert_rate`, recalibrar `THRESH_STD_K`
+se necessário.
+
 ## Pendências / próximos passos
 
-- Investigar os 2 episódios reais ainda não detectados (2026-03-25,
-  2026-04-14 -- MAE nunca chegou perto do threshold, falha genuína do
-  modelo/features, não questão de gate) como próximo alvo pra fechar
-  o gap restante de 4,2pp -- candidatos: ensemble entre os modelos do
-  seed-sweep, ou revisão de features/arquitetura.
+- **2026-03-25**: revisitar a calibração do `GATE_ESCAPE_MULTIPLIER` (ou
+  um segundo multiplicador mais permissivo, específico pra margens
+  pequenas) -- ver seção acima, não precisa de ensemble/arquitetura.
+- **2026-04-14**: aguardar resultado do EXP15 (normalização on-state-only).
+  Se não resolver sozinho, o próximo candidato é ensemble entre os
+  modelos do seed-sweep ou revisão de arquitetura -- mas o experimento
+  mais barato (mudança de normalização, sem mexer em arquitetura) vem
+  primeiro.
 - Formalizar a exclusão de alarmes `Comm Fail`/`Out of Serv` na
   metodologia de avaliação (hoje só documentado, não implementado em
   código -- `eval_alarm_hit_rate` ainda conta esses 4 alarmes no
@@ -508,3 +574,4 @@ consolidado do EXP13**.
 12. `48119896110c4ccfa2581ab2087f4d88` -- + recalibração pós-artefato de janela (`THRESH_STD_K=6,0`, mirando cobertura genuína), threshold real 0,2294 (não 0,265 estimado), cobertura genuína 47,5% (19/40) / FP 0,30% -- melhora sobre baseline mas abaixo da meta de 60%; seed-sweep mostra variância bem maior (`hit_rate_std` ±10,51pp)
 13. `8a95bccb0e40461ea9caea20c94dae10` -- + segunda recalibração (`THRESH_STD_K=7,0`, guiada por regrid offline sobre dados reais da task 12), threshold real 0,2609 (quase exato ao previsto 0,260), cobertura genuína 60,0% (24/40) / FP 0,17% -- bate a meta, FP menos da metade do EXP10c; seed-sweep melhora um pouco mas segue elevado (`hit_rate_std` ±7,15pp)
 14. `f8b884932a2441b987086b611182fe1d` (commit `dc15daa`) -- + auditoria caso a caso (exclui 4 alarmes de erro de sensor confirmados por código `Comm Fail`/`Out of Serv` no dado bruto) + bloqueio gradual dos gates (`GATE_ESCAPE_MULTIPLIER=1,5`, resgata o episódio 2026-01-29 antes suprimido por load_gate+volatility_gate simultâneos), guiado por simulação offline. Threshold reproduziu idêntico (0,2609), FP bateu exato (0,2204% vs 0,221% previsto). **Candidato final consolidado: cobertura genuína 75,8% (25/33, excluindo erro de sensor) / FP 0,22%** -- gap pro AutoML EXP10c caiu de 13,3pp para 4,2pp, com FP ainda 37% menor
+15. `651553afb8444d62972a3ca14d209b95` -- EXP15: `NORMALIZE_ON_STATE_ONLY=true` (normalização restrita ao período 'on' do treino, corrige contaminação do desvio-padrão por período off/partida ~42% do treino), alvo é resgatar o episódio 2026-04-14 (deriva lenta invisível ao z-score contaminado). Submetida 2026-08-24, resultado pendente.
