@@ -619,29 +619,54 @@ garante que a *mesma* semente reproduza resultado idêntico entre
 execuções, não reduz a dispersão entre sementes *diferentes* (que é
 intencional, por design do seed-sweep).
 
-**Rodada 3 (teste de mitigação):** config
+**Rodada 3 (teste de mitigação, task `b66bbaa24f7e42259d9eec7a90775e48`,
+2026-08-24): `target_rate` reduz variância à custa de destruir a
+cobertura -- rejeitado.** Config
 `test_grupo_exp15c_normalizacao_on_state_target_rate.json` (cópia do
-EXP15b + `THRESH_MODE=target_rate`, usando o `TARGET_ANOMALY_RATE=0,003`
-já configurado) -- fixa a *taxa* de anomalia no treino em vez de
-depender do formato da distribuição de erro, testando se isso estabiliza
-o ponto de operação entre sementes de um jeito que `robust_mad` não
-garante. **Submetida remota:** task `b66bbaa24f7e42259d9eec7a90775e48`,
-2026-08-24. Resultado pendente.
+EXP15b + `THRESH_MODE=target_rate`, `TARGET_ANOMALY_RATE=0,003`):
 
-**Conclusão da investigação dos 2 episódios do início desta seção:**
-2026-03-25 não precisava de mudança de modelo (era bloqueio de gate);
-2026-04-14 foi resgatado pela normalização on-state-only + recalibração
-de `THRESH_STD_K`. EXP15b já é o novo candidato de referência do EXP13
-(supera task 14 em cobertura bruta E em todos os pontos do seed-sweep),
-com EXP15c investigando se dá pra reduzir a variância de semente ainda
-mais antes de consolidar.
+| | EXP15b (`robust_mad`) | EXP15c (`target_rate`) |
+|---|---|---|
+| threshold real | 1,0892 | **2,4743** |
+| hit_rate (seed principal) | 77,5% (31/40) | **15,0% (6/40)** |
+| FP (`normal_alert_rate`) | 0,30% | 0,026% |
+| seed-sweep hit_rate (média±std) | 60,6%±9,9pp | **6,9%±3,2pp** |
+
+A variância *caiu* de fato (±3,2pp vs ±9,9pp), mas por um motivo ruim:
+`target_rate` fixa o quantil top-0,3% da distribuição de erro de
+*treino* como corte -- nesta distribuição isso é bem mais extremo que
+mediana+`K`×MAD, então o threshold saiu 2,3x mais alto (2,4743 vs
+1,0892) e quase todas as sementes convergem pra um piso de detecção
+quase nulo (5,0%-12,5%). Não é calibração melhor, é as 4 sementes
+falhando de forma igualmente extrema -- inclusive o pico do episódio
+2026-04-14 (1,93) fica abaixo desse threshold, ou seja, `target_rate`
+(nesta taxa) **perde de novo** o episódio que motivou o EXP15/EXP15b.
+`target_rate` como modo de threshold fica descartado para este pipeline
+com `TARGET_ANOMALY_RATE=0,003` -- não investigado se uma taxa-alvo
+diferente (maior) teria comportamento melhor, mas dado o resultado tão
+distante do esperado, a prioridade de investigação cai.
+
+**Conclusão da investigação dos 2 episódios do início desta seção +
+tentativa de redução de variância:** 2026-03-25 não precisava de
+mudança de modelo (era bloqueio de gate); 2026-04-14 foi resgatado pela
+normalização on-state-only + recalibração de `THRESH_STD_K`
+(`robust_mad`). A tentativa de reduzir a variância de semente via
+`target_rate` fracassou (trocou cobertura por estabilidade artificial).
+**EXP15b é o novo candidato final consolidado do EXP13**, promovido em
+lugar da task 14: supera em cobertura bruta (77,5% vs 75,0%) E em todos
+os pontos do seed-sweep (seed principal, média, mínimo, máximo), com FP
+~37% maior mas ainda bem abaixo do AutoML EXP10c.
 
 ## Pendências / próximos passos
 
-- **Aguardar resultado do EXP15c** (`THRESH_MODE=target_rate`) -- se
-  reduzir a variância de semente sem piorar hit_rate/FP, vira o novo
-  candidato final; senão, EXP15b já é uma melhoria consolidada sobre a
-  task 14 e pode ser promovido como está.
+- **EXP15b promovido a candidato final consolidado.** Se quiser reduzir
+  ainda mais a variância de semente no futuro, os próximos candidatos
+  não testados são: `target_rate` com uma taxa maior que 0,003 (ainda
+  não investigado), aumentar `SEED_SWEEP_N` pra confirmar os números
+  atuais com mais confiança estatística (n=4 é pequeno), ou ensemble
+  entre os modelos do seed-sweep (média/mediana do MAE entre os 4-5
+  modelos) -- essa última exigiria salvar os scores por semente como
+  artefato, hoje descartados após o cálculo de hit_rate/normal_alert_rate.
 - **2026-03-25**: revisitar a calibração do `GATE_ESCAPE_MULTIPLIER` (ou
   um segundo multiplicador mais permissivo, específico pra margens
   pequenas) -- ver seção acima, não precisa de ensemble/arquitetura.
@@ -684,4 +709,5 @@ mais antes de consolidar.
 14. `f8b884932a2441b987086b611182fe1d` (commit `dc15daa`) -- + auditoria caso a caso (exclui 4 alarmes de erro de sensor confirmados por código `Comm Fail`/`Out of Serv` no dado bruto) + bloqueio gradual dos gates (`GATE_ESCAPE_MULTIPLIER=1,5`, resgata o episódio 2026-01-29 antes suprimido por load_gate+volatility_gate simultâneos), guiado por simulação offline. Threshold reproduziu idêntico (0,2609), FP bateu exato (0,2204% vs 0,221% previsto). **Candidato final consolidado: cobertura genuína 75,8% (25/33, excluindo erro de sensor) / FP 0,22%** -- gap pro AutoML EXP10c caiu de 13,3pp para 4,2pp, com FP ainda 37% menor
 15. `651553afb8444d62972a3ca14d209b95` -- falhou (config nao existia no git ainda -- worker remoto clona do repo, faltou commit+push antes de submeter).
 16. `39d73f7cb7ae4ce7845903246edd5df9` -- EXP15 (resubmetida apos commit `59021ee`): `NORMALIZE_ON_STATE_ONLY=true`. Resultado misto -- pico de MAE do episodio 2026-04-14 confirmado acima do threshold usado (1,93/1,68 vs 1,5704, contra 0,12 vs 0,26 antes do fix), mas hit_rate bruto do grupo caiu de 75,0% pra 27,5% (11/40): THRESH_STD_K=7,0 herdado do EXP13 ficou alto demais pra nova escala do MAE. Regrid offline (reproduz exato o resultado oficial) aponta K≈4,5 pra recuperar hit_rate competitivo.
-17. `a273ea8c9f674e8ba04ac291f45d2795` -- EXP15b (`test_grupo_exp15b_normalizacao_on_state_recalibrado.json`, `THRESH_STD_K=4,5`) -- recalibracao guiada por regrid offline sobre os dados reais da task 16. Threshold real 1,0892 (quase exato ao previsto 1,10). **hit_rate 77,5% (31/40) / FP 0,30%** -- supera task 14 em cobertura bruta (75,0%), FP ~37% maior mas ainda bem abaixo do AutoML EXP10c (0,35%). 2026-04-14 confirmado detectado (138/161 pontos anomalos nas janelas dos 2 alarmes). Seed-sweep com variancia alta (hit_rate 47,5%-75,0%, media 60,6%±9,9pp) -- ressalva de robustez a retreino.
+17. `a273ea8c9f674e8ba04ac291f45d2795` -- EXP15b (`test_grupo_exp15b_normalizacao_on_state_recalibrado.json`, `THRESH_STD_K=4,5`) -- recalibracao guiada por regrid offline sobre os dados reais da task 16. Threshold real 1,0892 (quase exato ao previsto 1,10). **hit_rate 77,5% (31/40) / FP 0,30%** -- supera task 14 em cobertura bruta (75,0%), FP ~37% maior mas ainda bem abaixo do AutoML EXP10c (0,35%). 2026-04-14 confirmado detectado (138/161 pontos anomalos nas janelas dos 2 alarmes). Seed-sweep media 60,6%±9,9pp (37,5%-57,5% da task 14 corrigido pra 50,0%±7,7pp -- EXP15b supera em todos os pontos, coeficiente de variacao praticamente igual). **Candidato final consolidado do EXP13, promovido no lugar da task 14.**
+18. `b66bbaa24f7e42259d9eec7a90775e48` -- EXP15c (`test_grupo_exp15c_normalizacao_on_state_target_rate.json`, `THRESH_MODE=target_rate`) -- tentativa de reduzir a variancia de semente do EXP15b fixando a taxa de anomalia em vez de mediana/MAD. Threshold real saiu 2,3x mais alto (2,4743 vs 1,0892), hit_rate desabou pra 15,0% (6/40), seed-sweep 6,9%±3,2pp -- variancia caiu mas so porque todas as sementes convergem pra um piso quase inutil (perde de novo o episodio 2026-04-14). **Rejeitado.**
