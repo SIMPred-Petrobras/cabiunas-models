@@ -617,11 +617,11 @@ def run_one_group(
         cfg.EXCLUDE_MINUTES_AROUND_ALARM,
     )
 
-    def _score_to_report(anomaly_seq_raw: np.ndarray):
-        """Aplica mascara operacional + mapeamento pra ponto + portoes +
-        avaliacao -- usado tanto pro modelo principal quanto por cada
-        seed do seed-sweep, garantindo que os dois recebam exatamente o
-        mesmo pos-processamento."""
+    def _map_to_points(anomaly_seq_raw: np.ndarray) -> pd.DataFrame:
+        """Mascara operacional + mapeamento sequencia->ponto, sem portoes.
+        Fatorado de _score_to_report para poder rodar duas vezes (threshold
+        normal e, se GATE_ESCAPE_MULTIPLIER estiver ligado, threshold
+        elevado para o resgate)."""
         anomaly_seq_local = anomaly_seq_raw
         if state is not None:
             anomaly_seq_local = mask_anomaly_seq_by_operational_state(
@@ -636,6 +636,33 @@ def run_one_group(
         if state is not None:
             df_p["operational_state"] = state.reindex(df_p.index).fillna("on")
             df_p.loc[df_p["operational_state"] != "on", "is_anom_point"] = 0
+        return df_p
+
+    def _score_to_report(mae_for_anom_raw: np.ndarray, threshold_local: float):
+        """Aplica mascara operacional + mapeamento pra ponto + portoes +
+        avaliacao -- usado tanto pro modelo principal quanto por cada
+        seed do seed-sweep, garantindo que os dois recebam exatamente o
+        mesmo pos-processamento.
+
+        Bloqueio gradual (GATE_ESCAPE_MULTIPLIER): em vez de deixar os
+        portoes (load/volatilidade) zerarem is_anom_point de forma binaria
+        durante toda a janela bloqueada, um ponto cujo MAE bruto ultrapassa
+        threshold_local*GATE_ESCAPE_MULTIPLIER "escapa" do bloqueio -- ataca
+        o achado do EXP13 (episodio 2026-01-29: MAE 65% acima do threshold
+        normal ficou completamente escondido por 4h porque load_gate E
+        volatility_gate bloquearam ao mesmo tempo, sendo a elevacao de
+        volatilidade fisicamente real, nao artefato de calculo). Default
+        (None/<=1.0) preserva o comportamento binario de sempre.
+        """
+        anomaly_seq_normal = mae_for_anom_raw > threshold_local
+        df_p = _map_to_points(anomaly_seq_normal)
+
+        df_p_rescue = None
+        multiplier = effective_cfg.GATE_ESCAPE_MULTIPLIER
+        if multiplier is not None and multiplier > 1.0:
+            anomaly_seq_elevated = mae_for_anom_raw > (threshold_local * multiplier)
+            df_p_rescue = _map_to_points(anomaly_seq_elevated)
+
         if load_gate_series is not None:
             df_p = apply_load_gate(
                 df_p, load_gate_series, ramp_max=effective_cfg.LOAD_GATE_RAMP_MAX,
@@ -645,6 +672,9 @@ def run_one_group(
             )
         if volatility_index is not None:
             df_p = apply_volatility_gate(df_p, volatility_index, effective_cfg.VOLATILITY_GATE_THRESHOLD)
+
+        if df_p_rescue is not None:
+            df_p["is_anom_point"] = df_p["is_anom_point"] | df_p_rescue["is_anom_point"]
 
         eval_stats_local = eval_alarm_hit_rate(df_alarm_eval, df_p, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
         composite_local = compute_composite_score(
@@ -713,7 +743,7 @@ def run_one_group(
         df_seq_scores[f"mae_{s}"] = col
     df_seq_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"), index=False)
 
-    df_point, eval_stats, composite = _score_to_report(anomaly_seq)
+    df_point, eval_stats, composite = _score_to_report(mae_for_anom, threshold)
     df_point.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = df_point.index[df_point["is_anom_point"] == 1]
@@ -756,14 +786,13 @@ def run_one_group(
             mae_for_anom_seed, threshold_seed = _refit_cnn1dae_with_seed(
                 effective_cfg, best_hp, x_train, x_val, x_train_full, values_all, target_idx, seed,
             )
-            anomaly_seq_seed = mae_for_anom_seed > threshold_seed
-            _, eval_stats_seed, composite_seed = _score_to_report(anomaly_seq_seed)
+            _, eval_stats_seed, composite_seed = _score_to_report(mae_for_anom_seed, threshold_seed)
             seed_sweep_runs.append({
                 "seed": seed,
                 "hit_rate": eval_stats_seed["hit_rate"],
                 "normal_alert_rate": composite_seed["normal_alert_rate"],
             })
-            del mae_for_anom_seed, anomaly_seq_seed
+            del mae_for_anom_seed
             gc.collect()
         hit_rates = [r["hit_rate"] for r in seed_sweep_runs if r["hit_rate"] is not None]
         normal_rates = [r["normal_alert_rate"] for r in seed_sweep_runs]

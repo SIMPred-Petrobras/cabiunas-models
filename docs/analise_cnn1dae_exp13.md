@@ -334,8 +334,105 @@ um pouco (**±7,15pp**, seeds 37,5\%-57,5\%) mas segue bem acima do
 mais alto nesta base parece consistentemente mais sensível a variação
 de treino/seed do que o threshold mais baixo de antes da recalibração.
 
+## Auditoria caso a caso dos alarmes não detectados (candidato k=7,0)
+
+Pedido do usuário: "como podemos melhorar a predição... queremos
+acertar quase todos os alarmes, retirando aqueles que são erros de
+sensor." Investigação completa dos 13 "sem detecção" + 3 "suspeitos"
+do candidato final, cruzando com o dado bruto (`sensores_full_...csv`)
+e o próprio código de status do SCADA.
+
+**5 dos 40 alarmes têm condição `UNDER` (temperatura entre -18°C e
+-22°C, fisicamente impossível para gás de escape):**
+
+| Data | Causa raiz (confirmada no dado bruto) | Categoria |
+|---|---|---|
+| 2025-07-24 | Pico de 1 amostra (-38°C por 30s, recupera na amostra seguinte) | Erro de sensor |
+| 2025-08-08 | Dado ausente (`NaN`) por ~3,5min no instante exato | Erro de sensor |
+| 2026-01-14 | Código `Out of Serv` explícito no dado bruto | Erro de sensor |
+| 2026-01-17 | Código `Comm Fail` por ~5min, depois `Out of Serv` | Erro de sensor |
+| 2025-11-29 | Temperatura real ~32°C, turbina genuinamente em `off_longo` | Não é erro de sensor, mas também não é falha a prever |
+
+4 dos 5 são literalmente falhas de comunicação/instrumento
+(`Comm Fail`/`Out of Serv` no dado bruto do SCADA -- não é inferência).
+Nenhum modelo, nem o AutoML EXP10c (cross-checado), trata esses casos
+como "preditivo" -- não existe precursor físico para uma queda de
+comunicação. **Excluindo os 4 confirmados:** `n_alarms` 40→33,
+`reativo` 10→8, `sem_deteccao` 13→8 -- **cobertura genuína corrigida:
+66,7% (22/33)**, sem mexer no modelo, só corrigindo a métrica.
+
+**Dos 8 "sem detecção"/"suspeitos" restantes (excluindo erro de
+sensor), 3 são falhas reais do modelo/pipeline:**
+
+| Data | MAE máximo na janela vs threshold (0,2609) | Causa |
+|---|---|---|
+| **2026-01-29** | **0,37-0,43 (cruzou!)** | Detectado pelo modelo, mas `load_gate` E `volatility_gate` bloquearam simultaneamente por 4h -- ver achado abaixo |
+| 2026-03-25 | 0,2555 (quase) | Falha real, margem pequena |
+| 2026-04-14 | 0,09 (nunca chegou perto) | Falha real do modelo -- alvo pra ensemble/arquitetura |
+
+**Achado: dois gates independentes suprimindo uma detecção real.** Em
+2026-01-29, a turbina parte (`RUNNING_A` 0→1 às 11h02), a temperatura
+sobe de ~33°C pra ~740°C na partida (rampa legítima) mas **continua
+subindo lentamente** até 790°C nas 2h seguintes -- a falha real. O
+`load_gate` (referência `T5_AVG_A`, o próprio sensor-alvo) fica
+bloqueado continuamente de 11h03 até 13h10+ porque a subida lenta
+sustentada nunca deixa a rampa suavizada cair abaixo de `RAMP_MAX`.
+Trocar a referência para um proxy de carga independente
+(`954005_624_PI_0340`, que estabiliza ~11h20 enquanto a temperatura
+segue subindo -- validado em 4/5 partidas reais testadas) **não
+resolveu sozinho**: o `volatility_gate` (canais de vibração) também
+fica com `volatility_gate_blocked=True` em **100% de uma janela de 4h**
+(11h20-15h10) -- confirmado como elevação **fisicamente real** da
+vibração (não artefato de janela/cálculo), provavelmente sintoma da
+mesma degradação. Dois gates independentes, bloqueio binário cada um
+-- corrigir só um não bastava.
+
+## Bloqueio gradual dos gates (`GATE_ESCAPE_MULTIPLIER`)
+
+Em vez de reformular os dois gates (load/volatilidade) individualmente,
+a correção escolhida ataca a causa comum: **bloqueio binário demais**.
+Um ponto cujo MAE bruto ultrapassa `threshold × GATE_ESCAPE_MULTIPLIER`
+agora "escapa" do bloqueio de qualquer gate -- não precisa saber QUAL
+gate bloqueou, nem por quê; só que o desvio é grande demais pra ser
+coincidência com uma manobra legítima.
+
+**Implementação (`pipeline.py`, `run_one_group`):** `_score_to_report`
+passou a receber o MAE bruto (`mae_for_anom_raw`) + `threshold_local`
+em vez de um array já binarizado. Quando `GATE_ESCAPE_MULTIPLIER` está
+definido (`>1,0`), computa um SEGUNDO mapeamento sequência→ponto usando
+`threshold × multiplier` (via `_map_to_points`, fatorado do código
+anterior) -- os gates continuam aplicados normalmente ao mapeamento
+NORMAL, e o resultado final é a união (`OR`) dos dois: um ponto conta
+como anômalo se passou no threshold normal E não foi bloqueado, OU se
+sozinho já ultrapassa o threshold elevado (bloqueado ou não). Novo
+campo `GATE_ESCAPE_MULTIPLIER: Optional[float] = None` em `config.py`
+-- default preserva o comportamento binário de sempre, nenhum config
+existente é afetado. Mesmo tratamento no seed-sweep
+(`_refit_cnn1dae_with_seed` já retornava `mae_for_anom`/`threshold`,
+só mudou a chamada de `_score_to_report`).
+
+**Validação:** smoke test dedicado (`smoke_test_gate_escape.py`) injeta
+uma rampa de carga legítima (gate deve bloquear) com um desvio grande
+e não-correlacionado do sensor-alvo bem no meio da mesma janela.
+`GATE_ESCAPE_MULTIPLIER=None`: pico 100% suprimido (0/11 pontos).
+`GATE_ESCAPE_MULTIPLIER=1,3`: gate continua ativo (`load_gate_blocked`
+ainda `True`), mas 2/11 pontos escapam do bloqueio -- confirma que o
+resgate funciona sem desligar o gate em si.
+
+**Pendente:** escolher `GATE_ESCAPE_MULTIPLIER` e confirmar remotamente
+se recupera o episódio real de 2026-01-29 sem inflar `normal_alert_rate`
+de forma proibitiva (um multiplicador baixo demais devolveria FPs que
+os gates existem justamente para suprimir).
+
 ## Pendências / próximos passos
 
+- Escolher `GATE_ESCAPE_MULTIPLIER` (candidato inicial: 1,5-2,0) via
+  simulação offline sobre os dados já cacheados da task k=7,0, depois
+  confirmar remotamente.
+- Formalizar a exclusão de alarmes `Comm Fail`/`Out of Serv` na
+  metodologia de avaliação (hoje só documentado, não implementado em
+  código -- `eval_alarm_hit_rate` ainda conta esses 4 alarmes no
+  denominador).
 - Investigar por que threshold mais alto (`k≥6,0`) aumenta a
   variância do seed-sweep de forma persistente (±7-10,5pp vs
   ±2,5pp) -- não resolvido, pode ser uma característica estrutural da

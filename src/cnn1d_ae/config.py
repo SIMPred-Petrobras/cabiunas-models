@@ -157,6 +157,17 @@ class PipelineConfig:
     VOLATILITY_GATE_WINDOW_MINUTES: float = 60.0
     VOLATILITY_GATE_THRESHOLD: Optional[float] = None
 
+    # Bloqueio gradual dos portoes (load/volatilidade): em vez de zerar
+    # is_anom_point de forma binaria durante toda a janela bloqueada, um
+    # ponto cujo MAE bruto ultrapassa threshold*GATE_ESCAPE_MULTIPLIER
+    # "escapa" do bloqueio. Motivado pelo EXP13 (episodio 2026-01-29: MAE
+    # 65% acima do threshold normal ficou completamente escondido por 4h
+    # porque load_gate E volatility_gate bloquearam ao mesmo tempo, sendo a
+    # elevacao de volatilidade fisicamente real, nao artefato de calculo --
+    # ver docs/analise_cnn1dae_exp13.md). None ou <=1.0 = desligado
+    # (comportamento binario de sempre, nenhum config existente e afetado).
+    GATE_ESCAPE_MULTIPLIER: Optional[float] = None
+
     # Reprodutibilidade
     RANDOM_SEED: int = 42
 
