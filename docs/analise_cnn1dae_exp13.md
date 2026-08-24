@@ -589,30 +589,58 @@ anômalos nas janelas de ±24h dos alarmes (`point_anomalies_all.csv`),
 mesmo com `load_gate`/`volatility_gate` ativos na região -- resgatados
 pelo gate-escape, mesmo mecanismo do episódio 2026-01-29.
 
-**Ressalva:** `seed_sweep` (`SEED_SWEEP_N=4`) mostra variância alta
-nesta configuração -- hit_rate 47,5%-75,0% entre sementes (média
-60,6%±9,9pp), abaixo da seed principal (77,5%). Consistente com o
-padrão já documentado de que thresholds mais altos (`K` maior) tendem a
-aumentar a variância de semente -- não invalida o resultado da seed
-principal, mas indica que a robustez do candidato a retreinos ainda não
-está no nível do candidato anterior (task 14, `hit_rate_std`≈7-10pp em
-thresholds comparáveis, porém partindo de uma média mais alta).
+**Ressalva (corrigida -- comparação inicial usava um número desatualizado
+de uma task anterior, não o seed-sweep da própria task 14):** puxando o
+`seed_sweep` real da task 14 pra comparar igual-com-igual --
+
+| | seed principal | seeds 43-46 (média) | std | min | max |
+|---|---|---|---|---|---|
+| task 14 (candidato anterior) | 75,0% | 50,0% | ±7,7pp | 37,5% | 57,5% |
+| EXP15b | 77,5% | 60,6% | ±9,9pp | 47,5% | 75,0% |
+
+EXP15b supera task 14 em **todos** os pontos (seed principal, média,
+mínimo e máximo) -- o desvio-padrão em pp é maior, mas o coeficiente de
+variação (std/média) é praticamente igual (16,3% vs 15,4%). Não é o
+candidato anterior "mais estável" e o EXP15b "mais disperso" como a
+primeira leitura sugeriu -- os dois têm dispersão relativa parecida,
+EXP15b só parte de uma base mais alta.
+
+**Diagnóstico da variância:** com `THRESH_MODE=robust_mad`, o corte é
+recalibrado a partir da mediana/MAD da distribuição de erro de treino
+de *cada* modelo retreinado -- se o formato dessa distribuição varia
+entre sementes, o mesmo `K` produz cortes de rigor diferentes. No
+EXP15b, `hit_rate` e `normal_alert_rate` sobem/descem juntos entre
+sementes (correlação 0,67 em n=4 -- amostra pequena, não conclusiva
+sozinha) consistente com essa hipótese. `EarlyStopping` já usa
+`restore_best_weights=True`, então instabilidade de convergência por
+parada precoce é pouco provável como causa alternativa. Descartado
+`tf.config.experimental.enable_op_determinism()` como mitigação: ele só
+garante que a *mesma* semente reproduza resultado idêntico entre
+execuções, não reduz a dispersão entre sementes *diferentes* (que é
+intencional, por design do seed-sweep).
+
+**Rodada 3 (teste de mitigação):** config
+`test_grupo_exp15c_normalizacao_on_state_target_rate.json` (cópia do
+EXP15b + `THRESH_MODE=target_rate`, usando o `TARGET_ANOMALY_RATE=0,003`
+já configurado) -- fixa a *taxa* de anomalia no treino em vez de
+depender do formato da distribuição de erro, testando se isso estabiliza
+o ponto de operação entre sementes de um jeito que `robust_mad` não
+garante. Submetida remota, resultado pendente.
 
 **Conclusão da investigação dos 2 episódios do início desta seção:**
 2026-03-25 não precisava de mudança de modelo (era bloqueio de gate);
 2026-04-14 foi resgatado pela normalização on-state-only + recalibração
-de `THRESH_STD_K`. EXP15b é o novo candidato de referência do EXP13,
-com cobertura bruta superior ao anterior mas FP e variância de semente
-levemente piores -- decisão de qual promover a "candidato final"
-consolidado fica em aberto (ver pendências).
+de `THRESH_STD_K`. EXP15b já é o novo candidato de referência do EXP13
+(supera task 14 em cobertura bruta E em todos os pontos do seed-sweep),
+com EXP15c investigando se dá pra reduzir a variância de semente ainda
+mais antes de consolidar.
 
 ## Pendências / próximos passos
 
-- **Decidir entre task 14 (FP menor, mais estável entre sementes) e
-  EXP15b (hit_rate maior, FP e variância de semente piores) como novo
-  candidato final do EXP13** -- ou investigar se dá pra reduzir a
-  variância de semente do EXP15b (ex: `tf.config.experimental.enable_op_determinism()`,
-  já cogitado antes) antes de decidir.
+- **Aguardar resultado do EXP15c** (`THRESH_MODE=target_rate`) -- se
+  reduzir a variância de semente sem piorar hit_rate/FP, vira o novo
+  candidato final; senão, EXP15b já é uma melhoria consolidada sobre a
+  task 14 e pode ser promovido como está.
 - **2026-03-25**: revisitar a calibração do `GATE_ESCAPE_MULTIPLIER` (ou
   um segundo multiplicador mais permissivo, específico pra margens
   pequenas) -- ver seção acima, não precisa de ensemble/arquitetura.
@@ -621,14 +649,16 @@ consolidado fica em aberto (ver pendências).
   metodologia de avaliação (hoje só documentado, não implementado em
   código -- `eval_alarm_hit_rate` ainda conta esses 4 alarmes no
   denominador).
-- Investigar por que threshold mais alto (`k≥6,0`) aumenta a
-  variância do seed-sweep de forma persistente (±7-10,5pp vs
-  ±2,5pp) -- não resolvido, pode ser uma característica estrutural da
-  região da curva threshold→hit_rate onde o candidato final agora
-  opera, não um artefato de uma execução específica.
-- Considerar `tf.config.experimental.enable_op_determinism()` se o
-  resíduo de variância de threshold entre execuções continuar
-  incomodando a calibração.
+- Por que threshold mais alto (`k≥6,0`) aumenta a variância do
+  seed-sweep de forma persistente (±7-10,5pp vs ±2,5pp original) segue
+  sem explicação definitiva -- diagnóstico parcial na seção do EXP15b
+  acima (`hit_rate`/`normal_alert_rate` co-movendo entre sementes,
+  consistente com sensibilidade de `robust_mad` à forma da distribuição
+  de erro por modelo, mas amostra de `SEED_SWEEP_N=4` é pequena demais
+  pra confirmar com confiança). EXP15c testa se `target_rate` mitiga.
+  `tf.config.experimental.enable_op_determinism()` descartado como
+  mitigação (ver seção EXP15b) -- só afeta reprodutibilidade da MESMA
+  semente, não a dispersão entre sementes diferentes.
 - `STRIDE=15` foi uma decisão de necessidade (limite de memória do
   worker remoto), não uma escolha livre -- se a memória deixar de ser
   fator limitante (worker maior, ou uma reescrita de `make_sequences`
