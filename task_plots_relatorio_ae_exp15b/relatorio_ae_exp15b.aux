@@ -1,0 +1,87 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\babel@aux[2]{}
+\@nameuse{bbl@beforestart}
+\catcode `"\active 
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\babel@aux{brazilian}{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introdução e contexto}{2}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Migração de metodologia: do AutoML para o CNN1D-AE}{2}{section.2}\protected@file@percent }
+\newlabel{sec:migracao}{{2}{2}{Migração de metodologia: do AutoML para o CNN1D-AE}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Infraestrutura de avaliação compartilhada}{3}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Features multiescala e de textura (herdado do AutoML EXP7)}{3}{subsection.2.2}\protected@file@percent }
+\newlabel{sec:multiescala}{{2.2}{3}{Features multiescala e de textura (herdado do AutoML EXP7)}{subsection.2.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Máscara operacional: segundo critério (herdado do AutoML EXP10)}{3}{subsection.2.3}\protected@file@percent }
+\newlabel{sec:mascara-migracao}{{2.3}{3}{Máscara operacional: segundo critério (herdado do AutoML EXP10)}{subsection.2.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Portão de rampa: originou no CNN1D-AE, refinado no AutoML (EXP10b)}{4}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Portão de volatilidade: nascido no AutoML, portado para o CNN1D-AE (EXP10c)}{4}{subsection.2.5}\protected@file@percent }
+\newlabel{sec:volgate-migracao}{{2.5}{4}{Portão de volatilidade: nascido no AutoML, portado para o CNN1D-AE (EXP10c)}{subsection.2.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Resumo da migração}{4}{subsection.2.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Origem e direção de migração de cada mecanismo da pipeline atual.\relax }}{4}{table.caption.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Metodologia}{5}{section.3}\protected@file@percent }
+\newlabel{sec:metodologia}{{3}{5}{Metodologia}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Dados}{5}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Pré-processamento e janelas}{5}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Arquitetura e treino do autoencoder}{5}{subsection.3.3}\protected@file@percent }
+\newlabel{sec:arquitetura}{{3.3}{5}{Arquitetura e treino do autoencoder}{subsection.3.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Threshold e mapeamento sequência$\to $ponto}{6}{subsection.3.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Distribuição do MAE de treino (canal-alvo) e o threshold \texttt  {robust\_mad} resultante, para cada candidato. A cauda longa à direita é exatamente o padrão que motiva usar mediana+MAD em vez de média+desvio-padrão -- poucos pontos de MAE alto no treino já inflam \texttt  {mean\_std} a um patamar que a série inteira nunca cruza.\relax }}{6}{figure.caption.3}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:trainmaehist}{{1}{6}{Distribuição do MAE de treino (canal-alvo) e o threshold \texttt {robust\_mad} resultante, para cada candidato. A cauda longa à direita é exatamente o padrão que motiva usar mediana+MAD em vez de média+desvio-padrão -- poucos pontos de MAE alto no treino já inflam \texttt {mean\_std} a um patamar que a série inteira nunca cruza.\relax }{figure.caption.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Camada de pós-processamento}{6}{subsection.3.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Esquema completo da pipeline, do dado bruto ao ponto anômalo avaliado. Azul: componentes originais do CNN1D-AE. Laranja: mecanismos herdados do AutoML (Seção~\ref  {sec:migracao}). Verde: contribuição nova deste relatório.\relax }}{7}{figure.caption.4}\protected@file@percent }
+\newlabel{fig:pipeline}{{2}{7}{Esquema completo da pipeline, do dado bruto ao ponto anômalo avaliado. Azul: componentes originais do CNN1D-AE. Laranja: mecanismos herdados do AutoML (Seção~\ref {sec:migracao}). Verde: contribuição nova deste relatório.\relax }{figure.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Contribuição nova: normalização restrita ao período operacional}{8}{subsection.3.6}\protected@file@percent }
+\newlabel{sec:normalizacao-on-state}{{3.6}{8}{Contribuição nova: normalização restrita ao período operacional}{subsection.3.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Resultados}{8}{section.4}\protected@file@percent }
+\newlabel{sec:resultados}{{4}{8}{Resultados}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Evolução do candidato}{8}{subsection.4.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Evolução do candidato de referência do CNN1D-AE, com o melhor candidato AutoML como teto de referência.\relax }}{8}{table.caption.5}\protected@file@percent }
+\newlabel{tab:evolucao}{{2}{8}{Evolução do candidato de referência do CNN1D-AE, com o melhor candidato AutoML como teto de referência.\relax }{table.caption.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces \texttt  {hit\_rate} e falso positivo (\texttt  {normal\_alert\_rate}) ao longo da evolução do candidato. O EXP15b supera o candidato anterior (task~14) nos dois eixos simultaneamente... exceto pelo FP, que sobe $\sim $37\% relativo (0,22\%$\to $0,30\%) -- ainda assim bem abaixo do teto do AutoML (0,35\%).\relax }}{9}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:comparativo}{{3}{9}{\texttt {hit\_rate} e falso positivo (\texttt {normal\_alert\_rate}) ao longo da evolução do candidato. O EXP15b supera o candidato anterior (task~14) nos dois eixos simultaneamente... exceto pelo FP, que sobe $\sim $37\% relativo (0,22\%$\to $0,30\%) -- ainda assim bem abaixo do teto do AutoML (0,35\%).\relax }{figure.caption.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Estudo de caso: o episódio de 2026-04-14}{9}{subsection.4.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Episódio 2026-04-14: temperatura bruta (topo) e erro de reconstrução dos dois candidatos (base), com os respectivos thresholds. Note que os dois eixos de MAE não são diretamente comparáveis em escala absoluta -- a normalização de entrada mudou entre os dois candidatos -- o que importa é a posição de cada curva \emph  {relativa ao seu próprio} threshold.\relax }}{10}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:caso0414}{{4}{10}{Episódio 2026-04-14: temperatura bruta (topo) e erro de reconstrução dos dois candidatos (base), com os respectivos thresholds. Note que os dois eixos de MAE não são diretamente comparáveis em escala absoluta -- a normalização de entrada mudou entre os dois candidatos -- o que importa é a posição de cada curva \emph {relativa ao seu próprio} threshold.\relax }{figure.caption.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Classificação dos alarmes por qualidade de detecção}{10}{subsection.4.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Classificação automática dos 40 alarmes do período OOS por qualidade de detecção (metodologia de antecedência descrita no texto). Dos 40 alarmes, 4 são falhas confirmadas de comunicação/instrumento (\texttt  {Comm Fail}/\texttt  {Out of Serv} no dado bruto do SCADA), sem precursor físico esperado -- não removidos desta contagem para manter a comparação simples, mas documentados em detalhe em \texttt  {docs/analise\_cnn1dae\_exp13.md}.\relax }}{11}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:categorias}{{5}{11}{Classificação automática dos 40 alarmes do período OOS por qualidade de detecção (metodologia de antecedência descrita no texto). Dos 40 alarmes, 4 são falhas confirmadas de comunicação/instrumento (\texttt {Comm Fail}/\texttt {Out of Serv} no dado bruto do SCADA), sem precursor físico esperado -- não removidos desta contagem para manter a comparação simples, mas documentados em detalhe em \texttt {docs/analise\_cnn1dae\_exp13.md}.\relax }{figure.caption.8}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Antecedência de detecção, caso a caso}{11}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Antecedência da primeira detecção, alarme a alarme (40 alarmes OOS, ordem cronológica). Círculo azul = task~14; triângulo laranja = EXP15b; cor de preenchimento = categoria (Figura~\ref  {fig:categorias}). Linha vertical em 0 = instante do alarme. Ausência de marcador = alarme sem detecção naquele candidato.\relax }}{12}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:leadtime}{{6}{12}{Antecedência da primeira detecção, alarme a alarme (40 alarmes OOS, ordem cronológica). Círculo azul = task~14; triângulo laranja = EXP15b; cor de preenchimento = categoria (Figura~\ref {fig:categorias}). Linha vertical em 0 = instante do alarme. Ausência de marcador = alarme sem detecção naquele candidato.\relax }{figure.caption.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7}{\ignorespaces Distribuição da antecedência (horas) entre as detecções classificadas como preditivas, por candidato. Barra horizontal = IQR; traço vertical = mediana.\relax }}{13}{figure.caption.10}\protected@file@percent }
+\newlabel{fig:leadtimedist}{{7}{13}{Distribuição da antecedência (horas) entre as detecções classificadas como preditivas, por candidato. Barra horizontal = IQR; traço vertical = mediana.\relax }{figure.caption.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Variação entre sementes de retreino (seed-sweep)}{13}{subsection.4.4}\protected@file@percent }
+\newlabel{sec:seedsweep}{{4.4}{13}{Variação entre sementes de retreino (seed-sweep)}{subsection.4.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Seed-sweep (\texttt  {SEED\_SWEEP\_N=4}, sementes 43--46) de cada candidato. O desvio-padrão em pontos percentuais é maior no EXP15b, mas o coeficiente de variação (std/média) é praticamente igual entre os dois (16,3\% vs. 15,4\%) -- o EXP15b não é ``mais instável'', só parte de uma base mais alta.\relax }}{13}{table.caption.11}\protected@file@percent }
+\newlabel{tab:seedsweep}{{3}{13}{Seed-sweep (\texttt {SEED\_SWEEP\_N=4}, sementes 43--46) de cada candidato. O desvio-padrão em pontos percentuais é maior no EXP15b, mas o coeficiente de variação (std/média) é praticamente igual entre os dois (16,3\% vs. 15,4\%) -- o EXP15b não é ``mais instável'', só parte de uma base mais alta.\relax }{table.caption.11}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {8}{\ignorespaces Dispersão do \texttt  {hit\_rate} entre a semente principal (42, losango) e as 4 sementes do sweep (círculos, com a média marcada por um traço vertical), para os dois candidatos.\relax }}{13}{figure.caption.12}\protected@file@percent }
+\newlabel{fig:seedsweep}{{8}{13}{Dispersão do \texttt {hit\_rate} entre a semente principal (42, losango) e as 4 sementes do sweep (círculos, com a média marcada por um traço vertical), para os dois candidatos.\relax }{figure.caption.12}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Séries completas com anomalias marcadas}{13}{subsection.4.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {9}{\ignorespaces Série completa de \texttt  {TC382\_03\_A} -- candidato anterior (task 14).\relax }}{14}{figure.caption.13}\protected@file@percent }
+\newlabel{fig:series-task14}{{9}{14}{Série completa de \texttt {TC382\_03\_A} -- candidato anterior (task 14).\relax }{figure.caption.13}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {10}{\ignorespaces Série completa de \texttt  {TC382\_03\_A} -- candidato novo (EXP15b).\relax }}{14}{figure.caption.14}\protected@file@percent }
+\newlabel{fig:series-exp15b}{{10}{14}{Série completa de \texttt {TC382\_03\_A} -- candidato novo (EXP15b).\relax }{figure.caption.14}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussão}{14}{section.5}\protected@file@percent }
+\newlabel{sec:discussao}{{5}{14}{Discussão}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Tentativa de mitigação de variância rejeitada}{14}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Limitações}{14}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Pendências}{15}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusão}{15}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {A}Tasks ClearML referenciadas}{15}{appendix.A}\protected@file@percent }
+\gdef \@abspage@last{15}

@@ -1,0 +1,29 @@
+\babel@toc {brazilian}{}\relax 
+\contentsline {section}{\numberline {1}Introdução e contexto}{2}{section.1}%
+\contentsline {section}{\numberline {2}Migração de metodologia: do AutoML para o CNN1D-AE}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Infraestrutura de avaliação compartilhada}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Features multiescala e de textura (herdado do AutoML EXP7)}{3}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Máscara operacional: segundo critério (herdado do AutoML EXP10)}{3}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Portão de rampa: originou no CNN1D-AE, refinado no AutoML (EXP10b)}{4}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Portão de volatilidade: nascido no AutoML, portado para o CNN1D-AE (EXP10c)}{4}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Resumo da migração}{4}{subsection.2.6}%
+\contentsline {section}{\numberline {3}Metodologia}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Dados}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Pré-processamento e janelas}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Arquitetura e treino do autoencoder}{5}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Threshold e mapeamento sequência$\to $ponto}{6}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Camada de pós-processamento}{6}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Contribuição nova: normalização restrita ao período operacional}{8}{subsection.3.6}%
+\contentsline {section}{\numberline {4}Resultados}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Evolução do candidato}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Estudo de caso: o episódio de 2026-04-14}{9}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Classificação dos alarmes por qualidade de detecção}{10}{subsection.4.3}%
+\contentsline {subsubsection}{\numberline {4.3.1}Antecedência de detecção, caso a caso}{11}{subsubsection.4.3.1}%
+\contentsline {subsection}{\numberline {4.4}Variação entre sementes de retreino (seed-sweep)}{13}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Séries completas com anomalias marcadas}{13}{subsection.4.5}%
+\contentsline {section}{\numberline {5}Discussão}{14}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Tentativa de mitigação de variância rejeitada}{14}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Limitações}{14}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Pendências}{15}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Conclusão}{15}{section.6}%
+\contentsline {section}{\numberline {A}Tasks ClearML referenciadas}{15}{appendix.A}%
