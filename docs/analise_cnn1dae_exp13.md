@@ -446,18 +446,34 @@ platô (o resgate fica mais seletivo) até desabar de volta ao baseline
 em `1,70` (a janela de resgate fecha por completo). Escolhido
 `GATE_ESCAPE_MULTIPLIER=1,5`: dentro do platô com margem confortável
 antes do "penhasco" em 1,70, evitando escolher um ponto sensível
-demais a variação de retreino. **75,8% de cobertura genuína chega a
-5,2pp do AutoML EXP10c (80,0%)**, com FP (0,221%) ainda bem abaixo do
-FP do EXP10c (0,35%). Config atualizado
-(`test_grupo_exp13_AE_novo_dataset_gates.json`,
-`GATE_ESCAPE_MULTIPLIER: 1.5`), pendente de confirmação remota (mesma
-ressalva de sempre: simulação offline usa MAE aproximado por período,
-não os arrays exatos de treino/calibração do modelo real).
+demais a variação de retreino.
+
+**Confirmação remota (task `f8b884932a2441b987086b611182fe1d`, commit
+`dc15daa`):** bateu exatamente a simulação offline. Threshold
+reproduziu idêntico (`0,2609` -- mesmo modelo, seed fixa), FP saiu em
+`0,2204%` (previsto `0,221%`). Investigação caso a caso confirma: o
+episódio de 2026-01-29 (antes "sem detecção", suprimido por load_gate
+E volatility_gate simultaneamente) agora aparece como **reativo** (2
+pontos) e **preditivo genuíno** (1 ponto, antecedência 1,48h) -- o
+resgate funcionou exatamente como projetado.
+
+| Candidato | Genuíno | Suspeito | Reativo | Cobertura genuína | FP |
+|---|---|---|---|---|---|
+| AutoML EXP10c | 24 | 5 | 8 | **80,0%** | 0,35% |
+| CNN1D-AE `k=7,0` (baseline, sem gate escape) | 14 | 3 | 8 | 66,7% (22/33) | 0,17% |
+| **CNN1D-AE `k=7,0` + `GATE_ESCAPE_MULTIPLIER=1,5` (candidato final)** | **15** | **3** | **10** | **75,8% (25/33)** | **0,22%** |
+
+O gap pro AutoML caiu de 13,3pp para **4,2pp**, com FP ainda 37%
+menor que o EXP10c (0,22% vs 0,35%). Este é o **candidato final
+consolidado do EXP13**.
 
 ## Pendências / próximos passos
 
-- Confirmar remotamente `GATE_ESCAPE_MULTIPLIER=1,5` (mirando cobertura
-  genuína≈75,8%, FP≈0,22%, contra o baseline 66,7%/0,17%).
+- Investigar os 2 episódios reais ainda não detectados (2026-03-25,
+  2026-04-14 -- MAE nunca chegou perto do threshold, falha genuína do
+  modelo/features, não questão de gate) como próximo alvo pra fechar
+  o gap restante de 4,2pp -- candidatos: ensemble entre os modelos do
+  seed-sweep, ou revisão de features/arquitetura.
 - Formalizar a exclusão de alarmes `Comm Fail`/`Out of Serv` na
   metodologia de avaliação (hoje só documentado, não implementado em
   código -- `eval_alarm_hit_rate` ainda conta esses 4 alarmes no
@@ -490,4 +506,5 @@ não os arrays exatos de treino/calibração do modelo real).
 10. `8b97c625af78431e88b912c6e9288332` -- + seed-sweep (`SEED_SWEEP_N=4`), **achado final: CNN1D-AE NÃO tem variância zero (hit_rate 85,0%--92,5% entre sementes, média 86,9%±3,25pp) -- diferente do AutoML, cuja variância de semente é zero desde o EXP5**
 11. `2d63b3fbe1ff43459f8db28283910c49` -- + seed global fixada antes do tuner (2 pontos de reseed), reduz variância (`hit_rate_std` 3,25→2,50pp) mas threshold reproduzível (0,135) caiu numa faixa de FP mais alta (0,60%→1,23% de FP médio)
 12. `48119896110c4ccfa2581ab2087f4d88` -- + recalibração pós-artefato de janela (`THRESH_STD_K=6,0`, mirando cobertura genuína), threshold real 0,2294 (não 0,265 estimado), cobertura genuína 47,5% (19/40) / FP 0,30% -- melhora sobre baseline mas abaixo da meta de 60%; seed-sweep mostra variância bem maior (`hit_rate_std` ±10,51pp)
-13. `8a95bccb0e40461ea9caea20c94dae10` -- + segunda recalibração (`THRESH_STD_K=7,0`, guiada por regrid offline sobre dados reais da task 12), threshold real 0,2609 (quase exato ao previsto 0,260), **candidato final: cobertura genuína 60,0% (24/40) / FP 0,17%** -- bate a meta, FP menos da metade do EXP10c; seed-sweep melhora um pouco mas segue elevado (`hit_rate_std` ±7,15pp)
+13. `8a95bccb0e40461ea9caea20c94dae10` -- + segunda recalibração (`THRESH_STD_K=7,0`, guiada por regrid offline sobre dados reais da task 12), threshold real 0,2609 (quase exato ao previsto 0,260), cobertura genuína 60,0% (24/40) / FP 0,17% -- bate a meta, FP menos da metade do EXP10c; seed-sweep melhora um pouco mas segue elevado (`hit_rate_std` ±7,15pp)
+14. `f8b884932a2441b987086b611182fe1d` (commit `dc15daa`) -- + auditoria caso a caso (exclui 4 alarmes de erro de sensor confirmados por código `Comm Fail`/`Out of Serv` no dado bruto) + bloqueio gradual dos gates (`GATE_ESCAPE_MULTIPLIER=1,5`, resgata o episódio 2026-01-29 antes suprimido por load_gate+volatility_gate simultâneos), guiado por simulação offline. Threshold reproduziu idêntico (0,2609), FP bateu exato (0,2204% vs 0,221% previsto). **Candidato final consolidado: cobertura genuína 75,8% (25/33, excluindo erro de sensor) / FP 0,22%** -- gap pro AutoML EXP10c caiu de 13,3pp para 4,2pp, com FP ainda 37% menor
