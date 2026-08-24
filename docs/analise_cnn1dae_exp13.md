@@ -625,7 +625,8 @@ EXP15b + `THRESH_MODE=target_rate`, usando o `TARGET_ANOMALY_RATE=0,003`
 já configurado) -- fixa a *taxa* de anomalia no treino em vez de
 depender do formato da distribuição de erro, testando se isso estabiliza
 o ponto de operação entre sementes de um jeito que `robust_mad` não
-garante. Submetida remota, resultado pendente.
+garante. **Submetida remota:** task `b66bbaa24f7e42259d9eec7a90775e48`,
+2026-08-24. Resultado pendente.
 
 **Conclusão da investigação dos 2 episódios do início desta seção:**
 2026-03-25 não precisava de mudança de modelo (era bloqueio de gate);
