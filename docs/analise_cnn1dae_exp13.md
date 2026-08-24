@@ -424,11 +424,40 @@ se recupera o episódio real de 2026-01-29 sem inflar `normal_alert_rate`
 de forma proibitiva (um multiplicador baixo demais devolveria FPs que
 os gates existem justamente para suprimir).
 
+### Escolha de `GATE_ESCAPE_MULTIPLIER` (simulação offline)
+
+Grid search sobre os dados reais da task k=7,0 já cacheados
+(`k7_sequence_scores_all.csv`/`k7_point_anomalies_all.csv`, reusando
+`load_gate_blocked`/`volatility_gate_blocked` já calculados -- sem
+gastar rodada remota):
+
+| `multiplier` | Cobertura genuína | FP |
+|---|---|---|
+| 1,0 (baseline, sem resgate) | 66,7% (22/33) | 0,174% |
+| 1,1 | 75,8% (25/33) | 0,305% |
+| 1,3 | 75,8% (25/33) | 0,248% |
+| **1,5** | **75,8% (25/33)** | **0,221%** |
+| 1,65 | 75,8% (25/33) | 0,194% |
+| 1,70 | 66,7% (22/33) -- volta ao baseline | 0,188% |
+
+Cobertura genuína salta de 66,7% para **75,8% (25/33)** e fica estável
+em todo o intervalo `1,30`-`1,65` -- FP cai continuamente dentro desse
+platô (o resgate fica mais seletivo) até desabar de volta ao baseline
+em `1,70` (a janela de resgate fecha por completo). Escolhido
+`GATE_ESCAPE_MULTIPLIER=1,5`: dentro do platô com margem confortável
+antes do "penhasco" em 1,70, evitando escolher um ponto sensível
+demais a variação de retreino. **75,8% de cobertura genuína chega a
+5,2pp do AutoML EXP10c (80,0%)**, com FP (0,221%) ainda bem abaixo do
+FP do EXP10c (0,35%). Config atualizado
+(`test_grupo_exp13_AE_novo_dataset_gates.json`,
+`GATE_ESCAPE_MULTIPLIER: 1.5`), pendente de confirmação remota (mesma
+ressalva de sempre: simulação offline usa MAE aproximado por período,
+não os arrays exatos de treino/calibração do modelo real).
+
 ## Pendências / próximos passos
 
-- Escolher `GATE_ESCAPE_MULTIPLIER` (candidato inicial: 1,5-2,0) via
-  simulação offline sobre os dados já cacheados da task k=7,0, depois
-  confirmar remotamente.
+- Confirmar remotamente `GATE_ESCAPE_MULTIPLIER=1,5` (mirando cobertura
+  genuína≈75,8%, FP≈0,22%, contra o baseline 66,7%/0,17%).
 - Formalizar a exclusão de alarmes `Comm Fail`/`Out of Serv` na
   metodologia de avaliação (hoje só documentado, não implementado em
   código -- `eval_alarm_hit_rate` ainda conta esses 4 alarmes no
