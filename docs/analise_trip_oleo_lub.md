@@ -277,10 +277,44 @@ de cobertura preditiva registrada.**
 5. ~~Investigar os 16 episódios de FP residual~~ — feito, ver seção
    acima (mistura de rampas reais, 1 glitch de sensor, resto sem causa
    clara).
-6. **Em aberto (prioridade alta): investigar por que 2026-02-26 é
-   puramente reativo** (0/2 preditivo genuíno vira 1/2 na conta real).
-   Puxar a série bruta ao redor desse episódio (como foi feito pro
-   2026-01-29 no EXP13) pra entender se há algum precursor não
-   capturado pelo grupo atual (alvo + vibração), ou se esse caso
-   específico genuinamente não tem assinatura antecipada disponível —
-   mesmo tipo de investigação que o EXP13 fez pros casos reativos da T5.
+6. ~~Investigar por que 2026-02-26 é puramente reativo~~ — feito, ver
+   seção abaixo. **Achado: não há precursor, é limitação física/de
+   instrumentação, não do modelo.**
+
+### Investigação do caso 2026-02-26 (reativo)
+
+Série minuto-a-minuto ao redor do trip (`sensores_full_2024_2026_30s.csv`):
+
+| Horário | `PI_0308` | `RUNNING_A` | `T5_AVG_A` |
+|---|---|---|---|
+| 13h30–15h32 (2h antes) | 1,3537 → 1,3478, declínio linear suavíssimo (~0,003/h) | 1,0 | ~713–716°C, estável |
+| **15h34:00 (minuto do trip)** | 1,3477 | **0,167 (colapsando)** | **295,9 (despenca)** |
+| 15h36+ | -0,26 (valor de off) | 0,0 | ~200–280 |
+| 21h20 (partida) | volta a 1,43 | 1,0 | 460→698 |
+
+**Não há precursor.** Nas 2h antes do trip, `PI_0308` está completamente
+estável dentro da faixa normal (1,348–1,354 — nem perto do teto,
+diferente dos episódios de FP caracterizados acima) e a vibração também
+sem nada fora do normal. **O trip e o desligamento acontecem no mesmo
+minuto** (15h34) — evento físico abrupto (pressão cruza o setpoint de
+proteção), sem degradação gradual visível em nenhum dos sensores
+disponíveis. Diferente do caso 2026-01-29 da T5 (EXP13), onde havia
+degradação real acontecendo antes do alarme só bloqueada pelos portões
+— aqui não há nada bloqueado, o sinal simplesmente não existe nos dados.
+
+**Os 26 pontos "reativos" (22h17–22h30, ~1h após a partida às 21h20)
+provavelmente nem são reconhecimento tardio da falha** — coincidem com
+a acomodação suave de `PI_0308` pós-partida (1,432→1,424 na hora
+seguinte), o mesmo mecanismo que gera vários dos 16 episódios de FP.
+Ou seja: este alarme provavelmente não tem **nenhuma** detecção real
+(nem preditiva nem reativa de fato) — o "acerto" na métrica é
+coincidência de ruído de partida caindo dentro da janela de ±24h.
+
+**Conclusão: limitação de instrumentação/física do processo, não do
+modelo ou do pipeline** — mesma categoria de achado negativo documentada
+pro EXP13/T5 (`docs/analise_cnn1dae_exp13.md`, seção de achados
+negativos). Sem um sensor que capture o precursor real desse tipo de
+trip (se é que existe um fisicamente), não há o que ajustar no modelo.
+**Cobertura genuinamente preditiva real do EXP16: 1 em 2 (50%), com o
+outro caso sendo um evento abrupto sem assinatura antecipada
+disponível — não 1 preditivo + 1 reativo como registrado antes.**
