@@ -231,8 +231,35 @@ esperado. **Seed-sweep (`AUTOML_SEED_SWEEP_N=4`, sementes 42-46):
 **todas as 5 sementes**, FP variando só entre 0,133%-0,143%
 (`normal_alert_rate_std` ≈ 0,004pp). Variância de semente nula, bem mais
 estável que o CNN1D-AE jamais foi pra T5 (que tinha `hit_rate_std` de
-vários pontos percentuais) — reforça a robustez do candidato. **Esta é
-a pipeline vencedora consolidada do EXP16.**
+vários pontos percentuais) — reforça a robustez do candidato.
+
+### ⚠️ Correção importante: `hit_rate=100%` mistura previsão real com detecção reativa
+
+`eval_alarm_hit_rate` conta "acerto" se **qualquer** ponto anômalo cai
+dentro de ±24h do alarme, **antes ou depois** — a mesma armadilha
+metodológica já identificada e corrigida pra T5 no EXP13 (categorias
+"preditivo genuíno" vs "reativo"), que ainda não tinha sido aplicada
+aqui. Checando a antecedência real de cada um dos 2 alarmes genuínos
+(`point_anomalies_all.csv` da task EXP16b):
+
+| Alarme | Pontos anômalos na janela ±26h | Quando | Antecedência |
+|---|---|---|---|
+| 2025-11-04 06:22:18 | 126, todos antes | -- | **13,3–14,3h antes -- preditivo genuíno** |
+| 2026-02-26 15:34:20 | 26, todos depois | -- | **6,7–6,9h depois -- puramente reativo** |
+
+**Cobertura genuinamente preditiva real: 50% (1/2), não 100%.** O
+segundo caso só "conta" na métrica porque a janela de avaliação também
+olha pra depois do alarme — na prática, um alerta que chega 7h depois
+do trip já disparado não tem valor operacional (o sistema já avisou
+antes). Isso não muda a decisão de manter `iforest`/`controle_alvo_vibracao`
+como candidato (ainda é o melhor resultado disponível, e o sanity-check
+de vibração continua válido), mas **a alegação correta é "detecta 1 de
+2 alarmes com antecedência real de ~14h", não "acerta 100% dos
+alarmes".** Com n=2 isso já era estatisticamente frágil; agora sabemos
+que nem os 2 casos genuínos se comportam da mesma forma.
+
+**Esta é a pipeline vencedora consolidada do EXP16 — com essa ressalva
+de cobertura preditiva registrada.**
 
 ## Próximos passos
 
@@ -247,7 +274,13 @@ a pipeline vencedora consolidada do EXP16.**
 4. Em aberto: decidir se amplia a janela de dados pra antes de 2024-01-01
    (mais eventos genuínos = avaliação menos frágil) — o gargalo do EXP16
    continua sendo n=2 alarmes genuínos no período OOS, não o modelo.
-5. Em aberto: investigar os 16 episódios de FP residual caso a caso
-   (principalmente 2026-01-29, que coincide com evento real de partida
-   documentado na T5) — não bloqueia a consolidação, mas pode informar
-   se vale portão de rampa (não o de volatilidade) no futuro.
+5. ~~Investigar os 16 episódios de FP residual~~ — feito, ver seção
+   acima (mistura de rampas reais, 1 glitch de sensor, resto sem causa
+   clara).
+6. **Em aberto (prioridade alta): investigar por que 2026-02-26 é
+   puramente reativo** (0/2 preditivo genuíno vira 1/2 na conta real).
+   Puxar a série bruta ao redor desse episódio (como foi feito pro
+   2026-01-29 no EXP13) pra entender se há algum precursor não
+   capturado pelo grupo atual (alvo + vibração), ou se esse caso
+   específico genuinamente não tem assinatura antecipada disponível —
+   mesmo tipo de investigação que o EXP13 fez pros casos reativos da T5.
