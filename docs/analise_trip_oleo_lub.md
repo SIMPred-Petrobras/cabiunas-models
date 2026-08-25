@@ -190,6 +190,18 @@ ver alerta acima sobre vibração ser sinal, não ruído, neste alvo. Os 16
 episódios de FP residual (0,143%) ficam como possível investigação futura,
 não bloqueiam a consolidação.
 
+**EXP16b (task `fc787faca377406890fed0309cd95b3c`, config
+`test_grupo_exp16b_trip_oleo_lub_iforest_final.json`):** config final
+travado (1 grupo, 1 modelo, percentil/debounce fixos) reproduzindo o
+vencedor do EXP16a — resultado idêntico (threshold, hit_rate, FP), como
+esperado. **Seed-sweep (`AUTOML_SEED_SWEEP_N=4`, sementes 42-46):
+`hit_rate_std = 0,0pp`** — os 2 alarmes genuínos são detectados em
+**todas as 5 sementes**, FP variando só entre 0,133%-0,143%
+(`normal_alert_rate_std` ≈ 0,004pp). Variância de semente nula, bem mais
+estável que o CNN1D-AE jamais foi pra T5 (que tinha `hit_rate_std` de
+vários pontos percentuais) — reforça a robustez do candidato. **Esta é
+a pipeline vencedora consolidada do EXP16.**
+
 ## Próximos passos
 
 1. ~~Submeter grid AutoML~~ — feito, EXP16a (task
