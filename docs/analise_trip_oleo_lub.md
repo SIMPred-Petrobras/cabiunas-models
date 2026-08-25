@@ -120,18 +120,90 @@ esses valores à nova escala, em vez de gastar rodadas remotas às cegas.
 
 1. `1009af2fce754951baa90d137ad058e0` — EXP16a (`test_grupo_exp16a_trip_oleo_lub_automl_grid.json`), submetida em 2026-08-25. Grid ampliado em relação ao template original do EXP7: 2 grupos (`controle_alvo_vibracao` univariado+vibração vs. `PI0308_trip_oleo_lub_multivariado` completo) × 3 modelos (`dense`, `ocsvm` com grade `AUTOML_OCSVM_NU_GRID=[0.01,0.03,0.05,0.1]`/`AUTOML_OCSVM_GAMMA_GRID=["scale","auto"]` = 8 variantes, `iforest`) × 7 percentis × 6 debounces — **420 trials/grupo, 840 no total** (20 treinos reais: 10 por grupo). Objetivo duplo: (a) achar o modelo/threshold/debounce vencedor, igual ao papel do EXP7 pra T5; (b) comparar univariado-com-vibração vs. multivariado-completo pra medir se os sensores extra do circuito de óleo realmente ajudam a explicar o comportamento de `PI_0308` antes do trip.
 
+## Resultado do EXP16a (grid AutoML, 840 trials)
+
+**Vencedor: `iforest`, percentil 99,5, debounce 24 pontos** — idêntico nos dois
+grupos (`controle_alvo_vibracao` e `PI0308_trip_oleo_lub_multivariado`):
+
+| Grupo | hit\_rate (OOS, 2 alarmes) | FP (`normal_alert_rate`) |
+|---|---|---|
+| `controle_alvo_vibracao` (alvo + vibração só) | 100% (2/2) | 0,143% |
+| `PI0308_trip_oleo_lub_multivariado` (+ pressões/temps do óleo) | 100% (2/2) | 0,144% |
+
+**Os sensores extra do circuito de óleo (`PI_0340`, `PI_0339`, `TI_0325`,
+temperaturas de mancal) não agregaram nada** mensurável sobre o grupo
+simples alvo+vibração — resultado praticamente idêntico. Escolhido o
+grupo **`controle_alvo_vibracao`** (mais simples, mesmo desempenho) como
+base daqui pra frente.
+
+### Sanity-check: o resultado é real, não artefato do n=2
+
+Simulado offline um threshold ingênuo (percentil direto sobre o valor
+bruto de `PI_0308`, sem nenhum modelo, mesma avaliação/gates):
+
+| Abordagem | Threshold | hit\_rate | FP |
+|---|---|---|---|
+| `iforest` multivariado | p99,5/db24 | **100%** | **0,143%** |
+| Ingênuo (só `PI_0308`) | p99,5/db24 (mesmo corte) | **0%** | 1,28% |
+| Ingênuo (só `PI_0308`) | p90/db24 (bem mais frouxo) | 100% | **10,3%** (72x pior) |
+
+No mesmo threshold que o `iforest` usa, um corte direto no valor bruto
+erra os 2 alarmes; pra acertar os 2 com um corte ingênuo, o FP explode
+72x. **Conclusão: o `iforest` está usando o contexto da vibração pra
+separar os 2 eventos genuínos de forma muito mais precisa do que o
+valor do sensor sozinho permite — não é artefato do conjunto de teste
+pequeno.**
+
+### Caracterização dos falsos positivos residuais (OOS, `controle_alvo_vibracao`)
+
+16 episódios de FP fora da janela dos 2 alarmes genuínos, entre
+2025-07-31 e 2026-04-15, variando de 1 a 235 pontos (o maior,
+2026-01-29 12h04–14h01, coincide com a partida real documentada em
+`docs/analise_cnn1dae_exp13.md` que também gerou falso alerta na T5 —
+possivelmente o mesmo evento físico de partida atravessando os dois
+alvos, não uma coincidência). Ainda não investigado caso a caso.
+
+### ⚠️ Cuidado antes de copiar os portões do EXP10c/EXP15b direto
+
+Nos experimentos de T5, o portão de volatilidade (`VOLATILITY_GATE`)
+suprime `is_anom_point` quando a vibração fica volátil demais —
+funciona lá porque vibração é só uma feature de contexto, a T5
+(temperatura) é quem carrega o sinal de falha. **Aqui é diferente: o
+sanity-check acima mostrou que é justamente a vibração que faz o
+`iforest` separar os 2 eventos genuínos do ruído.** Aplicar o mesmo
+portão de volatilidade sem checar primeiro se ele suprime os pontos
+que hoje acertam os 2 alarmes genuínos pode reduzir o FP à custa de
+also perder a detecção real — o oposto do que aconteceu na T5. Qualquer
+portão de rampa/volatilidade aqui precisa ser validado offline
+especificamente contra os 2 episódios genuínos antes de entrar num
+config remoto.
+
+## Candidato final consolidado do EXP16
+
+**`iforest`, grupo `controle_alvo_vibracao` (alvo `954005_624_PI_0308` +
+10 canais de vibração), percentil 99,5, debounce 24 pontos.** hit_rate
+100% (2/2 alarmes genuínos OOS) / FP 0,143%, sem nenhum portão de
+pós-processamento. Decisão de não adicionar portões de rampa/volatilidade
+agora: FP já está bem baixo sem eles (diferente do ponto de partida da T5,
+1,94%), e o portão de volatilidade em particular seria arriscado aqui —
+ver alerta acima sobre vibração ser sinal, não ruído, neste alvo. Os 16
+episódios de FP residual (0,143%) ficam como possível investigação futura,
+não bloqueiam a consolidação.
+
 ## Próximos passos
 
-1. Submeter `test_grupo_exp16a_trip_oleo_lub_automl_grid.json` (remoto,
-   ClearML) — grid amplo de AutoML, primeiro passo do arco.
-2. Com o resultado, escolher o modelo/threshold/debounce vencedor
-   (equivalente ao "ocsvm p99,9/db1" que venceu pra T5 no EXP7) e criar
-   um EXP16b de refinamento (máscara operacional + portões, igual
-   EXP10/10b/10c) mirando reduzir FP sem perder os 3 eventos genuínos.
-3. Só depois, se fizer sentido, tentar o CNN1D-AE
-   (`test_grupo_exp16_trip_oleo_lub.json`, já preparado como referência).
-4. Decidir se amplia a janela de dados pra antes de 2024-01-01 (mais
-   eventos genuínos = avaliação menos frágil) — independente da escolha
-   de modelo.
-5. Se nenhum modelo performar dado o n baixo (3 eventos genuínos), avaliar
-   a alternativa de regressão/previsão de tendência descrita acima.
+1. ~~Submeter grid AutoML~~ — feito, EXP16a (task
+   `15833383325746c999e8b866dda4b5e9`), candidato final acima.
+2. ~~Refinar com portões~~ — decidido não fazer agora (FP já baixo sem
+   portões; portão de volatilidade seria arriscado aqui, ver alerta acima).
+3. O CNN1D-AE de referência (`test_grupo_exp16_trip_oleo_lub.json`) fica
+   engavetado — só entra em jogo se surgir motivo concreto pra revisitar
+   (ex: mais dados genuínos tornando a avaliação mais robusta e valendo a
+   pena testar uma arquitetura mais pesada).
+4. Em aberto: decidir se amplia a janela de dados pra antes de 2024-01-01
+   (mais eventos genuínos = avaliação menos frágil) — o gargalo do EXP16
+   continua sendo n=2 alarmes genuínos no período OOS, não o modelo.
+5. Em aberto: investigar os 16 episódios de FP residual caso a caso
+   (principalmente 2026-01-29, que coincide com evento real de partida
+   documentado na T5) — não bloqueia a consolidação, mas pode informar
+   se vale portão de rampa (não o de volatilidade) no futuro.
