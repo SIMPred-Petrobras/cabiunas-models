@@ -161,7 +161,39 @@ pequeno.**
 2026-01-29 12h04–14h01, coincide com a partida real documentada em
 `docs/analise_cnn1dae_exp13.md` que também gerou falso alerta na T5 —
 possivelmente o mesmo evento físico de partida atravessando os dois
-alvos, não uma coincidência). Ainda não investigado caso a caso.
+alvos, não uma coincidência).
+
+**Investigação caso a caso (cruzando `PI_0308`, vibração e `T5_AVG_A`
+ao redor de cada episódio):** não há uma causa única — pelo menos 3
+fenômenos misturados:
+
+1. **Em todos os 16 casos, `PI_0308` está no teto da faixa normal mas
+   nunca extremo** (1,38–1,44; normal p50=1,391/p95=1,426/p99=1,436) —
+   confirma que é o conjunto multivariado que pega, não o valor bruto
+   sozinho (consistente com o sanity-check).
+2. **~5-6 episódios coincidem com variação real de `T5_AVG_A`** de
+   dezenas de graus na hora ao redor (manobra de carga real) — mesmo
+   tipo de gatilho que gerou FP na T5 no EXP10. Ex: 2025-08-24,
+   2025-12-02, os dois de 2026-01-29, 2026-04-08.
+3. **1 episódio (2026-04-15 14h50) é glitch de sensor confirmado**, não
+   evento real: `T5_AVG_A` despenca de ~760°C pra 415°C num único ponto
+   (14h40) e volta ao normal no ponto seguinte — ruído entrando na
+   janela de features derivadas.
+4. **Vibração elevada só explica 1 episódio** (2026-01-29, já sabido
+   ser real) — baseline justo de volatilidade (amostra on-state, janela
+   90min): mediana 0,142; a maioria dos outros 15 episódios fica em
+   0,07–0,39, dentro do normal.
+5. **~9-10 episódios sem causa identificada** com os 3 sinais checados —
+   provavelmente vêm de alguma combinação nas features derivadas
+   (`DERIVED_ROLLING_WINDOWS`) que o IsolationForest usa; atribuir a
+   causa exata exigiria análise de importância de feature por ponto
+   (SHAP ou equivalente), não feita aqui.
+
+**Conclusão:** mistura de manobras de carga reais, 1 glitch de sensor
+confirmado, e o resto sem causa clara — não muda a decisão de
+consolidar o candidato sem portões (FP de 0,143% já é baixo; um portão
+de volatilidade seguiria arriscado dado o papel da vibração como sinal,
+não ruído, pra este alvo).
 
 ### ⚠️ Cuidado antes de copiar os portões do EXP10c/EXP15b direto
 
