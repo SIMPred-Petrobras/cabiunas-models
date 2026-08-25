@@ -261,6 +261,29 @@ que nem os 2 casos genuínos se comportam da mesma forma.
 **Esta é a pipeline vencedora consolidada do EXP16 — com essa ressalva
 de cobertura preditiva registrada.**
 
+## Prontidão para produção real-time: não está pronto
+
+Pergunta levantada explicitamente e vale registrar a resposta. O pipeline
+atual é retrospectivo/batch (`python src/main.py` → ClearML baixa
+snapshot CSV → treina → avalia contra corte OOS fixo → relatório), não
+um serviço de inferência contínua. Faltam, no mínimo:
+
+1. **Conexão viva com o Historian PI** — hoje só existe leitura de
+   snapshot CSV via ClearML Dataset, sem tag subscription em tempo real.
+2. **Job de scoring agendado/contínuo** que pontue a janela mais recente
+   e dispare alerta (o pipeline hoje só roda sob demanda, uma vez).
+3. **Integração com alerta operacional** (notificar operador) — não existe.
+4. **Rotina de retreino/recalibração periódica** — o `iforest`
+   consolidado aprendeu "normal" só até jun/2025; sem atualização desde
+   então, o threshold pode já estar defasado (deriva sazonal, manutenções).
+5. **Base de validação pequena demais pra garantia operacional** — n=2
+   no teste, com só 1 caso genuinamente preditivo (ver acima). Não dá
+   pra afirmar uma taxa de detecção com confiança estatística.
+
+O resultado do EXP16 é uma prova de conceito que confirma que existe
+sinal real (o caso de 14h de antecedência), não um sistema pronto pra
+prever falha em produção.
+
 ## Próximos passos
 
 1. ~~Submeter grid AutoML~~ — feito, EXP16a (task
@@ -271,9 +294,20 @@ de cobertura preditiva registrada.**
    engavetado — só entra em jogo se surgir motivo concreto pra revisitar
    (ex: mais dados genuínos tornando a avaliação mais robusta e valendo a
    pena testar uma arquitetura mais pesada).
-4. Em aberto: decidir se amplia a janela de dados pra antes de 2024-01-01
-   (mais eventos genuínos = avaliação menos frágil) — o gargalo do EXP16
-   continua sendo n=2 alarmes genuínos no período OOS, não o modelo.
+4. ~~Decidir se amplia a janela de dados pra antes de 2024-01-01~~ —
+   investigado, **não compensa**. Existe um dataset ClearML mais amplo
+   (`Cabiunas consolidado 2022-2026`, id `58a4c230ff30420aa31f1d83d2da79ee`,
+   colunas sem o prefixo `954005_624_`) cobrindo 2022–2026, mas: **2023
+   está com 0 linhas de dado de sensor** (ausência total nesse dataset)
+   — e é justamente 2023 que teria os 6 eventos adicionais do alarme
+   (todos caem em `-1.000`/`NaN`, sem leitura). **2022 tem ótima
+   cobertura (99,9%+) mas zero eventos do alarme `PALL_6240309`
+   registrados nesse ano.** Ampliar a janela só acrescentaria dado de
+   treino "normal" (2022), sem resolver o gargalo de eventos genuínos de
+   teste. Se existir uma exportação separada de 2023 em algum lugar não
+   catalogado no ClearML, valeria checar com o time — mas não foi
+   encontrada nos datasets disponíveis. O gargalo do EXP16 continua
+   sendo n=2 alarmes genuínos no período OOS, sem solução de dado à vista.
 5. ~~Investigar os 16 episódios de FP residual~~ — feito, ver seção
    acima (mistura de rampas reais, 1 glitch de sensor, resto sem causa
    clara).
