@@ -349,6 +349,35 @@ modelo ou do pipeline** — mesma categoria de achado negativo documentada
 pro EXP13/T5 (`docs/analise_cnn1dae_exp13.md`, seção de achados
 negativos). Sem um sensor que capture o precursor real desse tipo de
 trip (se é que existe um fisicamente), não há o que ajustar no modelo.
-**Cobertura genuinamente preditiva real do EXP16: 1 em 2 (50%), com o
-outro caso sendo um evento abrupto sem assinatura antecipada
-disponível — não 1 preditivo + 1 reativo como registrado antes.**
+
+### Checagem do 3º evento genuíno (2024-03-07, fora da avaliação por cair no treino)
+
+Pergunta natural: "mesmo com engenharia de deploy perfeita, esse modelo
+prediria a falha de verdade?" Só dava pra responder isso checando
+também o 3º evento genuíno conhecido (`2024-03-07 13:55:37`), que nunca
+foi avaliado (cai no período de treino, não no OOS). Resultado: **também
+sem precursor.** Curiosamente o alarme dispara às 13h55:37 mas a queda
+real de pressão/desligamento só acontece ~2h depois (15h56–16h16);
+`PI_0308` fica completamente estável (1,360–1,364) tanto nas 2h antes
+quanto no próprio horário oficial do alarme — sem nenhuma reação.
+
+**Contagem real com os 3 eventos genuínos conhecidos (não só os 2 do
+OOS):**
+
+| Evento | Sinal detectável? |
+|---|---|
+| 2024-03-07 | ❌ sem precursor |
+| 2025-11-04 | ✅ ~14h de antecedência real |
+| 2026-02-26 | ❌ sem precursor |
+
+**Cobertura genuinamente preditiva real: 1 em 3 (~33%), não 1 em 2
+(50%).** Resposta à pergunta "com deploy perfeito, esse modelo prediria
+a falha?": **parcialmente, não sempre.** Não é limitação de engenharia
+de deploy — é limite de informação disponível nos sensores atuais. Se
+esse tipo de trip tiver duas causas físicas distintas (uma degradação
+lenta detectável, outra um evento abrupto/mecânico sem aviso),
+aumentar dados ou trocar de modelo não resolve o segundo tipo; exigiria
+um sensor que hoje não está disponível (ou o precursor pode
+genuinamente não existir fisicamente pra esse modo de falha). Com n=3,
+essa taxa de 33% carrega incerteza estatística enorme, mas é o retrato
+mais completo disponível hoje.
