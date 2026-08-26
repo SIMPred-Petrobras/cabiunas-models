@@ -381,3 +381,56 @@ um sensor que hoje não está disponível (ou o precursor pode
 genuinamente não existir fisicamente pra esse modo de falha). Com n=3,
 essa taxa de 33% carrega incerteza estatística enorme, mas é o retrato
 mais completo disponível hoje.
+
+### Duas hipóteses de precursor testadas e refutadas (EXP16c)
+
+Buscando destravar 2024-03-07 e 2026-02-26, varreu-se ~36 sensores
+brutos disponíveis (z-score robusto nas 24h antes de cada evento,
+comparado contra o caso preditivo 2025-11-04 como controle). Dois
+candidatos surgiram e foram testados a fundo — **os dois refutados:**
+
+1. **Declínio de temperatura do óleo/mancais (`TI_0301/03/05/07/0325`)
+   antes de 2024-03-07** — real e coerente entre os 5 sensores (~1,5-2°C
+   em ~20h), mas checagem de taxa-base mostrou que esse padrão acontece
+   **32,5% do tempo operacional** (387 episódios em 2,3 anos), com só
+   0,8% seguidos de trip — é variação normal, não precursor. Confirmado
+   também que o modelo multivariado já treinado (que já incluía essas
+   5 temperaturas) não sinalizou nada nessa janela (0 pontos anômalos).
+
+2. **Elevação de `PDIT_0305` (pressão vazamento gás selagem) antes de
+   2026-02-26** — muito mais específico à primeira vista (só 0,036% do
+   tempo, 16 episódios, 12,5% seguidos de trip, 2 desses 16 precedendo
+   exatamente esse evento). **EXP16c** (tasks
+   `640251258fcc471bb8f25bf8fe3ffac8` e `3f679264f5cb4c2081f658bdb2fa154b`,
+   config `test_grupo_exp16c_trip_oleo_lub_pdit0305.json`) testou
+   adicionar `PDIT_0305` ao grupo (`candidato_com_pdit0305` vs
+   `controle_atual_sem_pdit0305`). **Resultado: não mudou nada** — o
+   primeiro ponto anômalo em 2026-02-26 continua exatamente no mesmo
+   horário (22h17:30, ~6,7h **depois** do trip) com ou sem `PDIT_0305`;
+   só 6 pontos a mais na mesma janela reativa, nenhum antes do alarme.
+   O sinal correto na análise de taxa-base não sobreviveu ao score
+   conjunto do IsolationForest com os outros 11 sensores — mesmo padrão
+   de diluição do achado da temperatura.
+
+**Conclusão desta linha de investigação:** duas hipóteses concretas
+testadas com rigor (taxa-base + confirmação no modelo real), ambas
+refutadas. Fecha o ciclo de busca por precursores baratos pros 2 casos
+sem sinal — mesma natureza dos "achados negativos" documentados no
+EXP13 pra T5. Não há evidência de que mais dados ou mais tempo de busca
+nos ~36 sensores já disponíveis destravem esses 2 casos; um novo
+sensor (não coletado hoje) ou uma mudança de arquitetura seriam os
+próximos passos plausíveis, fora do escopo de uma investigação offline.
+
+### Nota técnica: falha de infraestrutura na reprodução local
+
+Durante essa investigação, `point_anomalies_all.csv` do grupo
+`candidato_com_pdit0305` falhou o upload/download no ClearML por duas
+vezes (404, depois timeout de rede) antes de baixar com sucesso na
+5ª tentativa. Reprodução local (bypassando o ClearML) esbarrou em OOM
+real do host compartilhado — o `IsolationForest` do scikit-learn
+precisa de ~5,6GB de RSS pra pontuar 2,45M pontos mesmo com só 50
+árvores (contra 200 do config oficial), confirmado via
+`dmesg`/`journalctl` (oom-kill do kernel, não bug de código). Se este
+tipo de diagnóstico precisar ser repetido no futuro, considerar
+pontuar `x_all` em lotes (batches) em vez de de uma vez, ou rodar em
+máquina com mais memória disponível.
