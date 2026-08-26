@@ -1,0 +1,64 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\babel@aux[2]{}
+\@nameuse{bbl@beforestart}
+\catcode `"\active 
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\babel@aux{brazilian}{}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introdução e contexto}{2}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Por que este alvo, e não os outros dois trips de óleo}{2}{subsection.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Metodologia}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Dados}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Grupo multivariado e correlação}{2}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Split treino/teste (OOS)}{3}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Modelo vencedor e como foi configurado}{3}{section.3}\protected@file@percent }
+\newlabel{sec:modelo}{{3}{3}{Modelo vencedor e como foi configurado}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}EXP16a: grid amplo de AutoML}{3}{subsection.3.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Comparação dos 3 modelos no grupo controle: apesar de \texttt  {dense} e \texttt  {ocsvm} também atingirem hit\_rate médio de 100\% entre todos os 420 trials (contra 92,9\% do \texttt  {iforest}), o \texttt  {iforest} entrega o menor falso alerta no seu melhor trial -- 0,143\%, contra 0,285\% do \texttt  {ocsvm} e 0,907\% do \texttt  {dense}, mais de 6$\times $ pior.\relax }}{4}{figure.caption.2}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:comparativo}{{1}{4}{Comparação dos 3 modelos no grupo controle: apesar de \texttt {dense} e \texttt {ocsvm} também atingirem hit\_rate médio de 100\% entre todos os 420 trials (contra 92,9\% do \texttt {iforest}), o \texttt {iforest} entrega o menor falso alerta no seu melhor trial -- 0,143\%, contra 0,285\% do \texttt {ocsvm} e 0,907\% do \texttt {dense}, mais de 6$\times $ pior.\relax }{figure.caption.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Configuração final do modelo (EXP16b)}{4}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Por que nenhum portão de pós-processamento?}{4}{section*.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Esquema completo do pipeline EXP16, do dado bruto ao ponto anômalo avaliado. Os blocos verdes marcam decisões específicas deste experimento (escolha do alvo, grid de exploração, modelo vencedor); os azuis são etapas padrão do framework AutoML já usado nos experimentos de T5.\relax }}{5}{figure.caption.4}\protected@file@percent }
+\newlabel{fig:pipeline}{{2}{5}{Esquema completo do pipeline EXP16, do dado bruto ao ponto anômalo avaliado. Os blocos verdes marcam decisões específicas deste experimento (escolha do alvo, grid de exploração, modelo vencedor); os azuis são etapas padrão do framework AutoML já usado nos experimentos de T5.\relax }{figure.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Sanity-check: o resultado é real, não artefato do conjunto pequeno}{5}{subsection.3.3}\protected@file@percent }
+\newlabel{sec:sanity}{{3.3}{5}{Sanity-check: o resultado é real, não artefato do conjunto pequeno}{subsection.3.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Resultados}{6}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Métricas do candidato final}{6}{subsection.4.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Série completa de \texttt  {PI\_0308} (2024--2026) com os pontos sinalizados como anômalos pelo modelo final (pontos vermelhos) e os 3 eventos genuínos conhecidos do alarme \texttt  {PALL\_6240309} marcados. Os grandes trechos em torno de $-0{,}25$ a $-1{,}0$ correspondem a períodos com a turbina desligada (o sensor cai ao piso físico de leitura), excluídos da avaliação pela máscara operacional.\relax }}{6}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:serie-completa}{{3}{6}{Série completa de \texttt {PI\_0308} (2024--2026) com os pontos sinalizados como anômalos pelo modelo final (pontos vermelhos) e os 3 eventos genuínos conhecidos do alarme \texttt {PALL\_6240309} marcados. Os grandes trechos em torno de $-0{,}25$ a $-1{,}0$ correspondem a períodos com a turbina desligada (o sensor cai ao piso físico de leitura), excluídos da avaliação pela máscara operacional.\relax }{figure.caption.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Gráfico do acerto: o caso genuinamente preditivo}{6}{subsection.4.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Episódio de 2025-11-04: a turbina entra em operação às $\sim $13h50 do dia anterior; o \texttt  {iforest} sinaliza uma janela de anomalia (pontos vermelhos) já entre 16h04 e 17h07 desse mesmo dia -- $\sim $14,3 horas antes do trip (linha vermelha), pouco depois da partida. É um episódio (\emph  {burst}) concentrado logo após a partida, não uma tendência crescente ao longo de toda a janela; ainda assim, cai inteiramente antes do trip, contando como antecedência real -- diferente do padrão reativo descrito abaixo para os casos sem sinal.\relax }}{7}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:caso-detectado}{{4}{7}{Episódio de 2025-11-04: a turbina entra em operação às $\sim $13h50 do dia anterior; o \texttt {iforest} sinaliza uma janela de anomalia (pontos vermelhos) já entre 16h04 e 17h07 desse mesmo dia -- $\sim $14,3 horas antes do trip (linha vermelha), pouco depois da partida. É um episódio (\emph {burst}) concentrado logo após a partida, não uma tendência crescente ao longo de toda a janela; ainda assim, cai inteiramente antes do trip, contando como antecedência real -- diferente do padrão reativo descrito abaixo para os casos sem sinal.\relax }{figure.caption.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}O que não foi previsto, e por quê}{7}{subsection.4.3}\protected@file@percent }
+\newlabel{sec:naodetectado}{{4.3}{7}{O que não foi previsto, e por quê}{subsection.4.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Os dois eventos sem sinal detectável. Em ambos os casos, \texttt  {PI\_0308} permanece completamente estável dentro da faixa normal até o instante exato (ou muito próximo) do trip -- não há degradação gradual visível em nenhum sensor disponível. No evento de 2024-03-07, o alarme dispara às 13h55 mas a queda física real só ocorre $\sim $2h depois (15h56), um detalhe curioso da sequência de proteção que não muda a conclusão: não há aviso prévio detectável em nenhum dos dois casos.\relax }}{8}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:nao-detectados}{{5}{8}{Os dois eventos sem sinal detectável. Em ambos os casos, \texttt {PI\_0308} permanece completamente estável dentro da faixa normal até o instante exato (ou muito próximo) do trip -- não há degradação gradual visível em nenhum sensor disponível. No evento de 2024-03-07, o alarme dispara às 13h55 mas a queda física real só ocorre $\sim $2h depois (15h56), um detalhe curioso da sequência de proteção que não muda a conclusão: não há aviso prévio detectável em nenhum dos dois casos.\relax }{figure.caption.7}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Duas hipóteses de precursor levantadas e refutadas}{8}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces As duas hipóteses testadas, mostradas na linha do tempo completa. A Hipótese 1 (declínio de temperatura) ocorre com tanta frequência que é essencialmente ruído operacional. A Hipótese 2 (\texttt  {PDIT\_0305}) é rara e por isso mais promissora à primeira vista, mas ao ser incorporada de fato ao modelo (não apenas observada isoladamente), não mudou o resultado.\relax }}{9}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:precursores}{{6}{9}{As duas hipóteses testadas, mostradas na linha do tempo completa. A Hipótese 1 (declínio de temperatura) ocorre com tanta frequência que é essencialmente ruído operacional. A Hipótese 2 (\texttt {PDIT\_0305}) é rara e por isso mais promissora à primeira vista, mas ao ser incorporada de fato ao modelo (não apenas observada isoladamente), não mudou o resultado.\relax }{figure.caption.8}{}}
+\@writefile{toc}{\contentsline {paragraph}{Hipótese 1 -- declínio de temperatura do óleo/mancais.}{9}{section*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hipótese 2 -- elevação de \texttt  {PDIT\_0305} (pressão diferencial de vazamento de gás de selagem).}{9}{section*.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Conclusão desta investigação.}{10}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussão}{10}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Este modelo prediz \emph  {todas} as falhas desse tipo?}{10}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Prontidão para produção}{10}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Limitações e pendências}{10}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusão}{10}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Tasks ClearML referenciadas}{11}{section.7}\protected@file@percent }
+\gdef \@abspage@last{11}

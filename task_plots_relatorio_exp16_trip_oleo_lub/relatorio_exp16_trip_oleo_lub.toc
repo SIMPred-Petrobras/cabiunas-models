@@ -1,0 +1,26 @@
+\babel@toc {brazilian}{}\relax 
+\contentsline {section}{\numberline {1}Introdução e contexto}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Por que este alvo, e não os outros dois trips de óleo}{2}{subsection.1.1}%
+\contentsline {section}{\numberline {2}Metodologia}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Dados}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Grupo multivariado e correlação}{2}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Split treino/teste (OOS)}{3}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Modelo vencedor e como foi configurado}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}EXP16a: grid amplo de AutoML}{3}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Configuração final do modelo (EXP16b)}{4}{subsection.3.2}%
+\contentsline {paragraph}{Por que nenhum portão de pós-processamento?}{4}{section*.3}%
+\contentsline {subsection}{\numberline {3.3}Sanity-check: o resultado é real, não artefato do conjunto pequeno}{5}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Resultados}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Métricas do candidato final}{6}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Gráfico do acerto: o caso genuinamente preditivo}{6}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}O que não foi previsto, e por quê}{7}{subsection.4.3}%
+\contentsline {subsubsection}{\numberline {4.3.1}Duas hipóteses de precursor levantadas e refutadas}{8}{subsubsection.4.3.1}%
+\contentsline {paragraph}{Hipótese 1 -- declínio de temperatura do óleo/mancais.}{9}{section*.9}%
+\contentsline {paragraph}{Hipótese 2 -- elevação de \texttt {PDIT\_0305} (pressão diferencial de vazamento de gás de selagem).}{9}{section*.10}%
+\contentsline {paragraph}{Conclusão desta investigação.}{10}{section*.11}%
+\contentsline {section}{\numberline {5}Discussão}{10}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Este modelo prediz \emph {todas} as falhas desse tipo?}{10}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Prontidão para produção}{10}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Limitações e pendências}{10}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Conclusão}{10}{section.6}%
+\contentsline {section}{\numberline {7}Tasks ClearML referenciadas}{11}{section.7}%
