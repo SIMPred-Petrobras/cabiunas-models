@@ -543,6 +543,9 @@ SILENCE_LIMIT_H = 2000.0
 # Corte que separa a série em duas metades para reportar detecção distribuída.
 # 5 dos 8 eventos ficam antes, 3 depois.
 EVAL_SPLIT = "2025-10-01"
+# Linhas enviadas ao gráfico de tabela do ClearML. A grade toda vai no artefato;
+# aqui o teto existe só para o evento não estourar o limite de 15 MB do servidor.
+TABLE_PLOT_ROWS = 300
 
 
 @dataclass(frozen=True)
@@ -1443,7 +1446,16 @@ def main() -> None:
         task.upload_artifact("automl_results", table)
         if best:
             task.upload_artifact("best_trial", asdict(best))
-        task.get_logger().report_table("resultados", "grade", table_plot=table)
+        # Só as melhores linhas vão para o gráfico: a grade completa já está no
+        # artefato acima. O report_table manda a tabela como UM evento, e em
+        # 51.840 linhas isso dá 16,8 MB contra o limite de 15 MB do servidor —
+        # o batch não é divisível, então cada retry remonta o mesmo payload e a
+        # task fica presa em retry infinito sem nunca fechar (visto em 22/08/2026).
+        ordem = ["eventos_detectados", "det_2a_metade", "lead_medio_h"]
+        resumo = table.sort_values(ordem, ascending=False).head(TABLE_PLOT_ROWS)
+        task.get_logger().report_table(
+            f"resultados (top {len(resumo)} de {len(table)})", "grade",
+            table_plot=resumo)
     print(f"\nresultados em {out_dir.resolve()}")
 
 
