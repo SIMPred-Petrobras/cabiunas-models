@@ -170,21 +170,57 @@ generalista de todo o sistema.
 
 O colega reportou FP como **episódios por mês**, não como % de pontos —
 por isso a métrica acima foi criada, pra comparar de forma justa. Ele
-relatou **0,94 FP/mês**, bem abaixo dos 3,35-4,42/mês obtidos aqui. A
-diferença mais provável não é o modelo em si, mas a estratégia de
+relatou **0,94 FP/mês**, bem abaixo dos 3,35-4,42/mês obtidos aqui no
+v2. A hipótese inicial era que a diferença viesse da estratégia de
 treino: ele usa uma **janela rolante fixa de ~3000h (~4 meses)**,
-enquanto aqui a janela é **expansiva** (cresce indefinidamente, treino
-de 2026 usa quase 2 anos de histórico). Uma janela rolante mais curta
-tende a capturar melhor a operação **recente** da planta (deriva de
-sensor, mudanças de setpoint, sazonalidade), reduzindo falso positivo
-por desatualização do modelo — às custas de descartar histórico antigo
-que talvez ainda fosse relevante. Fica como hipótese a testar (ver
-"Próximos passos"), não uma conclusão fechada — não foi reproduzida
-ainda a janela rolante aqui pra confirmar se o ganho viria daí.
+enquanto o v2 usa janela **expansiva** (cresce indefinidamente, treino
+de 2026 usa quase 2 anos de histórico). Essa hipótese foi testada
+diretamente no v3 — ver abaixo — e **refutada**: a janela rolante não
+reduziu o FP, pelo contrário.
 
 Tabelas completas do v2 (47 tags) salvas em
 `scripts/pca_monitoramento_sistema/resultado_v2_iforest_por_tag.csv` e
 `resultado_v2_ocsvm_por_tag.csv`.
+
+## v3: janela de treino rolante fixa (~3000h) — hipótese testada e refutada
+
+Implementação idêntica ao v2 (mesmo pré-processamento real, mesma
+avaliação por tag e por episódio), mudando **só** o filtro de treino: em
+vez de "todo o histórico anterior ao mês avaliado" (expansivo), passa a
+ser "os últimos ~3000h (~125 dias) anteriores ao mês avaliado" (rolante
+fixa) — a mesma ordem de grandeza da janela usada pelo colega.
+Script: `pca_walkforward_v3_janela_rolante.py`.
+
+| Métrica | v2 (expansiva) `ocsvm` | v2 `iforest` | v3 (rolante ~3000h) `ocsvm` | v3 `iforest` |
+|---|---|---|---|---|
+| FP geral (% pontos) | 5,97% | 2,27% | 17,73% | 5,43% |
+| `hit_rate` médio entre tags | 29,79% | 29,04% | 30,13% | 29,77% |
+| `hit_rate` por episódio | 68,4% | 63,7% | 70,1% | 66,8% |
+| FP em episódios/mês | 4,42 | 3,35 | 5,77 | 3,50 |
+
+**A hipótese foi refutada — o resultado foi o oposto do esperado.**
+Encurtar a janela de treino pra ~3000h **piorou** o FP em ambos os
+modelos (no `ocsvm`, quase triplicou: 5,97%→17,73%), com ganho só
+marginal de cobertura (`hit_rate` por episódio subiu ~2-3 p.p.). Faz
+sentido em retrospecto: uma janela de treino mais curta expõe o modelo
+a **menos variedade de operação normal** (menos ciclos de carga, menos
+condições sazonais, menos combinações de setpoint já vistas como
+"normais"), então qualquer variação de operação que não caiba dentro
+desses ~4 meses recentes passa a ser tratada como anomalia — o modelo
+fica **mais sensível, não mais preciso**. A janela expansiva, ao ver
+mais histórico, aprende uma noção mais ampla (e mais correta) do que é
+variação normal da planta, reduzindo o FP.
+
+Conclusão prática: **a diferença de FP/mês em relação ao colega (0,94
+vs. 3,35-5,77) não vem da estratégia de janela de treino** — outra
+explicação precisa ser buscada (candidatos mais prováveis: threshold/
+debounce diferentes, conjunto de sensores usado, ou definição de
+"falso positivo" dele ser mais permissiva/agrupada que a nossa). Ver
+"Próximos passos" atualizado.
+
+Tabelas completas do v3 (47 tags) salvas em
+`scripts/pca_monitoramento_sistema/resultado_v3_iforest_por_tag.csv` e
+`resultado_v3_ocsvm_por_tag.csv`.
 
 ## Interpretação
 
@@ -244,18 +280,24 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
 
 ## Próximos passos
 
-1. Testar janela de treino **rolante fixa** (ex.: ~3000h/~4 meses, igual
-   ao colega) em vez de expansiva, pra verificar se isso explica boa
-   parte da diferença de FP/mês (3,35-4,42 aqui vs. 0,94 dele) — hipótese
-   levantada na comparação acima, ainda não testada diretamente.
-2. Checagem de antecedência real (preditivo vs. reativo) numa amostra
+1. ~~Testar janela de treino rolante fixa~~ — **feito no v3, hipótese
+   refutada** (piorou o FP em vez de melhorar; ver seção v3 acima).
+   Manter a janela **expansiva** (v2) como referência daqui pra frente.
+2. Grid de threshold/debounce (aqui fixado em percentil 99/debounce 6
+   sem otimização) — agora é o candidato mais provável pra explicar o
+   gap de FP/mês com o colega (0,94 vs. 3,35 no `iforest` expansivo);
+   vale testar percentis mais altos (99,5/99,9) antes de mexer em
+   qualquer outra coisa.
+3. Conferir com o colega a definição exata de "falso positivo por mês"
+   dele (mesmo critério de agrupamento em episódios? mesma janela de
+   exclusão ao redor de alarme? mesmo conjunto de sensores?) — a
+   comparação só é justa se a métrica for calculada do mesmo jeito dos
+   dois lados.
+4. Checagem de antecedência real (preditivo vs. reativo) numa amostra
    dos tags/episódios com melhor cobertura, mesma disciplina do EXP16.
-3. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
+5. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
    comparar diretamente com os modelos dedicados.
-4. Grid de threshold/debounce (aqui fixado em percentil 99/debounce 6
-   sem otimização) — pode haver ganho fácil, inclusive pra aproximar do
-   FP/mês do colega sem trocar a janela de treino.
-5. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
+6. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
    pontos sinalizados, pra diagnosticar automaticamente qual subsistema
    está por trás de cada alerta.
 
@@ -271,8 +313,13 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
   `clip_outliers`, `normalize_train_only` de `preprocess.py`) e
   adicionando a avaliação por episódio. **Versão de referência** — usar
   esta pra qualquer comparação/próximo passo.
+- `scripts/pca_monitoramento_sistema/pca_walkforward_v3_janela_rolante.py`
+  — **v3**, idêntico ao v2 exceto pela janela de treino: rolante fixa
+  (~3000h) em vez de expansiva. Testou e refutou a hipótese de que essa
+  troca reduziria o FP/mês (ver seção v3 acima). Mantido no repo como
+  registro do experimento negativo, não como versão de referência.
 
-Nenhuma das duas está integrada ao `automl_pipeline.py` (a estrutura de
+Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
 diferente da pipeline por-alvo existente pra não valer a pena forçar no
 mesmo framework agora). Ambas reaproveitam os fitters/avaliação
