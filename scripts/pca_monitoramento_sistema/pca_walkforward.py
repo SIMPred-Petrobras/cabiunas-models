@@ -16,14 +16,26 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
-from clearml import Dataset
+from clearml import Task, Dataset
 
 from src.cnn1d_ae.automl_models import fit_ocsvm, ocsvm_error, fit_isolation_forest, isolation_forest_error
 from src.cnn1d_ae.scoring import map_seq_to_point_anomalies, eval_alarm_hit_rate, build_operational_state
 from src.cnn1d_ae.preprocess import build_exclusion_mask
 
 CLEARML_DATASET_ID = "a97ba56ba14840fbb1125c2a82f883c9"  # "Cabiunas full 2024-2026 30s"
+CLEARML_PROJECT_NAME = "TesteMLCab"
+CLEARML_DOCKER_IMAGE = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime"
+REMOTE_QUEUE = "default"
+RUN_REMOTE = os.getenv("RUN_REMOTE", "true").lower() != "false"
 OUTPUT_DIR = os.path.dirname(__file__)
+
+task = Task.init(
+    project_name=CLEARML_PROJECT_NAME,
+    task_name="pca-walkforward::monitoramento_sistema_multivariado",
+    output_uri=True,
+    reuse_last_task_id=False,
+)
+task.set_base_docker(CLEARML_DOCKER_IMAGE)
 
 print("Resolvendo dataset ClearML...", flush=True)
 _dataset_root = Dataset.get(dataset_id=CLEARML_DATASET_ID).get_local_copy()
@@ -52,6 +64,26 @@ VARIANCE_TARGET = 0.90
 MAX_COMPONENTS = 20
 OCSVM_MAX_TRAIN = 50000
 RANDOM_SEED = 42
+BURN_IN_MONTHS = 2
+
+_config = {
+    "n_sensores_brutos": len(ALL_SENSORS),
+    "horizons_min": HORIZONS_MIN,
+    "exclude_min_alarm": EXCLUDE_MIN_ALARM,
+    "debounce": DEBOUNCE,
+    "pct_threshold": PCT_THRESHOLD,
+    "variance_target": VARIANCE_TARGET,
+    "max_components": MAX_COMPONENTS,
+    "ocsvm_max_train": OCSVM_MAX_TRAIN,
+    "random_seed": RANDOM_SEED,
+    "burn_in_months": BURN_IN_MONTHS,
+    "clearml_dataset_id": CLEARML_DATASET_ID,
+}
+task.connect(_config, name="pca_walkforward_config")
+
+if RUN_REMOTE and task.running_locally():
+    task.get_logger().report_text(f"Enqueuing task for remote execution on queue: {REMOTE_QUEUE}")
+    task.execute_remotely(queue_name=REMOTE_QUEUE, exit_process=True)
 
 print("Lendo dados brutos...", flush=True)
 cols = ["data_datetime", "RUNNING_A"] + ALL_SENSORS
@@ -103,8 +135,6 @@ print("total de meses no periodo:", len(months), flush=True)
 flags_ocsvm = pd.Series(0, index=df.index, dtype="int8")
 flags_iforest = pd.Series(0, index=df.index, dtype="int8")
 scored_mask = pd.Series(False, index=df.index)
-
-BURN_IN_MONTHS = 2
 
 for i, m in enumerate(months):
     if i < BURN_IN_MONTHS:
@@ -192,6 +222,15 @@ for name, flags in [("ocsvm", flags_ocsvm), ("iforest", flags_iforest)]:
     print(f"FP geral (on, longe de qualquer alarme): {fp_rate*100:.3f}%")
     print(f"Tags com >=3 alarmes genuinos no periodo avaliado: {len(tag_df)}")
     print(tag_df.to_string(index=False))
-    tag_df.to_csv(os.path.join(OUTPUT_DIR, f"resultado_{name}_por_tag.csv"), index=False)
+    csv_path = os.path.join(OUTPUT_DIR, f"resultado_{name}_por_tag.csv")
+    tag_df.to_csv(csv_path, index=False)
 
-print("\nOK - fim do script")
+    task.get_logger().report_scalar(title="fp_rate_geral", series=name, value=float(fp_rate) * 100, iteration=0)
+    task.get_logger().report_scalar(
+        title="hit_rate_medio_entre_tags", series=name, value=float(tag_df["hit_rate"].mean()) * 100, iteration=0
+    )
+    task.upload_artifact(name=f"resultado_{name}_por_tag", artifact_object=csv_path)
+
+print("\nOK - fim do script", flush=True)
+task.mark_completed(status_message="Monitoramento PCA walk-forward concluido com sucesso.")
+task.close()
