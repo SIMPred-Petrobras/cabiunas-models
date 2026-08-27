@@ -96,16 +96,113 @@ Tabelas completas (47 tags) salvas em
 `scripts/pca_monitoramento_sistema/resultado_iforest_por_tag.csv` e
 `resultado_ocsvm_por_tag.csv`.
 
+## v2: pré-processamento real do projeto + avaliação por episódio
+
+A versão acima (v1) usava uma reimplementação manual e simplificada do
+pré-processamento (só valor bruto + desvio-padrão móvel em 3 horizontes).
+Ao revisar com mais cuidado, ficou claro que isso não reaproveitava o
+pré-processamento de verdade do projeto — `clip_outliers` (modo
+quantil, ajustado por dataframe), as features derivadas completas
+(`_build_derived_features`: delta, mediana/desvio/tendência móvel em 4
+janelas — 6min/1h/4h/24h —, além de textura pros canais de vibração) e
+`normalize_train_only`. O v2
+(`pca_walkforward_v2_preprocessamento_real.py`) corrige isso, chamando
+diretamente `build_group_dataframe`, `select_feature_columns`,
+`clip_outliers` e `normalize_train_only` de `preprocess.py` — a mesma
+cadeia usada em `automl_pipeline.py` — antes do PCA. Isso expande de 144
+para ~594 colunas de entrada do PCA (ainda reduzidas a 12-20 componentes
+por mês, mantendo 90% de variância).
+
+### Comparação v1 vs v2 (mesma métrica de FP e hit_rate médio por tag)
+
+| Métrica | v1 `ocsvm` | v1 `iforest` | v2 `ocsvm` | v2 `iforest` |
+|---|---|---|---|---|
+| FP geral (% pontos, on, longe de alarme) | 11,31% | 3,21% | 5,97% | **2,27%** |
+| `hit_rate` médio entre os 47 tags | 29,50% | 27,25% | 29,79% | 29,04% |
+
+O pré-processamento real reduziu o FP em ambos os modelos (quase pela
+metade no `ocsvm`) sem piorar o `hit_rate` médio — na verdade melhorou
+ligeiramente em ambos. Faz sentido: features derivadas de verdade
+(médias/desvios/tendências em múltiplas janelas, já testadas e afinadas
+no resto do projeto) dão ao PCA uma base mais informativa e mais estável
+que o par bruto+desvio-móvel simplificado do v1.
+
+### Achado de co-ocorrência entre tags (motivação pra métrica por episódio)
+
+A pergunta levantada foi: será que os 47 tags do catálogo, por
+pertencerem ao mesmo equipamento, disparam **juntos** no mesmo evento
+físico? Uma checagem empírica agrupando os 3757 eventos do catálogo em
+"episódios" (gap > 60min entre eventos consecutivos = novo episódio)
+confirmou que sim, fortemente: em vários episódios (ex.: o de
+2024-06-11) até **46 dos 47 tags do catálogo** disparam dentro de uma
+janela de poucos minutos um do outro — um efeito cascata típico de
+trip/desligamento de equipamento, onde uma única causa-raiz aciona
+quase todo o painel de alarmes em sequência.
+
+Isso tem uma implicação direta pra leitura do `hit_rate` por tag: se um
+modelo detecta o evento uma vez, ele "acerta" simultaneamente para quase
+todos os 47 tags daquele episódio — o `hit_rate_medio_entre_tags`
+(29-30%) mistura decisões redundantes (mesmo evento, contado 40+ vezes)
+com decisões genuinamente independentes. Pra medir a cobertura real de
+**eventos distintos**, o v2 adicionou uma avaliação por episódio:
+agrupa os alarmes do catálogo em episódios (mesmo critério de gap>60min)
+e verifica se há pelo menos um ponto anômalo dentro de ±24h do episódio,
+contando o episódio como um hit ou miss — não por tag. O FP também passa
+a ser contado em episódios por mês (agrupando pontos falso-positivos
+consecutivos), pra ficar comparável com a forma como resultados externos
+costumam reportar (ex.: "X falsos positivos por mês" em vez de "X% dos
+pontos").
+
+### Métrica por episódio (v2)
+
+| Métrica | `ocsvm` | `iforest` |
+|---|---|---|
+| `hit_rate` por episódio (cobertura de eventos distintos) | 68,4% | 63,7% |
+| FP em episódios por mês | 4,42 | **3,35** |
+
+A cobertura por episódio (63-68%) é bem mais alta que o `hit_rate`
+médio por tag (27-30%) — esperado, já que um único hit já cobre o
+episódio inteiro, enquanto a média por tag pune tags de baixo sinal
+(vibração, trips-artefato) que nunca vão ser bem servidos por um modelo
+generalista de todo o sistema.
+
+### Comparação com o resultado do colega (janela de 3000h / ~4 meses)
+
+O colega reportou FP como **episódios por mês**, não como % de pontos —
+por isso a métrica acima foi criada, pra comparar de forma justa. Ele
+relatou **0,94 FP/mês**, bem abaixo dos 3,35-4,42/mês obtidos aqui. A
+diferença mais provável não é o modelo em si, mas a estratégia de
+treino: ele usa uma **janela rolante fixa de ~3000h (~4 meses)**,
+enquanto aqui a janela é **expansiva** (cresce indefinidamente, treino
+de 2026 usa quase 2 anos de histórico). Uma janela rolante mais curta
+tende a capturar melhor a operação **recente** da planta (deriva de
+sensor, mudanças de setpoint, sazonalidade), reduzindo falso positivo
+por desatualização do modelo — às custas de descartar histórico antigo
+que talvez ainda fosse relevante. Fica como hipótese a testar (ver
+"Próximos passos"), não uma conclusão fechada — não foi reproduzida
+ainda a janela rolante aqui pra confirmar se o ganho viria daí.
+
+Tabelas completas do v2 (47 tags) salvas em
+`scripts/pca_monitoramento_sistema/resultado_v2_iforest_por_tag.csv` e
+`resultado_v2_ocsvm_por_tag.csv`.
+
 ## Interpretação
 
+(Números abaixo já refletem o v2, com pré-processamento real; ver
+comparação v1/v2 acima.)
+
 - **Um único modelo, sem nenhuma calibração por alarme, detecta sinal em
-  praticamente toda categoria do catálogo** (60-85% em vários tags de
-  pressão/temperatura), com FP de só 3,2%. Valida a ideia central da
-  abordagem: uma "vigia geral" da planta é viável.
-- **Não supera os modelos dedicados já construídos**: T5 (EXP10c)
-  92,5% dedicado vs. 62,0% aqui; gás combustível (EXP17a) 81,5%
-  dedicado vs. 60,2% aqui. Esperado — um generalista não bate um
-  especialista calibrado especificamente pro alvo.
+  praticamente toda categoria do catálogo** (67-85% em vários tags de
+  pressão/temperatura no `iforest`), com FP de só 2,27% dos pontos (ou
+  3,35 episódios/mês) e cobertura de **63,7% dos episódios distintos**
+  do catálogo. Valida a ideia central da abordagem: uma "vigia geral" da
+  planta é viável.
+- **Não supera os modelos dedicados já construídos**: T5 (EXP10c) 92,5%
+  dedicado vs. 80,7% aqui (`iforest`, v2 — subiu bastante frente aos
+  62,0% do v1, mas ainda abaixo do dedicado); gás combustível (EXP17a)
+  81,5% dedicado vs. 67,1% aqui. Esperado — um generalista não bate um
+  especialista calibrado especificamente pro alvo, mas a distância
+  encolheu bastante com o pré-processamento correto.
 - **Vibração isolada continua mal servida** (8-17% em todos os 10
   canais) — reforça o achado recorrente no projeto de que vibração não é
   bem explicada pelo resto do sistema (é mais útil como *feature* de
@@ -116,16 +213,25 @@ Tabelas completas (47 tags) salvas em
   sistema — consistente com a conclusão anterior de que não há
   precursor real ali, em nenhuma combinação de sensores disponível.
 
-### ⚠️ Ressalva metodológica importante
+### ⚠️ Ressalvas metodológicas importantes
 
-Diferente do EXP16 (onde cada evento foi auditado manualmente pra
-separar genuíno de artefato de desligamento), aqui o `hit_rate` é
-calculado contra **todos** os eventos `ACT/CFN` do catálogo, sem esse
-filtro. Os números desta tabela **não são diretamente comparáveis** aos
-`hit_rate`/cobertura genuína reportados nos EXP10c/16/17 sem essa
-mesma auditoria. Também não foi feita a checagem de antecedência real
-(preditivo vs. reativo) que a lição do EXP16 exige antes de confiar
-cegamente num `hit_rate` agregado.
+1. **Genuíno vs. artefato de desligamento**: diferente do EXP16 (onde
+   cada evento foi auditado manualmente), aqui o `hit_rate` é calculado
+   contra **todos** os eventos `ACT/CFN` do catálogo, sem esse filtro.
+   Os números desta tabela **não são diretamente comparáveis** aos
+   `hit_rate`/cobertura genuína reportados nos EXP10c/16/17 sem essa
+   mesma auditoria. Também não foi feita a checagem de antecedência real
+   (preditivo vs. reativo) que a lição do EXP16 exige antes de confiar
+   cegamente num `hit_rate` agregado.
+2. **Efeito cascata entre tags**: como descrito acima, um único evento
+   físico dispara dezenas de tags do catálogo quase simultaneamente
+   (até 46/47 num mesmo episódio). Isso infla o número de tags "com
+   `hit_rate` alto" sem representar 46 detecções independentes — é
+   essencialmente a mesma detecção contada várias vezes. A métrica por
+   episódio (v2) é a leitura mais confiável de cobertura real; o
+   `hit_rate` por tag individual continua útil pra identificar **quais
+   tags nunca são cobertos mesmo quando o episódio é detectado** (ex.:
+   vibração), mas não deve ser lido como 47 experimentos independentes.
 
 ## Conclusão prática
 
@@ -138,25 +244,36 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
 
 ## Próximos passos
 
-1. Checagem de antecedência real (preditivo vs. reativo) numa amostra
-   dos tags com melhor `hit_rate`, mesma disciplina do EXP16.
-2. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
+1. Testar janela de treino **rolante fixa** (ex.: ~3000h/~4 meses, igual
+   ao colega) em vez de expansiva, pra verificar se isso explica boa
+   parte da diferença de FP/mês (3,35-4,42 aqui vs. 0,94 dele) — hipótese
+   levantada na comparação acima, ainda não testada diretamente.
+2. Checagem de antecedência real (preditivo vs. reativo) numa amostra
+   dos tags/episódios com melhor cobertura, mesma disciplina do EXP16.
+3. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
    comparar diretamente com os modelos dedicados.
-3. Grid de threshold/debounce (aqui fixado em percentil 99/debounce 6
-   sem otimização) — pode haver ganho fácil.
-4. Considerar reduzir a janela de treino de expansiva pra rolante (ex:
-   últimos 6-12 meses) em vez de todo o histórico, pra medir se isso
-   muda o resultado (a ideia original mencionava "todo mundo", mas vale
-   testar a alternativa).
+4. Grid de threshold/debounce (aqui fixado em percentil 99/debounce 6
+   sem otimização) — pode haver ganho fácil, inclusive pra aproximar do
+   FP/mês do colega sem trocar a janela de treino.
 5. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
    pontos sinalizados, pra diagnosticar automaticamente qual subsistema
    está por trás de cada alerta.
 
 ## Script
 
-`scripts/pca_monitoramento_sistema/pca_walkforward.py` — standalone,
-não integrado ao `automl_pipeline.py` (a estrutura de retreino mensal +
-avaliação contra catálogo completo é suficientemente diferente da
-pipeline por-alvo existente pra não valer a pena forçar no mesmo
-framework agora). Reaproveita os fitters/avaliação (`automl_models.py`,
-`scoring.py`, `preprocess.py`) do projeto.
+- `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
+  standalone, com reimplementação manual simplificada do
+  pré-processamento (valor bruto + desvio-padrão móvel em 3 horizontes).
+- `scripts/pca_monitoramento_sistema/pca_walkforward_v2_preprocessamento_real.py`
+  — **v2**, mesma estrutura de retreino mensal + avaliação contra
+  catálogo completo, mas usando a cadeia de pré-processamento real do
+  projeto (`build_group_dataframe`, `select_feature_columns`,
+  `clip_outliers`, `normalize_train_only` de `preprocess.py`) e
+  adicionando a avaliação por episódio. **Versão de referência** — usar
+  esta pra qualquer comparação/próximo passo.
+
+Nenhuma das duas está integrada ao `automl_pipeline.py` (a estrutura de
+retreino mensal + avaliação contra catálogo completo é suficientemente
+diferente da pipeline por-alvo existente pra não valer a pena forçar no
+mesmo framework agora). Ambas reaproveitam os fitters/avaliação
+(`automl_models.py`, `scoring.py`, `preprocess.py`) do projeto.
