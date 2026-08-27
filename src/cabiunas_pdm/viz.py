@@ -111,19 +111,44 @@ def decimar(objeto, freq: str | None, how: str = "median"):
     return getattr(objeto.resample(freq), how)()
 
 
+# piso de duração de uma parada de verdade — o mesmo MIN_STOP_HOURS do AutoML.
+# Abaixo disso é queda de telemetria do RUNNING_A (65 das 135 transições na grade
+# de 30 s duram menos de 3 min), e alargar essas na figura pintaria de cinza
+# paradas que nunca existiram.
+MIN_PARADA_H = 2.0
+
+
 def sombrear_paradas(ax, operabilidade: pd.DataFrame, freq: str | None = None,
-                     rotulo: bool = False) -> None:
-    """Cinza onde a máquina não estava operando (ali não existe score)."""
-    operando = operabilidade["in_operation"]
-    if freq:
-        operando = operando.resample(freq).max().fillna(False)
-    parada = ~operando.astype(bool)
+                     rotulo: bool = False, min_horas: float = MIN_PARADA_H) -> None:
+    """Cinza onde a máquina não estava operando (ali não existe score).
+
+    As faixas saem da série **nativa**, nunca da reamostrada. Com o antigo
+    ``operando.resample(freq).max()`` o dia contava como operando se a máquina
+    rodou em qualquer instante dele — e nenhuma das 36 paradas reais da série de
+    16 meses tem o seu dia de início inteiramente ocioso, então o *começo* de
+    toda parada ficava fora da figura e as 18 paradas de menos de 24 h não
+    deixavam faixa nenhuma. Era isso que fazia um alerta "antes de parada"
+    aparecer sem parada visível ao lado.
+
+    ``freq`` agora é só a resolução do desenho: uma parada real (>= ``min_horas``)
+    mais curta que um passo é alargada até um passo, para não desaparecer num
+    eixo de 16 meses — mesma razão do ``largura_minima`` de
+    :func:`marcar_episodios_por_tipo`. As quedas de telemetria ficam com a
+    largura verdadeira, isto é, invisíveis nessa escala.
+    """
+    operando = operabilidade["in_operation"].astype(bool)
+    parada = ~operando
     if not parada.any():
         return
+    passo = pd.Timedelta(freq) if freq else pd.Timedelta(0)
+    minima = pd.Timedelta(hours=min_horas)
     bloco = (parada != parada.shift(fill_value=False)).cumsum()
     primeiro = True
     for _, trecho in parada[parada].groupby(bloco[parada]):
-        ax.axvspan(trecho.index[0], trecho.index[-1], color=COR_PARADA, zorder=0,
+        inicio, fim = trecho.index[0], trecho.index[-1]
+        if fim - inicio >= minima:
+            fim = max(fim, inicio + passo)
+        ax.axvspan(inicio, fim, color=COR_PARADA, zorder=0,
                    label="Máquina parada" if (rotulo and primeiro) else None)
         primeiro = False
 
@@ -173,16 +198,35 @@ def pontos_por_tipo(resultado, freq: str | None = None) -> dict[str, pd.Datetime
     if freq:
         alerta = alerta.resample(freq).max().fillna(False).astype(bool)
     instantes = alerta[alerta].index
+    passo = pd.Timedelta(freq) if freq else pd.Timedelta(0)
     spans = dict(resultado.episode_spans)
+    episodios = [(linha["inicio"], max(spans.get(linha["inicio"], linha["inicio"]),
+                                       linha["inicio"]), linha["tipo"])
+                 for _, linha in resultado.episodes_table().iterrows()]
+
+    # um instante desenhado, UM dono. O filtro antigo era
+    # ``inicio.normalize() <= t <= fim`` por episódio, e na grade diária todo
+    # instante é meia-noite: um dia com episódios de dois tipos era reivindicado
+    # pelos dois, as duas cores caíam na mesma coordenada e a última plotada
+    # cobria a outra (em 18/03/2025 o laranja escondia um falso positivo).
+    # Agora cada instante fica com o episódio de MAIOR sobreposição na janela de
+    # desenho ``[t, t + passo]`` — o tipo que dominou aquele dia.
+    dono: dict[pd.Timestamp, tuple[pd.Timedelta, str]] = {}
+    zero = pd.Timedelta(0)
+    for inicio, fim, tipo in episodios:
+        toca = instantes[(instantes <= fim) & (instantes + passo >= inicio)]
+        for t in toca:
+            sobreposicao = max(min(t + passo, fim) - max(t, inicio), zero)
+            atual = dono.get(t)
+            if atual is None or sobreposicao > atual[0]:
+                dono[t] = (sobreposicao, tipo)
+
     saida: dict[str, list] = {}
-    for _, linha in resultado.episodes_table().iterrows():
-        inicio = linha["inicio"]
-        fim = spans.get(inicio, inicio)
-        # na grade diária o instante desenhado pode cair antes do início real do
-        # episódio; a tolerância de um passo evita perder o ponto
-        dentro = instantes[(instantes >= inicio.normalize()) & (instantes <= fim)]
-        saida.setdefault(linha["tipo"], []).extend(dentro)
-    return {tipo: pd.DatetimeIndex(sorted(set(v))) for tipo, v in saida.items()}
+    for t, (_, tipo) in dono.items():
+        saida.setdefault(tipo, []).append(t)
+    # ordem estável (a das cores), para a legenda não trocar de figura para figura
+    return {tipo: pd.DatetimeIndex(sorted(saida[tipo]))
+            for tipo in CORES_EPISODIO if tipo in saida}
 
 
 def marcar_episodios_por_tipo(ax, resultado, alpha: float = 0.28,
