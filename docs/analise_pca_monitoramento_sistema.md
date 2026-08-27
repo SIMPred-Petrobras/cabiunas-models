@@ -222,6 +222,141 @@ Tabelas completas do v3 (47 tags) salvas em
 `scripts/pca_monitoramento_sistema/resultado_v3_iforest_por_tag.csv` e
 `resultado_v3_ocsvm_por_tag.csv`.
 
+## v4: corrige o teto de componentes do PCA (MAX_COMPONENTS)
+
+Bug encontrado nos logs do v2/v3: `k = min(k, MAX_COMPONENTS)` travava
+sempre em 20 componentes, mesmo quando isso não alcançava os 90% de
+variância-alvo documentados (ficava estacionado em 60-71%). v4 sobe o
+teto pra 150 (script `pca_walkforward_v4_pca_variancia_real.py`).
+
+| Métrica | v2 (20 comp.) `ocsvm` | v2 `iforest` | v4 (150 comp.) `ocsvm` | v4 `iforest` |
+|---|---|---|---|---|
+| FP geral (% pontos) | 5,97% | 2,27% | 6,03% | 4,36% |
+| `hit_rate` médio entre tags | 29,79% | 29,04% | 29,97% | 29,88% |
+| `hit_rate` por episódio | 68,4% | 63,7% | 69,6% | 67,9% |
+| FP em episódios/mês | 4,42 | 3,35 | 5,65 | 4,73% |
+
+**Resultado contraintuitivo**: capturar mais variância (corrigir o bug)
+**piorou** o FP no `iforest` (2,27%→4,36%) com ganho só marginal de
+cobertura. Mesma lição do v3: mais informação não é sempre melhor pro
+`iforest`/`ocsvm` nesse regime — componentes adicionais do PCA além dos
+20 originais aparentemente carregam mais ruído específico de mês do que
+sinal genuinamente discriminativo. **v2 (20 componentes, "errado" pela
+documentação original) continua sendo o melhor ponto da série
+v2/v3/v4** — mantido como referência.
+
+## Investigação da branch do colega (Francisco) — `feat/pdm-deteccao-4sinais`
+
+Leitura (sem checkout, só `git show origin/<branch>:<arquivo>`) do
+`README_PDM.md`, `src/cabiunas_pdm/config.py` e `scripts/automl_clearml.py`
+da branch dele revelou uma arquitetura bem diferente da nossa:
+
+- **4 sinais independentes por subsistema físico, com votação**, não um
+  PCA único sobre todos os sensores: `temperatura` (14 sensores),
+  `pressao_oleo` (12 sensores), `mancal_spread` (univariado: `TI_0305`
+  menos a mediana dos 3 mancais irmãos) e `selagem_z` (univariado:
+  `PDIT_0305` isolado, porque a família de pressão dilui esse sensor na
+  média de 12).
+- **Ground-truth curado**: não usa os 3757 eventos do catálogo bruto.
+  Deriva uma lista curta de **trips reais** — parada `RUNNING_A` 1→0
+  com duração ≥2h **e** alarme de nível (regex `TRIP|MT.ALTA|M.ALTA|...`
+  na descrição) na janela [-1h,+30min] — agrupados em eventos físicos
+  por proximidade (<24h).
+- **PCA-Q (erro de reconstrução)** em vez de PCA+iforest, com
+  `PCA(n_components=0.95, svd_solver="full")` deixando o próprio sklearn
+  escolher quantos componentes bastam — evita o bug do v2/v3/v4.
+- **Normalização robusta** (mediana/IQR via `RobustScaler`), não z-score.
+  **EWMA no score contínuo antes do limiar** (`ewm(halflife=...,
+  times=índice)`), não debounce no flag binário depois.
+  **Limiar por múltiplo do p99** (`threshold_x_p99=2.0` pra temperatura)
+  ou **z-robusto** (`|z|>3.0` pro mancal), ambos sustentados 30min.
+  **Confirmação = E** entre 2 sinais (`temperatura` e `mancal_spread`),
+  não votação genérica — essa é a política de produção documentada em
+  `DETECTION_POLICY` (decisão de 18/07/2026, prioridade "minimizar FP").
+- **Janela de baseline em horas de operação ELEGÍVEL** (pós-exclusão),
+  não em horas de calendário — "3000h" pode exigir voltar 16 a 64 dias
+  no calendário dependendo do mês. O nosso v3 tinha reproduzido isso
+  errado (calendário corrido), o que ajuda a explicar por que a
+  hipótese da janela rolante falhou lá.
+- **Contabilidade de FP mais cirúrgica**: um episódio de alerta só conta
+  como falso positivo se não estiver a até 48h de um evento curado **ou**
+  de qualquer parada real (não só as poucas catalogadas).
+- Número confirmado no código: **"janela de 3.000h dá 6/8 eventos com
+  0,94 FP/mês"** — mesma unidade (episódios/mês) que já estávamos usando.
+
+## v5: reproduz a votação N-de-4 (arquitetura, sem as inovações de pós-processamento)
+
+Primeira tentativa (script `votacao_4sinais_v5.py`): os mesmos 4 sinais
+por família física, mas ainda com a receita v2 (PCA+`iforest`,
+normalização z-score, debounce no flag em vez de EWMA no score,
+catálogo bruto como ground-truth).
+
+| Sinal / votação | FP (% pontos) | `hit_rate` por episódio | FP episódios/mês |
+|---|---|---|---|
+| `temperatura` sozinho | 1,33% | 46,1% | 0,54 |
+| `pressao_oleo` sozinho | 3,91% | 50,6% | 1,31 |
+| `mancal_spread` sozinho | 9,92% | 14,4% | 0,69 |
+| `selagem_z` sozinho | 26,97% | 58,9% | 5,46 |
+| votação 2-de-4 | 7,92% | 49,5% | 1,46 |
+| votação 3-de-4 | 1,14% | 28,8% | **0,23** |
+| votação 4-de-4 | 0,34% | 7,4% | 0,15 |
+
+A arquitetura de votação já ajuda bastante por si só — `votação 3-de-4`
+chega a 0,23 episódios/mês, melhor que o 0,94 dele, ainda que avaliado
+contra o catálogo bruto (não comparável 1:1). Mas faltavam as inovações
+de pós-processamento (EWMA, limiar por múltiplo do p99, ground-truth
+curado) — daí o v6.
+
+## v6: reproduz a política de produção dele com fidelidade (9 inovações portadas)
+
+Script `reproducao_francisco_v6.py`: porta as 9 inovações acima pra
+nossa pipeline (pré-processamento real do projeto + `sklearn` puro em
+vez do dele) e avalia **nos dois estilos** — contra o catálogo bruto
+(continuidade com v2-v5) e contra o **ground-truth curado**, replicando
+o algoritmo dele em cima do nosso `alarmes_selecionados_turbina_a.csv`.
+
+**Ground-truth curado encontrado no nosso dataset**: 65 paradas reais
+(≥2h), das quais 12 coincidem com alarme de nível → **11 eventos
+físicos** (2024-03 a 2026-04; ele achou 8 num período mais curto,
+jan/2025-abr/2026 — plausível, coerente com a diferença de cobertura
+temporal).
+
+| Sinal / política | Eventos detectados | Lead médio | FP/mês (estilo dele) |
+|---|---|---|---|
+| `temperatura` sozinho (PCA-Q) | 6/11 (54,5%) | 19,9h | 2,81 |
+| `pressao_oleo` sozinho (PCA-Q) | 0/11 | — | 0,23 |
+| `mancal_spread` sozinho (z-robusto) | 4/11 (36,4%) | 9,75h | 1,18 |
+| `selagem_z` sozinho (z-robusto) | 5/11 (45,5%) | **30,5h** | 5,85 |
+| **`producao_2sinais_AND`** (política dele: temp. E mancal) | 2/11 (18,2%) | 13,2h | **0,90** |
+| votação 2-de-4 (bônus, genérica) | 5/11 (45,5%) | 20,7h | 1,91 |
+| votação 3-de-4 / 4-de-4 | 0/11 | — | 0,17 / 0,00 |
+
+**O FP foi reproduzido quase exatamente**: `producao_2sinais_AND` deu
+**0,90 episódios/mês**, contra os **0,94/mês** documentados por ele —
+usando a MESMA unidade, o MESMO mecanismo (confirmação E entre 2 sinais
+independentes) e um ground-truth curado com o MESMO algoritmo. Isso
+confirma a hipótese principal da investigação da branch dele: **a
+supressão de FP vem da votação/confirmação entre sinais independentes,
+não de um modelo mais preciso ponto a ponto** — replicamos o mecanismo
+com sklearn puro e chegamos a um número quase idêntico.
+
+**O que NÃO foi replicado com a mesma fidelidade: a cobertura de
+eventos.** Ele reporta 6/8 (75%) na varredura ampla; nossa política de
+produção replicada chegou a só 2/11 (18%) — bem abaixo até do
+`temperatura` sozinho (6/11, 54,5%), o que é o sintoma clássico de um
+threshold/EWMA mal calibrado pro nosso dado, não um problema conceitual
+(a arquitetura funciona, prova o FP quase idêntico). **Suspeita
+principal, ainda não testada**: nós rodamos o PCA-Q sobre o espaço de
+**features derivadas completo** do projeto (~196 colunas por família,
+com médias/desvios/tendências em 4 janelas), enquanto ele roda o PCA-Q
+direto sobre os **sensores brutos** (14 colunas, só limpos e
+escalados) — um espaço de entrada bem menos dimensional e sem a
+"diluição" que médias/desvios móveis podem causar no erro de
+reconstrução de um evento pontual de falha. Fica como próximo passo
+(v7): rodar a família `temperatura`/`mancal_spread` sem features
+derivadas (`ENABLE_DERIVED_FEATURES=False`), só sensor bruto limpo, pra
+isolar se essa é a causa da diferença de sensibilidade.
+
 ## Interpretação
 
 (Números abaixo já refletem o v2, com pré-processamento real; ver
@@ -281,23 +416,32 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
 ## Próximos passos
 
 1. ~~Testar janela de treino rolante fixa~~ — **feito no v3, hipótese
-   refutada** (piorou o FP em vez de melhorar; ver seção v3 acima).
-   Manter a janela **expansiva** (v2) como referência daqui pra frente.
-2. Grid de threshold/debounce (aqui fixado em percentil 99/debounce 6
-   sem otimização) — agora é o candidato mais provável pra explicar o
-   gap de FP/mês com o colega (0,94 vs. 3,35 no `iforest` expansivo);
-   vale testar percentis mais altos (99,5/99,9) antes de mexer em
-   qualquer outra coisa.
-3. Conferir com o colega a definição exata de "falso positivo por mês"
-   dele (mesmo critério de agrupamento em episódios? mesma janela de
-   exclusão ao redor de alarme? mesmo conjunto de sensores?) — a
-   comparação só é justa se a métrica for calculada do mesmo jeito dos
-   dois lados.
-4. Checagem de antecedência real (preditivo vs. reativo) numa amostra
+   refutada** (piorou o FP; ver seção v3). O v6 mostrou o motivo mais
+   provável: reproduzimos errado (calendário corrido em vez de horas
+   elegíveis) — não vale retestar sem essa correção primeiro.
+2. ~~Reproduzir a votação N-de-4 do Francisco~~ — **feito no v5**
+   (arquitetura de votação, ainda com receita v2) **e no v6** (+ as 9
+   inovações de pós-processamento: EWMA, limiar por múltiplo do p99,
+   ground-truth curado, janela em horas elegíveis). **FP replicado quase
+   exatamente: 0,90 episódios/mês contra os 0,94/mês dele.**
+3. **[prioridade alta]** Investigar por que a cobertura de eventos da
+   política replicada (2/11) ficou bem abaixo do `temperatura` sozinho
+   (6/11) e do que ele reporta (6/8) — suspeita principal: rodamos o
+   PCA-Q sobre o espaço de features derivadas completo (~196 colunas),
+   ele roda sobre sensor bruto limpo (14 colunas). Testar v7 com
+   `ENABLE_DERIVED_FEATURES=False` só pras famílias `temperatura`/
+   `pressao_oleo` do sinal PCA-Q.
+4. Conferir com o colega os hiperparâmetros exatos que faltam (grid
+   completo de 31.104 trials não está disponível pra nós) —
+   `exclude_days`/`exclude_alarm_h` de limpeza do baseline, e se
+   `pressao_oleo`/`selagem_z` fazem parte da política de produção final
+   dele ou só da varredura ampla (nossa leitura do `config.py` sugere
+   que não — a política final usa só `temperatura` + `mancal_spread`).
+5. Checagem de antecedência real (preditivo vs. reativo) numa amostra
    dos tags/episódios com melhor cobertura, mesma disciplina do EXP16.
-5. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
+6. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
    comparar diretamente com os modelos dedicados.
-6. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
+7. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
    pontos sinalizados, pra diagnosticar automaticamente qual subsistema
    está por trás de cada alerta.
 
@@ -315,12 +459,30 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
   esta pra qualquer comparação/próximo passo.
 - `scripts/pca_monitoramento_sistema/pca_walkforward_v3_janela_rolante.py`
   — **v3**, idêntico ao v2 exceto pela janela de treino: rolante fixa
-  (~3000h) em vez de expansiva. Testou e refutou a hipótese de que essa
-  troca reduziria o FP/mês (ver seção v3 acima). Mantido no repo como
-  registro do experimento negativo, não como versão de referência.
+  (~3000h de calendário) em vez de expansiva. Testou e refutou a
+  hipótese de que essa troca reduziria o FP/mês (ver seção v3 acima).
+  Mantido no repo como registro do experimento negativo.
+- `scripts/pca_monitoramento_sistema/pca_walkforward_v4_pca_variancia_real.py`
+  — **v4**, igual ao v2 mas com `MAX_COMPONENTS=150` (corrige o bug do
+  teto de 20 componentes). Piorou o FP marginalmente — v2 continua
+  sendo a referência da série `pca_walkforward_*` (ver seção v4 acima).
+- `scripts/pca_monitoramento_sistema/votacao_4sinais_v5.py` — **v5**,
+  primeira reprodução da arquitetura de votação N-de-4 do Francisco
+  (4 sinais por família física), ainda com a receita v2 (PCA+`iforest`,
+  z-score, debounce no flag, catálogo bruto).
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v6.py` —
+  **v6**, reprodução fiel da política de produção dele: PCA-Q,
+  normalização robusta, EWMA no score, limiar por múltiplo do p99/
+  z-robusto, ground-truth curado (mesmo algoritmo de detecção de trip),
+  janela de baseline em horas elegíveis, confirmação por E entre 2
+  sinais. **Replicou o FP quase exatamente (0,90 vs. 0,94 episódios/
+  mês)** — ver seção v6 acima. Referência pra qualquer comparação
+  futura com a abordagem dele.
 
 Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
 diferente da pipeline por-alvo existente pra não valer a pena forçar no
-mesmo framework agora). Ambas reaproveitam os fitters/avaliação
-(`automl_models.py`, `scoring.py`, `preprocess.py`) do projeto.
+mesmo framework agora). Todas reaproveitam os fitters/avaliação
+(`automl_models.py`, `scoring.py`, `preprocess.py`) do projeto, exceto
+o v6 (usa `sklearn.decomposition.PCA` direto pro PCA-Q, fora do
+`automl_models.py`, pra reproduzir a arquitetura exata do Francisco).
