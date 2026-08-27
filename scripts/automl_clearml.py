@@ -1483,6 +1483,9 @@ def main() -> None:
                              f"(padrão: {EXHAUST_GATE})")
     parser.add_argument("--exhaust-on-c", type=float, default=EXHAUST_ON_C,
                         help=f"limiar de 'em carga' em °C (padrão: {EXHAUST_ON_C:g})")
+    parser.add_argument("--task-suffix", default="",
+                        help="sufixo no nome da task do ClearML, para distinguir "
+                             "runs que só diferem por flag (ex.: t5gate)")
     parser.add_argument("--startup-exclude", default=STARTUP_EXCLUDE,
                         help="descarte de partida no BASELINE e na pontuação "
                              f"(eixo b; padrão: {STARTUP_EXCLUDE})")
@@ -1507,6 +1510,8 @@ def main() -> None:
     if not args.local:
         from clearml import Task
         sufixo = "-modelo-unico" if args.single_model else ""
+        if args.task_suffix:
+            sufixo += f"-{args.task_suffix}"
         task = Task.init(project_name="Cabiunas",
                          task_name=f"automl-fp-first-{args.mode}{sufixo}",
                          task_type=Task.TaskTypes.optimizer, reuse_last_task_id=False)
