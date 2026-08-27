@@ -394,6 +394,9 @@ class DetectionReplay:
         if n_min > 1:
             alert = (alert.astype(int).rolling(n_min, min_periods=n_min).sum()
                      >= n_min).fillna(False)
+        # mesmo silêncio pós-partida do avaliador, senão o replay divergiria dele
+        silenciado = automl.post_start_mask(oper, alert.index)
+        alert = alert & ~silenciado
 
         episodes = self.evaluator._episodes(alert)
         spans = self._spans(alert, automl.EPISODE_GAP)
@@ -424,7 +427,8 @@ class DetectionReplay:
                 false_positives.append(ep)
 
         leads = [e["lead_h"] for e in events if e["detectada"]]
-        dias = float(oper["stable"].reindex(alert.index, fill_value=False).sum()) * step / 86400
+        vigiando = oper["stable"].reindex(alert.index, fill_value=False) & ~silenciado
+        dias = float(vigiando.sum()) * step / 86400
         fp_mes = round(len(false_positives) / max(dias, 1) * 30, 2)
         base = next(iter(parts.values()))
         metrics = {

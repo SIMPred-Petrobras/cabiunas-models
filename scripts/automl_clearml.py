@@ -40,6 +40,73 @@ MAINT_TAG = "HSX_6240001A"
 RUNNING_THRESHOLD = 0.5      # RUNNING_A é interpolado: '== 1' perde as transições
 STARTUP_EXCLUDE = "2h"
 
+# Segundo marcador de operação: a temperatura de exaustão da turbina (T5)
+# ----------------------------------------------------------------------
+# Sugestão da equipe (26/08/2026), medida sobre os 16 meses da grade de 2 min: o
+# T5_AVG_A é fortemente bimodal e separa "turbina em carga" de "turbina apagada"
+# melhor que o próprio RUNNING_A. Com RUNNING_A = 1 a mediana é 634,7 °C (p5 =
+# 573,2); com RUNNING_A = 0 é 32,1 °C (p95 = 81,2). Entre 300 °C e 550 °C há
+# ~2.000 das 349.200 amostras — o limiar cai num vale praticamente vazio, então
+# qualquer valor de 400 a 550 dá quase o mesmo corte (70 h de diferença).
+#
+# O que o porteiro remove que o RUNNING_A não removia: 159,2 h marcadas como
+# operação (1,79% do tempo), sendo
+#   * 60 de 91 trechos nas primeiras 2 h após uma partida — rampa de partida;
+#   * 44,1 h em 17/08/2025 com exaustão média de 437,8 °C — outro estado de
+#     operação, não carga plena;
+#   * ~100 h entre 19/08 e 24/08/2025 com RUNNING_A = 1 e exaustão a ~30 °C, isto
+#     é, o tag afirmando operação com a turbina fria. Esse é o trecho que produz
+#     os dois maiores falsos positivos da série (104,5 h e 14,0 h).
+# O caminho inverso não existe na prática: RUNNING_A = 0 com T5 alto são 11
+# amostras isoladas (0,4 h), então o T5 não serve para remendar as quedas de
+# telemetria do RUNNING_A — só para desqualificar operação aparente.
+# Silêncio do ALERTA após cada partida (eixo (a) da decisão de 26/08/2026)
+# ----------------------------------------------------------------------
+# Diferente de ``STARTUP_EXCLUDE``, que age no baseline E na pontuação: aqui só o
+# ALERTA é suprimido, e as horas suprimidas saem do denominador de FP/mês — o
+# tempo em que ninguém está vigiando não conta como oportunidade de errar.
+# A separação existe porque as duas coisas têm risco diferente: ampliar
+# ``STARTUP_EXCLUDE`` encolhe o baseline e desloca os limiares (foi o que afundou
+# o porteiro de exaustão), enquanto o silêncio do alerta não toca no score.
+# Medido com máscara no alerta: 24 h mantém 6/8 e leva o alarme falso de 21,1 para
+# 13,8 h/mês (-35%); 36 h perde a detecção de 29/04/2025, que vem 28,7 h depois de
+# uma partida. Ou seja, 24 h é a borda, não um valor com folga.
+POST_START_SILENCE = "0h"
+
+EXHAUST_TAG = "T5_AVG_A"
+EXHAUST_ON_C = 500.0
+# Onde o marcador age:
+#   "operation" — entra na definição de operabilidade (afeta baseline, score,
+#                 dias avaliados, paradas e, por consequência, o catálogo de trips);
+#   "stable"    — só limpa o que treina e o que é pontuado, preservando a
+#                 definição de parada/falha que já foi validada com a operação;
+#   "off"       — só RUNNING_A (padrão).
+#
+# MEDIDO em 26/08/2026, antes de mudar o padrão: o porteiro PIORA o resultado.
+# Mesma arquitetura (PCA, 2 min, baseline de 3.000 h), varrendo limiar (percentil
+# e k-ésimo maior), EWMA e persistência — 180 configurações nos dois mundos:
+#   sem porteiro : melhor 6/8 dentro do teto, FP 0,94/mês, 22,0 h/mês de alarme falso
+#   com porteiro : melhor 5/8 dentro do teto, FP 0,96/mês, ~50 h/mês
+# A causa está no limiar, não na limpeza: as 155 h removidas concentram a cauda
+# do score do baseline, então o p99,9 desaba — em 12/2025 o limiar de temperatura
+# cai a 3% do valor anterior, e o de pressão a 0,3% em 04/2025. Um punhado de
+# amostras contaminadas vinha sustentando o limiar de cinco meses seguidos. Com o
+# baseline limpo o detector fica muito mais sensível, e no mesmo percentil isso
+# vira falso positivo. Trocar para "k_maiores" não recupera.
+# Fica implementado e DESLIGADO: a ideia é boa e a contaminação é real, mas para
+# aproveitá-la é preciso recalibrar o limiar numa varredura completa, não trocar
+# só a operabilidade.
+EXHAUST_GATE = "off"
+# Duração mínima de um trecho "frio" para valer como desqualificação. Os 91
+# trechos de T5 baixo com RUNNING_A = 1 têm duração mediana de 0,07 h (4 min) e
+# 60 deles começam nas 2 h seguintes a uma partida: são a rampa de partida, que
+# já tem tratamento próprio (``STARTUP_EXCLUDE``). Mascarar essas dezenas de
+# trechos curtos fragmenta a máscara sem remover contaminação relevante. Com o
+# piso, o marcador age apenas onde há um regime frio sustentado — as ~100 h de
+# 19-24/08/2025 com o tag afirmando operação e a exaustão a 30 °C, e as 44,1 h de
+# 17/08/2025 a 437,8 °C.
+EXHAUST_MIN_H = 1.0
+
 # famílias de sensores (espelham config.TEMPERATURE_TAGS / PRESSURE_TAGS)
 FAMILIES: dict[str, list[str]] = {
     "temperatura": [
@@ -508,13 +575,61 @@ class DataBundle:
         frame = self.raw if freq in ("30s", "30S") else self.raw.resample(freq).median()
         running = frame[RUNNING_TAG]
         in_operation = running.ge(RUNNING_THRESHOLD).fillna(False)
+        em_carga = exhaust_on_load(frame)
+        if EXHAUST_GATE == "operation":
+            in_operation = in_operation & em_carga
         starts = in_operation & ~in_operation.shift(fill_value=False)
         step = frame.index.to_series().diff().dt.total_seconds().median() or 30.0
         window = max(int(pd.Timedelta(STARTUP_EXCLUDE).total_seconds() / step), 1)
         stable = in_operation & ~starts.rolling(window, min_periods=1).max().astype(bool)
+        if EXHAUST_GATE == "stable":
+            stable = stable & em_carga
         oper = pd.DataFrame({"in_operation": in_operation, "stable": stable}, index=frame.index)
         self._grids[freq] = (frame, oper)
         return self._grids[freq]
+
+
+# --------------------------------------------------------------- operabilidade
+def post_start_mask(oper: pd.DataFrame, index: pd.DatetimeIndex,
+                    silence: str | None = None) -> pd.Series:
+    """True onde o alerta está silenciado por proximidade de uma partida.
+
+    A partida é a transição para ``in_operation``, e não para ``stable``: quem
+    define o transiente é a máquina ligando, não o fim do descarte de partida.
+    """
+    janela = pd.Timedelta(silence or POST_START_SILENCE)
+    if janela <= pd.Timedelta(0):
+        return pd.Series(False, index=index)
+    operando = oper["in_operation"].astype(bool)
+    partidas = operando & ~operando.shift(fill_value=False)
+    silenciado = pd.Series(False, index=operando.index)
+    for inicio in partidas[partidas].index:
+        silenciado.loc[inicio:inicio + janela] = True
+    return silenciado.reindex(index, fill_value=False)
+
+
+def exhaust_on_load(frame: pd.DataFrame) -> pd.Series:
+    """Turbina em carga pela temperatura de exaustão (ver ``EXHAUST_TAG``).
+
+    Ausência de leitura é tratada como "não sei" e mantém o que o RUNNING_A diz:
+    o marcador só serve para DESQUALIFICAR operação aparente, nunca para negar
+    operação por falta de dado. Na série de 16 meses isso muda 9 amostras.
+    """
+    if EXHAUST_TAG not in frame.columns:
+        print(f"[aviso] {EXHAUST_TAG} ausente: o porteiro de exaustão fica inativo")
+        return pd.Series(True, index=frame.index)
+    t5 = frame[EXHAUST_TAG]
+    em_carga = (t5.ge(EXHAUST_ON_C) | t5.isna()).fillna(True)
+    if not EXHAUST_MIN_H:
+        return em_carga
+    passo = frame.index.to_series().diff().dt.total_seconds().median() or 30.0
+    minimo = pd.Timedelta(hours=EXHAUST_MIN_H)
+    frio = ~em_carga
+    bloco = (frio != frio.shift(fill_value=False)).cumsum()
+    for _, trecho in frio[frio].groupby(bloco[frio]):
+        if (len(trecho) * passo) < minimo.total_seconds():
+            em_carga.loc[trecho.index] = True     # curto: é rampa, não regime frio
+    return em_carga
 
 
 # ------------------------------------------------------------------- eventos
@@ -1015,6 +1130,8 @@ class WalkForwardEvaluator:
         if n_min > 1:
             alert = (alert.astype(int).rolling(n_min, min_periods=n_min).sum() >= n_min)
             alert = alert.fillna(False)
+        silenciado = post_start_mask(oper, alert.index)
+        alert = alert & ~silenciado
 
         episodes = self._episodes(alert)
         if trial.grid not in self._stops_cache:   # só depende da grade
@@ -1060,7 +1177,9 @@ class WalkForwardEvaluator:
         util = [e for e in self.alarm_eps if e["utilidade"]]
         util_ok = [e for e in util if antecipado(e["inicio"])]
 
-        days = float(oper["stable"].reindex(alert.index, fill_value=False).sum()) * step / 86400
+        # o tempo silenciado sai do denominador: não é oportunidade de errar
+        vigiando = oper["stable"].reindex(alert.index, fill_value=False) & ~silenciado
+        days = float(vigiando.sum()) * step / 86400
         fp_month = len(false_positives) / max(days, 1) * 30
         # horas de alerta falso: soma a duração dos episódios contados como FP
         falsos = set(false_positives)
@@ -1325,6 +1444,8 @@ def select_best(results: list[TrialResult]) -> TrialResult | None:
 
 
 def main() -> None:
+    global EXHAUST_GATE, EXHAUST_ON_C, EXHAUST_MIN_H
+    global STARTUP_EXCLUDE, POST_START_SILENCE
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--mode", choices=sorted(MODES), default="balanced")
@@ -1356,7 +1477,31 @@ def main() -> None:
     parser.add_argument("--local", action="store_true", help="não usa ClearML para nada")
     parser.add_argument("--local-csv", default=None, help="CSV local em vez do dataset")
     parser.add_argument("--limit", type=int, default=None, help="corta a grade (debug)")
+    parser.add_argument("--exhaust-gate", choices=("off", "stable", "operation"),
+                        default=EXHAUST_GATE,
+                        help="onde o marcador de exaustão (T5) age na operabilidade "
+                             f"(padrão: {EXHAUST_GATE})")
+    parser.add_argument("--exhaust-on-c", type=float, default=EXHAUST_ON_C,
+                        help=f"limiar de 'em carga' em °C (padrão: {EXHAUST_ON_C:g})")
+    parser.add_argument("--startup-exclude", default=STARTUP_EXCLUDE,
+                        help="descarte de partida no BASELINE e na pontuação "
+                             f"(eixo b; padrão: {STARTUP_EXCLUDE})")
+    parser.add_argument("--post-start-silence", default=POST_START_SILENCE,
+                        help="silêncio do ALERTA após cada partida, sem tocar no "
+                             f"baseline (eixo a; padrão: {POST_START_SILENCE})")
+    parser.add_argument("--exhaust-min-h", type=float, default=EXHAUST_MIN_H,
+                        help="duração mínima do trecho frio para desqualificar "
+                             f"(0 desliga o piso; padrão: {EXHAUST_MIN_H:g} h)")
     args = parser.parse_args()
+    EXHAUST_GATE, EXHAUST_ON_C = args.exhaust_gate, args.exhaust_on_c
+    EXHAUST_MIN_H = args.exhaust_min_h
+    STARTUP_EXCLUDE, POST_START_SILENCE = args.startup_exclude, args.post_start_silence
+    print(f"[partida] descarte no baseline {STARTUP_EXCLUDE} | "
+          f"silêncio do alerta {POST_START_SILENCE}", flush=True)
+    print(f"[operabilidade] RUNNING_A >= {RUNNING_THRESHOLD}"
+          + (f" + {EXHAUST_TAG} >= {EXHAUST_ON_C:g} °C por >= {EXHAUST_MIN_H:g} h "
+             f"em '{EXHAUST_GATE}'"
+             if EXHAUST_GATE != "off" else " (marcador de exaustão desligado)"), flush=True)
 
     task = None
     if not args.local:
