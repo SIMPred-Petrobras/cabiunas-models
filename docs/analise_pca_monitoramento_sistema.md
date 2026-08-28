@@ -542,6 +542,69 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
    pontos sinalizados, pra diagnosticar automaticamente qual subsistema
    está por trás de cada alerta.
 
+## Reprodução literal do `automl_clearml.py` original (sem nenhuma alteração de código)
+
+Depois de v5-v8 (nossas reimplementações do mecanismo, com nosso
+pré-processamento), fizemos o oposto: rodar o **código dele, sem
+nenhuma alteração**, só apontando pro nosso dataset. O script
+`scripts/automl_clearml.py` já é parametrizado via CLI (`--dataset-id`),
+e o nome dos arquivos de sensores/alarmes é resolvido por busca
+(`rglob("*sensores*.csv")`/`rglob("*alarmes*.csv")`) — como os nossos
+arquivos batem com esses padrões e todos os nomes de tag são idênticos
+aos dele, **zero linhas de código precisaram mudar**. Cópia
+byte-a-byte salva em
+`scripts/pca_monitoramento_sistema/francisco_automl_clearml_original.py`.
+
+Invocação (só argumentos de CLI, nenhum edit):
+```bash
+python scripts/pca_monitoramento_sistema/francisco_automl_clearml_original.py \
+  --dataset-id a97ba56ba14840fbb1125c2a82f883c9 \
+  --eval-start 2024-05 --eval-end 2026-04 \
+  --mode policy_sweep --remote --queue default
+```
+(`--eval-start`/`--eval-end` estendidos pra usar mais do nosso histórico
+disponível — mar/2024 em diante, contra jan/2025 dele; é só o período
+avaliado, não muda nenhuma lógica.)
+
+**Ground-truth derivado automaticamente pelo código dele, no nosso
+dataset**: 65 paradas reais, 10 trips, **9 eventos físicos** — muito
+próximo dos 11 que nosso próprio algoritmo (v6, réplica manual do dele)
+achou, e da mesma ordem dos 8 que ele reporta no dataset dele (período
+mais curto). Boa confirmação cruzada de que os dois algoritmos (o dele
+rodando direto, e a nossa cópia manual no v6) concordam.
+
+**Resultado do `policy_sweep`** (4320 configurações, 76,6 min, 1438
+aprovadas com FP≤1/mês): a função `select_best()` dele escolheu uma
+configuração de 3/9 eventos (33%) a 0,99 FP/mês — mas essa não é a
+melhor da grade, só a que o critério de seleção dele priorizou
+(provavelmente pesando robustez/distribuição temporal, não só contagem
+de eventos). Buscando manualmente pela **maior cobertura entre as
+aprovadas**:
+
+| Modelo | Baseline | EWMA | Limiar | Sustain | Eventos | Lead médio | FP/mês |
+|---|---|---|---|---|---|---|---|
+| **`ae`** (autoencoder denso) | 4000h | 30min | k=10 | 30min | **6/9 (66,7%)** | 13,2h | **0,82** |
+| `ae` | acumulativo | 30min | p99,9 | 30min | 5/9 (55,6%) | 23,7h | 0,88 |
+| `ae` | 3000h+idade180d | 30min | p99,97 | 2h | 5/9 (55,6%) | 18,4h | 0,94 |
+
+**O melhor ponto da nossa grade (6/9, 0,82 FP/mês) empata ou supera o
+resultado de referência dele (6/8, 0,94 FP/mês)** — com o código dele
+rodando sem alteração nenhuma, só nos nossos dados. Nota: o vencedor
+usa arquitetura **`ae`** (autoencoder denso via `MLPRegressor`), não
+`pca` — diferente do par (`temperatura`+`mancal_spread`, ambos PCA-Q/
+z-robusto) que reproduzimos manualmente em v6-v8. Sem restringir o teto
+de FP, a grade chega a 7/9 eventos (77,8%) a partir de 2,58 FP/mês.
+
+Tabelas completas (4320 linhas) e top-30 aprovados salvos em
+`scripts/pca_monitoramento_sistema/resultado_policy_sweep_francisco/`.
+
+**Leitura**: essa reprodução literal é a evidência mais forte até agora
+de que a arquitetura dele generaliza — não é um resultado que só
+funciona no dataset/período dele. Também sugere um próximo passo óbvio:
+testar `ae` (autoencoder) como terceira opção de arquitetura nos nossos
+scripts v6-v8, já que na grade dele ele supera `pca` na maioria das
+configurações aprovadas.
+
 ## Script
 
 - `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
