@@ -17,6 +17,7 @@ Ver docs/analise_pca_monitoramento_sistema.md.
 Uso:
     PYTHONPATH=. python scripts/pca_monitoramento_sistema/pca_walkforward_v3_janela_rolante.py
 """
+import gc
 import os
 import sys
 
@@ -129,6 +130,8 @@ df_use, long_gap_mask = build_group_dataframe(cfg, df_raw, df_raw, ALL_SENSORS)
 feature_cols = select_feature_columns(cfg, df_use, ALL_SENSORS)
 print("n_features_total (antes do PCA):", len(feature_cols), flush=True)
 df_use = df_use[feature_cols]
+del df_raw, long_gap_mask
+gc.collect()
 
 running_a = running_a_raw.reindex(df_use.index).ffill().bfill()
 

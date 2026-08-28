@@ -37,6 +37,7 @@ Ver docs/analise_pca_monitoramento_sistema.md.
 Uso:
     PYTHONPATH=. python scripts/pca_monitoramento_sistema/votacao_4sinais_v5.py
 """
+import gc
 import os
 import sys
 
@@ -165,6 +166,8 @@ feat_press = select_feature_columns(cfg, df_press_use, PRESSURE_SENSORS)
 print("  n_features pressao_oleo:", len(feat_press), flush=True)
 df_press_feat = df_press_use[feat_press]
 selagem_raw = df_press_use[SELAGEM_TARGET]
+del df_raw
+gc.collect()
 
 FULL_INDEX = df_temp_use.index
 assert FULL_INDEX.equals(df_press_use.index), "indices das 2 familias divergiram -- investigar"

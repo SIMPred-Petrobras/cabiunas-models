@@ -81,6 +81,7 @@ O QUE MUDA EM RELACAO A v5 (INOVACOES PORTADAS)
 Uso:
     PYTHONPATH=. python scripts/pca_monitoramento_sistema/reproducao_francisco_v8_confirmacao_por_mecanismo.py
 """
+import gc
 import os
 import sys
 
@@ -208,6 +209,8 @@ df_press_use, _ = build_group_dataframe(cfg, df_raw, df_raw, PRESSURE_SENSORS)
 feat_press = select_feature_columns(cfg, df_press_use, PRESSURE_SENSORS)
 df_press_feat = df_press_use[feat_press]
 selagem_raw = df_press_use[SELAGEM_TARGET]
+del df_raw
+gc.collect()
 
 FULL_INDEX = df_temp_use.index
 assert FULL_INDEX.equals(df_press_use.index)
