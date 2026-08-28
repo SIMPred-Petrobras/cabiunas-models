@@ -1496,15 +1496,9 @@ def main() -> None:
                         help="duração mínima do trecho frio para desqualificar "
                              f"(0 desliga o piso; padrão: {EXHAUST_MIN_H:g} h)")
     args = parser.parse_args()
-    EXHAUST_GATE, EXHAUST_ON_C = args.exhaust_gate, args.exhaust_on_c
-    EXHAUST_MIN_H = args.exhaust_min_h
-    STARTUP_EXCLUDE, POST_START_SILENCE = args.startup_exclude, args.post_start_silence
-    print(f"[partida] descarte no baseline {STARTUP_EXCLUDE} | "
-          f"silêncio do alerta {POST_START_SILENCE}", flush=True)
-    print(f"[operabilidade] RUNNING_A >= {RUNNING_THRESHOLD}"
-          + (f" + {EXHAUST_TAG} >= {EXHAUST_ON_C:g} °C por >= {EXHAUST_MIN_H:g} h "
-             f"em '{EXHAUST_GATE}'"
-             if EXHAUST_GATE != "off" else " (marcador de exaustão desligado)"), flush=True)
+    if not args.local:
+        print(f"[pedido] gate={args.exhaust_gate} | descarte={args.startup_exclude} | "
+              f"silêncio={args.post_start_silence}", flush=True)
 
     task = None
     if not args.local:
@@ -1526,6 +1520,21 @@ def main() -> None:
             print(f"enfileirando na fila '{args.queue}' "
                   f"(imagem {args.docker_image})...")
             task.execute_remotely(queue_name=args.queue, exit_process=True)
+
+    # DEPOIS do connect, nunca antes. No worker o argparse devolve os DEFAULTS — quem
+    # injeta o que foi pedido é o `task.connect(vars(args))`, que reescreve o __dict__
+    # do Namespace com os valores gravados na task. Ler antes disso fez as três
+    # variantes de 26/08/2026 rodarem como baseline: a task guardava
+    # `startup_exclude=24h` e o processo usava 2h, e as quatro deram resultado idêntico.
+    EXHAUST_GATE, EXHAUST_ON_C = args.exhaust_gate, args.exhaust_on_c
+    EXHAUST_MIN_H = args.exhaust_min_h
+    STARTUP_EXCLUDE, POST_START_SILENCE = args.startup_exclude, args.post_start_silence
+    print(f"[partida] descarte no baseline {STARTUP_EXCLUDE} | "
+          f"silêncio do alerta {POST_START_SILENCE}", flush=True)
+    print(f"[operabilidade] RUNNING_A >= {RUNNING_THRESHOLD}"
+          + (f" + {EXHAUST_TAG} >= {EXHAUST_ON_C:g} °C por >= {EXHAUST_MIN_H:g} h "
+             f"em '{EXHAUST_GATE}'"
+             if EXHAUST_GATE != "off" else " (marcador de exaustão desligado)"), flush=True)
 
     n_signals = 1 if args.single_model else \
         len(FAMILIES) + (1 if args.with_vibration else 0) + 2   # + spread + selagem
