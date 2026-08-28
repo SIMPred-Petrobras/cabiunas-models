@@ -357,6 +357,48 @@ reconstrução de um evento pontual de falha. Fica como próximo passo
 derivadas (`ENABLE_DERIVED_FEATURES=False`), só sensor bruto limpo, pra
 isolar se essa é a causa da diferença de sensibilidade.
 
+## v7: sem features derivadas — hipótese confirmada, ganho nas duas métricas
+
+Script `reproducao_francisco_v7_sem_features_derivadas.py`: idêntico ao
+v6, mudando **só** `cfg.ENABLE_DERIVED_FEATURES` de `True` para `False`
+nas famílias `temperatura`/`pressao_oleo` (os sinais univariados
+`mancal_spread`/`selagem_z` não usam essa flag — servem de controle
+interno, e devem ficar idênticos ao v6 se a mudança estiver isolada
+corretamente).
+
+| Sinal | v6 (com derivadas) | v7 (sensor bruto) |
+|---|---|---|
+| `temperatura`: eventos / FP | 6/11 (54,5%) / 2,81/mês | 4/11 (36,4%) / 2,03/mês |
+| `pressao_oleo`: eventos / FP | **0/11 (0%)** / 0,23/mês | **5/11 (45,5%)** / 2,42/mês |
+| `mancal_spread`: eventos / FP | 4/11 (36,4%) / 1,18/mês | 4/11 (36,4%) / 1,18/mês *(controle, inalterado ✓)* |
+| `selagem_z`: eventos / FP | 5/11 (45,5%) / 5,85/mês | 5/11 (45,5%) / 5,85/mês *(controle, inalterado ✓)* |
+| **`producao_2sinais_AND`** | **2/11 (18,2%) / 0,90/mês** | **4/11 (36,4%) / 0,73/mês** |
+| votação 2-de-4 | 5/11 (45,5%) / 1,91/mês | 6/11 (54,5%) / 2,42/mês |
+| votação 3-de-4 | 0/11 (0%) / 0,17/mês | 3/11 (27,3%) / 1,13/mês |
+| votação 4-de-4 | 0/11 (0%) / 0,00/mês | 2/11 (18,2%) / 0,06/mês |
+
+**Hipótese confirmada.** Os dois sinais de controle (`mancal_spread`,
+`selagem_z`) ficaram exatamente iguais ao v6 — confirma que a mudança
+afetou só o que deveria (isolamento correto do experimento). O achado
+mais marcante: `pressao_oleo` estava **completamente morto** no v6 (0
+eventos detectados) e passa a detectar **5 dos 11** no v7 — a família
+de 12 sensores de pressão simplesmente não tinha poder de detecção
+nenhum quando misturada com ~156 colunas derivadas.
+
+O resultado principal, a política de produção (`producao_2sinais_AND`),
+**melhorou nas duas métricas ao mesmo tempo** — algo raro (normalmente
+mais cobertura custa mais FP): eventos detectados **dobraram** (18,2%→
+36,4%) e o FP **caiu ainda mais** (0,90→0,73/mês, agora melhor que o
+próprio 0,94/mês de referência). `temperatura` sozinho piorou em
+cobertura (54,5%→36,4%) mas melhorou em FP (2,81→2,03/mês) — o balanço
+final da combinação com `mancal_spread` ainda foi positivo.
+
+**Conclusão prática**: rodar o PCA-Q sobre sensor bruto limpo, sem o
+conjunto de features derivadas do projeto (pensado originalmente pro
+autoencoder CNN-1D e pro AutoML com `iforest`/`ocsvm`), é estritamente
+melhor para essa arquitetura específica de votação/confirmação. v7
+substitui o v6 como referência para a política de 2 sinais.
+
 ## Interpretação
 
 (Números abaixo já refletem o v2, com pré-processamento real; ver
@@ -424,24 +466,28 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
    inovações de pós-processamento: EWMA, limiar por múltiplo do p99,
    ground-truth curado, janela em horas elegíveis). **FP replicado quase
    exatamente: 0,90 episódios/mês contra os 0,94/mês dele.**
-3. **[prioridade alta]** Investigar por que a cobertura de eventos da
-   política replicada (2/11) ficou bem abaixo do `temperatura` sozinho
-   (6/11) e do que ele reporta (6/8) — suspeita principal: rodamos o
-   PCA-Q sobre o espaço de features derivadas completo (~196 colunas),
-   ele roda sobre sensor bruto limpo (14 colunas). Testar v7 com
-   `ENABLE_DERIVED_FEATURES=False` só pras famílias `temperatura`/
-   `pressao_oleo` do sinal PCA-Q.
-4. Conferir com o colega os hiperparâmetros exatos que faltam (grid
+3. ~~Investigar a cobertura de eventos baixa (2/11) via
+   `ENABLE_DERIVED_FEATURES=False`~~ — **feito no v7, hipótese
+   confirmada**: `producao_2sinais_AND` foi de 2/11→4/11 eventos **e**
+   de 0,90→0,73 FP/mês (melhora nas duas métricas ao mesmo tempo). v7
+   substitui v6 como referência.
+4. **[prioridade alta]** Testar `ENABLE_THERMAL_ARRAY_SPREAD`/loadings
+   do PCA nos pontos sinalizados do v7, pra ver se dá pra recuperar mais
+   dos 7 eventos ainda não detectados sem voltar a inflar o FP — ex.:
+   confirmação por mecanismo (`temperatura` E (`mancal_spread` OU
+   `selagem_z` OU `pressao_oleo`)) em vez do par fixo, já que o v7
+   mostrou `pressao_oleo` genuinamente útil quando não diluído.
+5. Conferir com o colega os hiperparâmetros exatos que faltam (grid
    completo de 31.104 trials não está disponível pra nós) —
    `exclude_days`/`exclude_alarm_h` de limpeza do baseline, e se
    `pressao_oleo`/`selagem_z` fazem parte da política de produção final
    dele ou só da varredura ampla (nossa leitura do `config.py` sugere
    que não — a política final usa só `temperatura` + `mancal_spread`).
-5. Checagem de antecedência real (preditivo vs. reativo) numa amostra
+6. Checagem de antecedência real (preditivo vs. reativo) numa amostra
    dos tags/episódios com melhor cobertura, mesma disciplina do EXP16.
-6. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
+7. Auditoria genuíno-vs-artefato pros tags de maior volume antes de
    comparar diretamente com os modelos dedicados.
-7. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
+8. Testar contribuição de cada sensor pro desvio (loadings do PCA) nos
    pontos sinalizados, pra diagnosticar automaticamente qual subsistema
    está por trás de cada alerta.
 
@@ -476,8 +522,17 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
   z-robusto, ground-truth curado (mesmo algoritmo de detecção de trip),
   janela de baseline em horas elegíveis, confirmação por E entre 2
   sinais. **Replicou o FP quase exatamente (0,90 vs. 0,94 episódios/
-  mês)** — ver seção v6 acima. Referência pra qualquer comparação
-  futura com a abordagem dele.
+  mês)**, mas com cobertura de eventos baixa (2/11) — ver seção v6.
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v6b_series_para_plots.py`
+  — **v6b**, idêntico ao v6, mas exporta como artefatos as séries
+  suavizadas e a tabela de eventos com acerto/erro/antecedência — dados
+  usados nos gráficos do relatório LaTeX
+  (`task_plots_relatorio_v6_reproducao_francisco/`).
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v7_sem_features_derivadas.py`
+  — **v7**, idêntico ao v6 exceto por `ENABLE_DERIVED_FEATURES=False`
+  nas famílias PCA-Q. **Confirmou a hipótese e melhorou nas duas
+  métricas ao mesmo tempo** (4/11 eventos, 0,73 FP/mês) — ver seção v7.
+  **Versão de referência atual** pra política de 2 sinais.
 
 Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
