@@ -399,6 +399,49 @@ autoencoder CNN-1D e pro AutoML com `iforest`/`ocsvm`), é estritamente
 melhor para essa arquitetura específica de votação/confirmação. v7
 substitui o v6 como referência para a política de 2 sinais.
 
+## v8: confirmação por mecanismo — hipótese testada e refutada
+
+Script `reproducao_francisco_v8_confirmacao_por_mecanismo.py`: idêntico
+ao v7, trocando a regra de confirmação fixa
+(`temperatura E mancal_spread`) por uma mais flexível,
+
+```
+alerta = temperatura E (mancal_spread OU selagem_z OU pressao_oleo)
+```
+
+motivada diretamente pela auditoria dos "misses" do relatório do v6: o
+evento de selagem de 2025-02-27 nunca é confirmado pelo par fixo porque
+`mancal_spread` não tem relação física com esse mecanismo de falha —
+mesmo com a temperatura antecipando com folga (33,7h). A ideia era
+recuperar esse tipo de evento sem abrir mão da estrutura "âncora +
+confirmador" (que difere da votação genérica N-de-4 por ainda exigir
+`temperatura` especificamente, não qualquer par).
+
+| Política | Eventos | Lead médio | FP/mês |
+|---|---|---|---|
+| `par_fixo_v7` (referência: temp. E mancal_spread) | 4/11 (36,4%) | 9,3h | **0,73** |
+| `confirmacao_mecanismo` (temp. E qualquer um dos 3) | 4/11 (36,4%) | 15,3h | 1,63 |
+
+**Resultado negativo — a hipótese não se sustentou.** A cobertura de
+eventos ficou **idêntica** (4/11 nos dois casos — o log mostra que a
+identidade dos eventos detectados mudou, dado que o lead médio é
+diferente, mas o total não), enquanto o FP **mais que dobrou** (0,73→1,63/mês,
+74 episódios de alerta contra 32). Trocar o confirmador fixo por um OR
+não trouxe nenhum evento novo o suficiente pra compensar o ruído
+importado: `selagem_z` e `pressao_oleo`, usados sozinhos, já têm FP
+bem mais alto que `mancal_spread` (5,85 e 2,42 contra 1,18 episódios/mês)
+— colocá-los na condição de confirmação via OR faz o alerta combinado
+herdar boa parte desse ruído, sem ganho líquido de cobertura.
+
+**Lição**: o par fixo (`temperatura` + `mancal_spread`) não é arbitrário
+— `mancal_spread` provavelmente foi escolhido pelo Francisco (e continua
+sendo o melhor confirmador aqui) precisamente por ser o sinal univariado
+mais **limpo** dos três candidatos, não só por ser fisicamente plausível.
+Generalizar a regra de confirmação exige mais cuidado que um OR simples
+— provavelmente pesar/filtrar os confirmadores por ruído individual, ou
+usar um confirmador diferente **por mecanismo conhecido** (não um OR que
+os trata como intercambiáveis). **v7 continua sendo a referência.**
+
 ## Interpretação
 
 (Números abaixo já refletem o v2, com pré-processamento real; ver
@@ -471,13 +514,21 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
    confirmada**: `producao_2sinais_AND` foi de 2/11→4/11 eventos **e**
    de 0,90→0,73 FP/mês (melhora nas duas métricas ao mesmo tempo). v7
    substitui v6 como referência.
-4. **[prioridade alta]** Testar `ENABLE_THERMAL_ARRAY_SPREAD`/loadings
-   do PCA nos pontos sinalizados do v7, pra ver se dá pra recuperar mais
-   dos 7 eventos ainda não detectados sem voltar a inflar o FP — ex.:
-   confirmação por mecanismo (`temperatura` E (`mancal_spread` OU
-   `selagem_z` OU `pressao_oleo`)) em vez do par fixo, já que o v7
-   mostrou `pressao_oleo` genuinamente útil quando não diluído.
-5. Conferir com o colega os hiperparâmetros exatos que faltam (grid
+4. ~~Confirmação por mecanismo (`temperatura` E (`mancal_spread` OU
+   `selagem_z` OU `pressao_oleo`))~~ — **feito no v8, hipótese
+   refutada**: cobertura ficou idêntica (4/11) e o FP mais que dobrou
+   (0,73→1,63/mês) — o OR importa o ruído de `selagem_z`/`pressao_oleo`
+   (sozinhos, bem mais ruidosos que `mancal_spread`) sem ganho líquido
+   de eventos novos. v7 (par fixo) continua sendo a referência.
+5. **[prioridade alta]** Se for tentar de novo uma confirmação
+   alternativa: não tratar os 3 confirmadores como intercambiáveis.
+   Ideias mais promissoras que o OR simples: (a) escolher o confirmador
+   por mecanismo conhecido em vez de OR-ar todos; (b) subir o limiar
+   individual de `selagem_z`/`pressao_oleo` antes de usá-los como
+   confirmador, já que o problema é o ruído deles, não a ideia em si;
+   (c) aceitar `par_fixo_v7` como o ponto de operação final e investir
+   em outra frente (ex.: o item sobre loadings do PCA, abaixo).
+6. Conferir com o colega os hiperparâmetros exatos que faltam (grid
    completo de 31.104 trials não está disponível pra nós) —
    `exclude_days`/`exclude_alarm_h` de limpeza do baseline, e se
    `pressao_oleo`/`selagem_z` fazem parte da política de produção final
@@ -533,6 +584,12 @@ alvos específicos já trabalhados (T5, óleo lub., gás combustível).
   nas famílias PCA-Q. **Confirmou a hipótese e melhorou nas duas
   métricas ao mesmo tempo** (4/11 eventos, 0,73 FP/mês) — ver seção v7.
   **Versão de referência atual** pra política de 2 sinais.
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v8_confirmacao_por_mecanismo.py`
+  — **v8**, idêntico ao v7 exceto pela regra de confirmação
+  (`temperatura` E qualquer um dos 3 confirmadores, em vez do par fixo).
+  **Hipótese refutada**: cobertura idêntica (4/11), FP mais que dobrou
+  (0,73→1,63/mês) — ver seção v8. Mantido como registro do experimento
+  negativo; v7 continua sendo a referência.
 
 Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
