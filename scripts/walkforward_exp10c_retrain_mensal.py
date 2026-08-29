@@ -233,7 +233,8 @@ def eval_month(flags: np.ndarray, idx: pd.DatetimeIndex, month_start: pd.Timesta
             hits += 1
 
     near_alarm_m = near_alarm_mask.reindex(idx).fillna(False).values
-    normal_mask = ~near_alarm_m
+    on_m = on_arr_full[df_all.index.get_indexer(idx)]
+    normal_mask = (~near_alarm_m) & on_m
     normal_flags = flags[normal_mask]
     n_normal = int(normal_flags.sum())
     n_total_normal = int(normal_mask.sum())
