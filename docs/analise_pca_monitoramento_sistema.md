@@ -808,6 +808,55 @@ reprodução literal (`francisco_automl_clearml_original.py`, sem
 alteração de código) continua sendo o caminho confiável — ver seção
 "Reprodução literal".
 
+## Validação LOEO (leave-one-event-out) — o "6/9" é otimista
+
+Com só 8-9 eventos rotulados, escolher "a melhor de 4320 configurações"
+e reportar o resultado contra os MESMOS 9 eventos usados pra escolher é
+viés clássico de otimização — a config vencedora já "viu" o evento que
+está sendo avaliado. Recalculamos com **LOEO**: pra cada evento,
+escolhe a config com mais acertos nos OUTROS 8, testa só nele.
+
+Achado adicional: `2024-01-16` (o evento mais antigo da série) **nunca
+é detectado por nenhuma das 4320 configurações** — sem histórico
+suficiente de baseline nesse ponto, é estruturalmente indetectável
+(mesmo princípio da observação dele sobre 04/11/2025 no dataset dele).
+Excluindo esse caso:
+
+| Métrica | Valor |
+|---|---|
+| Melhor-da-grade (otimista, inclui viés) | 6/8 (75%) — bate exatamente a proporção que ele reporta |
+| **LOEO (honesto, fora da amostra)** | **5/8 (62,5%)** a 0,82 FP/mês |
+
+A mesma config (`ae`, baseline 4000h, ewma curto, k-maiores/percentil
+alto, sustain curto) venceu em quase todos os folds do LOEO — sinal de
+que não é um artefato frágil de um evento específico, é razoavelmente
+robusta. Script de análise (offline, sobre os CSVs já baixados, sem
+custo de cluster): não versionado como script separado, rodado ad-hoc
+em notebook/REPL a partir de `resultado_policy_sweep_francisco/` e
+`resultado_policy_sweep_periodo_dele/`.
+
+## v13: `--per-family-thresholds` (recurso dele, nunca usado) — não superou
+
+Script `v13_per_family_thresholds.py`: importa `DataBundle`,
+`BaselinePolicy`, `Trial`, `WalkForwardEvaluator` direto de
+`francisco_automl_clearml_original.py` (sem alterar o arquivo), monta
+uma grade cirúrgica de limiar independente por sinal (percentil em
+{99,5, 99,9, 99,97} para cada um dos 4 sinais = 81 combinações) em
+torno dos 2 baselines vencedores (3000h/4000h), 324 trials no total.
+
+| | Limiar único (melhor da grade ampla) | Limiar por sinal (v13) |
+|---|---|---|
+| Melhor cobertura (aprovados) | 6/9, 0,82-0,94 FP/mês | 5/9, 0,94 FP/mês |
+| LOEO | 5/8, 0,82 FP/mês | 4/6 (amostra pequena: só 5 configs aprovadas no total) |
+
+**Não superou o limiar único**, nem no melhor-da-grade nem no LOEO —
+e a amostra de configs aprovadas ficou pequena demais (5) pra um LOEO
+confiável. A ideia (limiar por mecanismo, não global) continua bem
+fundamentada, mas essa sweep específica (só 3 valores por sinal, só 2
+baselines) não foi ampla o suficiente pra provar o ponto — precisaria
+de uma grade per-family maior (mais valores de limiar, mais baselines)
+pra concluir de verdade se vale a pena.
+
 ## Script
 
 - `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
