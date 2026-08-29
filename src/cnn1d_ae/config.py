@@ -222,6 +222,22 @@ class PipelineConfig:
     AUTOML_FP_PENALTY: float = 2.0
     AUTOML_MIN_DETECTION_RATE: float = 0.3
 
+    # EWMA no score CONTINUO antes do limiar de percentil -- nao debounce no
+    # flag binario depois (que e o que o pipeline ja faz via AUTOML_DEBOUNCE_GRID/
+    # map_seq_to_point_anomalies). Ideia portada da branch feat/pdm-deteccao-4sinais
+    # (colega Francisco -- ver docs/analise_pca_monitoramento_sistema.md e
+    # ALARMES_POR_SENSOR_EFEITO_CASCATA.md): suaviza train_err/all_err com uma
+    # media movel exponencial baseada em TEMPO real (pandas .ewm(times=...),
+    # nao contagem de amostras -- importante porque df_normal tem buracos,
+    # janelas de alarme/desligamento excluidas) ANTES de calcular o percentil
+    # do treino e comparar o score de avaliacao com ele. Um pico isolado de
+    # 1-2 pontos, que cruzaria o limiar bruto na hora, pode nunca cruzar o
+    # limiar depois de suavizado -- reduz falso positivo sem depender so do
+    # debounce pos-flag. False (default) = comportamento anterior inalterado,
+    # nenhum config existente e afetado.
+    ENABLE_SCORE_EWMA: bool = False
+    SCORE_EWMA_HALFLIFE: str = "30min"
+
     AUTOML_DENSE_LAYERS: Optional[List[int]] = None  # default: [256, 128]
     AUTOML_DENSE_DROPOUT: float = 0.0
     AUTOML_DENSE_LR: float = 1e-3

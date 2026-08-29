@@ -408,6 +408,13 @@ def run_automl_group(
                 print(f"[AUTOML] group={group_name} model={model_type} — treinando...")
                 train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features)
 
+            if cfg.ENABLE_SCORE_EWMA:
+                halflife = pd.Timedelta(cfg.SCORE_EWMA_HALFLIFE)
+                train_err_s = pd.Series(train_err, index=df_normal_fit.index)
+                all_err_s = pd.Series(all_err, index=all_index)
+                train_err = train_err_s.ewm(halflife=halflife, times=train_err_s.index).mean().values
+                all_err = all_err_s.ewm(halflife=halflife, times=all_err_s.index).mean().values
+
             for pct in percentiles:
                 threshold = float(np.percentile(train_err, pct))
                 anomaly_flags = (all_err > threshold).astype(int)
