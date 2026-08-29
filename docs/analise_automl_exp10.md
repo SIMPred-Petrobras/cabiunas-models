@@ -125,3 +125,72 @@ diferença. Redução total: 1,94%→0,35% (~82% relativo).
 - EXP10 (máscara operacional): `5fc24eb564284436912dd189fddf747d`
 - EXP10b (+ portão de rampa): `24b3e27a4241412f99beed4e029554b4`
 - EXP10c (+ portão de volatilidade): `6ac3b1b52a45433a83568d61fafadda6`
+
+## Validação por evento físico (2026-08-29) — o 37/40 é real ou é cascata?
+
+Motivação: `docs/analise_pca_monitoramento_sistema.md` fez LOEO na
+pipeline do Francisco e achou otimismo real (66,7% do grid virou 62,5%
+no LOEO honesto); `ALARMES_POR_SENSOR_EFEITO_CASCATA.md` mostrou que um
+único evento físico dispara dezenas de tags quase juntos. As duas coisas
+levantam a mesma dúvida sobre o 92,5% (37/40) do EXP10c: é 37 eventos
+físicos distintos detectados, ou é um número menor de eventos inflado
+por múltiplas linhas de alarme do mesmo evento?
+
+**Método:** reconstrução local dos 40 alarmes OOS (`Tag` ∈
+{`TC382_03_A`, `T5_AVG_A`}, status `ACT`, `Data da Ocorrencia >=
+2025-07-01`) a partir do dataset ClearML, cruzados com
+`point_anomalies_all.csv` da task EXP10c (mesma lógica de
+`eval_alarm_hit_rate`, janela ±1440min). Os 40 alarmes foram agrupados
+em episódios por proximidade temporal (gap > 1440min = novo episódio) —
+a mesma janela usada para decidir "detectado", então dois alarmes do
+mesmo episódio têm janelas de avaliação quase idênticas.
+
+**Resultado: não é artefato de cascata.** 40 alarmes → 16 episódios
+físicos distintos. Dentro de cada episódio, os alarmes são **uniformemente
+todos detectados ou todos perdidos** (nenhum episódio tem detecção
+parcial) — ou seja, o 37/40 ao nível de linha de alarme corresponde
+exatamente a **14/16 (87,5%) ao nível de evento físico**, sem inflação:
+os 3 alarmes perdidos (40-37) são exatamente os alarmes dos 2 episódios
+perdidos (2 alarmes do episódio de 2025-08-08 + 1 do episódio de
+2025-11-29).
+
+**Os 2 episódios perdidos são falha de instrumento, não precursor real.**
+Ambos são um único tag disparando alarme `UNDER` com valor fisicamente
+impossível para o sinal (T5_AVG_A/TC382_03_A a **-21°C** em
+2025-08-08 15:31 e **-18°C** em 2025-11-29 07:52 — mesmo padrão de leitura
+negativa fora de faixa já investigado e descartado como precursor em
+`docs/analise_pca_monitoramento_sistema.md` v10, "veto+faixa física").
+Não é um evento perdido pelo modelo por fraqueza de generalização — é
+um tipo de evento estruturalmente diferente do que o modelo foi
+desenhado para capturar (glitch pontual de um sensor, provavelmente já
+removido pelo clipping de outlier `OUTLIER_Q_LOW/HIGH=0.001/0.999` antes
+de chegar no score, e não uma deriva coordenada de múltiplos sensores
+precedendo um evento mecânico real).
+
+**O que isso NÃO responde — risco de otimismo ainda em aberto.** Este
+teste usa a config já congelada do EXP10c (modelo, threshold p99,9 e os
+3 portões com seus parâmetros fixos: `LOAD_GATE_RAMP_MAX=100`,
+`VOLATILITY_GATE_THRESHOLD=0.39`, `OFF_TARGET_ABS_THRESHOLD=150`) — ele
+mostra que o resultado final generaliza bem entre os 16 eventos, mas
+**não** re-deriva esses 3 parâmetros excluindo cada evento por vez. Os
+parâmetros dos portões foram escolhidos por "simulação offline" olhando
+o efeito em todos os eventos disponíveis de uma vez (achado 2 e achado
+3 acima, critério "preserva 29/29 preditivos") — a mesma classe de viés
+de seleção que motivou o LOEO no pipeline do Francisco, só que aqui não
+há uma grade de trials já computada para reaproveitar (o AutoML deste
+grupo roda com grade unitária, `AUTOML_THRESHOLD_PERCENTILES=[99.9]`,
+`AUTOML_DEBOUNCE_GRID=[1]`) nem o score bruto pré-portão foi salvo como
+artefato (só `point_anomalies_all.csv`, já pós-portão). Fazer o LOEO
+completo desse viés exigiria re-simular a escolha dos 3 limiares de
+portão excluindo um evento por vez — reprocessamento novo (o modelo
+`ocsvm` em si é barato, mas precisa recarregar os dados brutos e
+recalcular os índices de rampa/volatilidade por fold), não uma leitura
+de artefato existente como foi possível aqui.
+
+**Conclusão prática:** o 92,5%/0,35% do EXP10c resiste ao teste de
+inflação por cascata (14/16 eventos físicos genuinamente distintos,
+não 37 linhas de um punhado de eventos) e as 2 falhas residuais têm
+explicação física específica, não são sinal de fragilidade geral. O
+risco de otimismo nos 3 limiares de portão continua sem verificação
+formal — fica registrado aqui como pendência explícita, a fazer sob
+demanda se o ganho justificar o reprocessamento.
