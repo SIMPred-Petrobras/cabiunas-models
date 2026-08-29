@@ -779,6 +779,35 @@ nunca foi isolado como variável.
 trocando `is_on` (nosso `build_operational_state`) pela definição
 simples dele de "stable", mantendo tudo mais igual ao v9.
 
+## v12: isola o critério de "operação estável" — melhora marginal, não é a causa principal
+
+Script `reproducao_francisco_v12_estado_operacional_simples.py`:
+idêntico ao v9, trocando só `is_on` (nosso `build_operational_state`)
+pela definição simples dele (`RUNNING_A≥0,5` E fora das 2h seguintes a
+uma partida).
+
+| | v9 (`build_operational_state`) | v12 (definição simples) |
+|---|---|---|
+| Eventos | 5/9 (55,6%) | 5/9 (55,6%) — igual |
+| FP/mês | 1,51 | **1,455** — melhora marginal |
+
+**A hipótese tem efeito real, mas pequeno** — não fecha o gap. Depois
+de três tentativas (v10: faixa física+veto, piorou; v11: autoencoder
+com os hiperparâmetros vencedores da grade dele, piorou; v12: critério
+de operação estável, melhora marginal), nenhuma isolou uma causa única
+e dominante pro gap entre nossa reimplementação (teto observado: 5/9,
+~1,45-1,51 FP/mês) e o código dele com hiperparâmetros equivalentes
+(6/9 a 0,82-0,94 FP/mês). O gap provavelmente vem de uma combinação de
+diferenças pequenas (RobustScaler exato, `clip_outliers` residual,
+ordem de operações no `_limite`/EWMA) que precisariam de uma auditoria
+numérica lado a lado, não mais tentativa-e-erro por hipótese isolada.
+
+**Estado atual**: v9/v12 (empatados, 5/9 a ~1,45-1,51 FP/mês) são a
+melhor reprodução manual que temos. Pra bater 6/9 com FP baixo, a
+reprodução literal (`francisco_automl_clearml_original.py`, sem
+alteração de código) continua sendo o caminho confiável — ver seção
+"Reprodução literal".
+
 ## Script
 
 - `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
@@ -853,6 +882,12 @@ simples dele de "stable", mantendo tudo mais igual ao v9.
   ver seção v11. Acende suspeita de que o gap real está no critério de
   "operação estável" (`build_operational_state` vs. a definição simples
   dele), comum a v6-v11, ainda não isolado. v9 continua a referência.
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v12_estado_operacional_simples.py`
+  — **v12**, idêntico ao v9 trocando só o critério de operação estável
+  pela definição simples dele. **Melhora marginal** (1,51→1,455 FP/mês,
+  cobertura igual) — o critério tem efeito real mas pequeno, não é a
+  causa dominante do gap. v9/v12 empatados como melhor reprodução
+  manual (5/9, ~1,45-1,51 FP/mês) — ver seção v12.
 
 Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
