@@ -741,6 +741,44 @@ limites físicos mas fora do padrão estatístico usual daquele mês).
 1,51 FP/mês). O veto de sensor congelado pode ainda valer a pena
 isolado (sem trocar a faixa fixa) — não foi testado separadamente.
 
+## v11: trocar PCA-Q por autoencoder (mesmos hiperparâmetros da grade dele) — piorou
+
+Script `reproducao_francisco_v11_melhor_config_ae.py`: base v9, trocando
+só os hiperparâmetros pelos valores que deram o menor FP com boa
+cobertura na grade completa (`policy_sweep`/`arch_sweep`, código dele
+sem alteração): arquitetura `ae` (autoencoder denso via `MLPRegressor`,
+mesma estrutura dele) em vez de PCA-Q, EWMA 30min (não 2h), percentil
+99,97 (não 99,9), sustentação de 2h (não 30min).
+
+| | v9 (PCA-Q) | v11 (autoencoder) |
+|---|---|---|
+| Eventos | **5/9 (55,6%)** | 3/9 (33,3%) |
+| FP/mês | **1,51** | 2,30 |
+
+**Piorou nas duas métricas.** Checagem importante feita antes de
+suspeitar do modelo: os 9 eventos curados do v11 são **exatamente os
+mesmos 9** (mesmas datas) que o código original dele encontra rodando
+no nosso dataset — descarta diferença de ground-truth como causa.
+
+**Achado maior, que atravessa v6-v11**: nossa reimplementação
+sistematicamente performa pior que o código dele, **independente de
+qual arquitetura/hiperparâmetro testamos** (PCA-Q no v9, autoencoder no
+v11, faixa física+veto no v10). Isso sugere que a causa não está na
+escolha de modelo/limiar — é algo mais estrutural, comum a todas as
+nossas reimplementações. Suspeita principal, ainda não testada:
+**nosso critério de "operação estável"** (`build_operational_state`,
+usado no projeto inteiro — combina `off_value_quantile`,
+`off_abs_threshold`, `off_long_min_hours`, `transient_padding_minutes`,
+`transient_diff_quantile`) é um algoritmo bem mais elaborado que o dele
+(`stable = RUNNING_A≥0,5 E fora das 2h seguintes a uma partida`, só
+isso). Isso muda a composição do baseline de treino E quais pontos
+recebem pontuação em toda a série v6-v11, não só neste experimento —
+nunca foi isolado como variável.
+
+**v9 continua sendo a referência.** Próximo passo natural: testar v12
+trocando `is_on` (nosso `build_operational_state`) pela definição
+simples dele de "stable", mantendo tudo mais igual ao v9.
+
 ## Script
 
 - `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
@@ -807,6 +845,14 @@ isolado (sem trocar a faixa fixa) — não foi testado separadamente.
   **Hipótese refutada nas duas versões testadas** (piso -15°C e 0°C
   corrigido) — FP piorou de 1,51 para 2,07/mês sem ganho de cobertura;
   ver seção v10. v9 continua sendo a referência.
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v11_melhor_config_ae.py`
+  — **v11**, troca PCA-Q por autoencoder denso (`MLPRegressor`) +
+  hiperparâmetros da linha de menor FP da grade dele (EWMA 30min,
+  percentil 99,97, sustentação 2h). **Piorou nas duas métricas** (3/9,
+  2,30 FP/mês) apesar do ground-truth ser idêntico ao do código dele —
+  ver seção v11. Acende suspeita de que o gap real está no critério de
+  "operação estável" (`build_operational_state` vs. a definição simples
+  dele), comum a v6-v11, ainda não isolado. v9 continua a referência.
 
 Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
