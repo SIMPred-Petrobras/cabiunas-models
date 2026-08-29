@@ -259,7 +259,8 @@ frozen_model = fit_model(df_normal_frozen)
 rows_prod_frozen = []   # producao hoje: modelo congelado + portoes 100/0.39 + sem veto
 rows_A = []              # so walk-forward
 rows_B = []              # walk-forward + limiares novos
-rows_C = []              # walk-forward + limiares novos + veto (combo final)
+rows_C = []              # walk-forward + limiares novos + veto
+rows_D = []              # walk-forward + portoes de PRODUCAO (100/0.39) + veto -- sem trocar limiar
 
 for month_start, month_end in month_bounds:
     score_slice_idx = df_all.index[(df_all.index >= month_start) & (df_all.index < month_end)]
@@ -287,16 +288,23 @@ for month_start, month_end in month_bounds:
     r_c = eval_month(flags_c, score_slice_idx, month_start, month_end)
     rows_C.append(r_c)
 
+    flags_d = apply_layers(err_wf, wf_model["threshold"], pos, PROD_RAMP_MAX, PROD_VOL_THR, use_veto=True)
+    r_d = eval_month(flags_d, score_slice_idx, month_start, month_end)
+    rows_D.append(r_d)
+
     print(f"[COMBO mes {month_start.date()}] producao: {r_prod['hits']}/{r_prod['n_alarms']} "
           f"fp={r_prod['n_normal_anom']}/{r_prod['n_normal_points']}  |  "
           f"A(wf): {r_a['hits']}/{r_a['n_alarms']} fp={r_a['n_normal_anom']}/{r_a['n_normal_points']}  |  "
           f"B(+limiar): {r_b['hits']}/{r_b['n_alarms']} fp={r_b['n_normal_anom']}/{r_b['n_normal_points']}  |  "
-          f"C(+veto): {r_c['hits']}/{r_c['n_alarms']} fp={r_c['n_normal_anom']}/{r_c['n_normal_points']}", flush=True)
+          f"C(+veto): {r_c['hits']}/{r_c['n_alarms']} fp={r_c['n_normal_anom']}/{r_c['n_normal_points']}  |  "
+          f"D(wf+veto,sem trocar limiar): {r_d['hits']}/{r_d['n_alarms']} "
+          f"fp={r_d['n_normal_anom']}/{r_d['n_normal_points']}", flush=True)
 
 pool_prod = pool(rows_prod_frozen)
 pool_a = pool(rows_A)
 pool_b = pool(rows_B)
 pool_c = pool(rows_C)
+pool_d = pool(rows_D)
 
 print("\n[COMBO RESUMO]")
 print(f"  Producao hoje (congelado, portoes 100/0.39, sem veto): "
@@ -308,9 +316,12 @@ print(f"  A. + walk-forward mensal: "
 print(f"  B. + limiares novos (ramp={NEW_RAMP_MAX}/vol={NEW_VOL_THR}): "
       f"hit_rate={pool_b['hit_rate']:.4f} ({pool_b['hits']}/{pool_b['n_alarms']})  "
       f"normal_alert_rate={pool_b['normal_alert_rate']:.5f}")
-print(f"  C. + veto de sensor congelado (W={FROZEN_WINDOW_MIN}min) [COMBO FINAL]: "
+print(f"  C. + veto de sensor congelado (W={FROZEN_WINDOW_MIN}min): "
       f"hit_rate={pool_c['hit_rate']:.4f} ({pool_c['hits']}/{pool_c['n_alarms']})  "
-      f"normal_alert_rate={pool_c['normal_alert_rate']:.5f}", flush=True)
+      f"normal_alert_rate={pool_c['normal_alert_rate']:.5f}")
+print(f"  D. walk-forward + veto, SEM trocar limiar de portao (100/0.39) [COMBO SEGURO]: "
+      f"hit_rate={pool_d['hit_rate']:.4f} ({pool_d['hits']}/{pool_d['n_alarms']})  "
+      f"normal_alert_rate={pool_d['normal_alert_rate']:.5f}", flush=True)
 
 report = {
     "group": group_name,
@@ -320,10 +331,12 @@ report = {
     "A_walkforward_pooled": pool_a,
     "B_walkforward_limiares_pooled": pool_b,
     "C_combo_final_pooled": pool_c,
+    "D_walkforward_veto_sem_limiar_pooled": pool_d,
     "producao_hoje_monthly": rows_prod_frozen,
     "A_monthly": rows_A,
     "B_monthly": rows_B,
     "C_monthly": rows_C,
+    "D_monthly": rows_D,
 }
 out_path = os.path.join(OUTPUT_DIR, "combinado_exp10c_final_result.json")
 with open(out_path, "w", encoding="utf-8") as f:
