@@ -527,3 +527,59 @@ features, o que a arquitetura de votação joga fora deliberadamente.
 ```bash
 PYTHONPATH=. python scripts/votacao_2de2_exp10c.py
 ```
+
+## Combinação dos ganhos validados (2026-08-29)
+
+Script: `scripts/combinado_exp10c_final.py`. Tasks ClearML:
+`16e4bbab957042b2bae2005e6a154b01` (waterfall A→B→C) e
+`c344509b8c034cf68235b5a37970284f` (adiciona a variante D). Pergunta:
+os 3 ganhos validados isoladamente (walk-forward mensal, limiares de
+portão mais agressivos, veto de sensor congelado) se somam?
+
+**Método:** mesma rotina de retreino mensal do walk-forward. Em cada
+mês, o MESMO modelo retreinado daquele mês é pontuado 4 vezes, variando
+só a camada de pós-processamento (waterfall aditivo):
+
+- **A** — só walk-forward (portões de produção 100/0,39, sem veto)
+- **B** — A + limiares novos (ramp=60/vol=0,21, achado do LOEO)
+- **C** — B + veto de sensor congelado (W=5min)
+- **D** — walk-forward + veto, **sem** trocar os limiares (100/0,39 mantidos)
+
+| Combinação | hit_rate | FP | vs. produção |
+|---|---|---|---|
+| Produção hoje (referência) | 92,50% (37/40) | 0,348% | — |
+| A. + walk-forward | 92,50% (37/40) | 0,281% | FP −19% |
+| B. + limiares novos | **80,00% (32/40)** | 0,206% | **perde 5 detecções reais** |
+| C. + veto (em cima de B) | 80,00% (32/40) | 0,181% | perde as mesmas 5 |
+| **D. walk-forward + veto (sem trocar limiar)** | **92,50% (37/40)** | **0,256%** | **FP −26%, mesmo hit_rate** |
+
+**Achado central: os ganhos NÃO se somam livremente — há uma
+incompatibilidade real entre dois deles.** Os limiares de portão
+(ramp=60/vol=0,21) foram validados como "custo zero" no LOEO contra o
+modelo **congelado** de produção — mas essa calibração é específica à
+distribuição de score daquele modelo. Assim que o modelo passa a ser
+retreinado mês a mês (walk-forward), a distribuição de score muda, e os
+mesmos limiares fixos passam a bloquear pontos que eram precursores
+reais em janeiro (6→3 detectados) e fevereiro (9→7) — a mesma classe de
+risco de otimismo já flagrada no LOEO, agora se manifestando como uma
+**interação entre dois ganhos**, não um viés isolado de um deles.
+
+**Combinação segura e recomendada: D (walk-forward + veto de sensor
+congelado, portões de produção inalterados).** Mesmo hit_rate da
+produção (37/40, nenhuma detecção perdida), FP cai 26% relativo
+(0,348%→0,256%) — mais que qualquer um dos dois isoladamente (19% e
+7,2%), e a composição é aproximadamente multiplicativa
+(0,281%×(1−0,072)≈0,261%, próximo do 0,256% observado), confirmando que
+walk-forward e veto atacam fontes de FP diferentes e não se sobrepõem.
+
+**Lição para qualquer combinação futura:** um ganho validado contra uma
+config específica (mesmo com LOEO) não é automaticamente seguro quando
+outra parte do sistema muda. Recalibrar/revalidar limiares dependentes
+do modelo (portões, thresholds) sempre que o próprio modelo mudar —
+nunca assumir que ganhos independentes se somam sem testar a combinação
+de verdade, como feito aqui.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/combinado_exp10c_final.py
+```
