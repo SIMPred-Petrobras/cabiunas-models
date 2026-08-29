@@ -65,4 +65,59 @@ PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp
 
 ## Resultado
 
-_(preenchido após a task terminar)_
+**Task ClearML:** `2d772c324e29416da11fba9827ce1876`.
+
+Grade completa (4 percentis testados, `AUTOML_DEBOUNCE_GRID=[1]` fixo):
+
+| percentil | hit_rate | normal_alert_rate | composite_score |
+|---|---|---|---|
+| 99,00 | 90,0% | 3,59% | 0,9658 (melhor) |
+| 99,50 | 85,0% | 1,91% | 0,9498 |
+| **99,90 (mesmo ponto do EXP10c)** | **45,0%** | **0,38%** | 0,8167 |
+| 99,97 | 40,0% | 0,19% | 0,8000 |
+
+Seed-sweep do trial vencedor (percentil 99,0, 5 seeds): hit_rate
+90,0–92,5% (média 92,0%), normal_alert_rate 1,66–3,59% (média 2,07%).
+
+**Comparação direta com a referência EXP10c** (percentil 99,9, sem EWMA):
+92,5% hit_rate (37/40) / 0,35% FP.
+
+| | EXP10c (referência) | EXP18 (melhor trial) | EXP18 (mesmo percentil 99,9) |
+|---|---|---|---|
+| hit_rate | 92,5% | 90,0% (média seeds 92,0%) | **45,0%** |
+| normal_alert_rate | 0,35% | 3,59% (média seeds 2,07%) | 0,38% |
+
+**Conclusão: piora, não ajuste favorável.** Dois efeitos, e ambos ruins:
+
+1. **No mesmo percentil (99,9) que o EXP10c usa**, suavizar o score antes
+   do limiar derruba o hit_rate de 92,5% para 45,0% — a EWMA de 30min
+   borra os picos curtos de anomalia genuína (o próprio evento que
+   queremos detectar) tanto quanto borra ruído pontual, porque a escala
+   temporal do halflife é maior que a duração típica do pico real neste
+   sinal de vibração. O score suavizado simplesmente não sobe o
+   suficiente para cruzar um limiar calibrado para o score bruto.
+2. **No percentil que o AutoML re-escolhe como melhor (99,0, mais baixo,
+   compensando a compressão de escala)**, o hit_rate volta a ficar perto
+   do de referência (90–92,5%), mas o normal_alert_rate piora de 6x a 10x
+   (0,35% → 2,07–3,59%) — abaixar o limiar para recuperar sensibilidade
+   também deixa passar muito mais ruído de fundo suavizado.
+
+Ou seja: não existe, nesta grade, um ponto de operação da EWMA que
+supere simultaneamente o hit_rate **e** o FP da referência — é sempre
+um dos dois pior, nunca uma melhoria líquida. Isso é consistente com o
+diagnóstico já registrado em `ALARMES_POR_SENSOR_EFEITO_CASCATA.md` e em
+`docs/analise_pca_monitoramento_sistema.md`: no EXP10c, a supressão de
+ruído já é feita pelos portões (máscara operacional + portão de rampa +
+portão de volatilidade) atuando sobre o sinal **bruto**, e não depende de
+suavização temporal do score. Adicionar suavização do score em cima
+disso não soma — compete com o próprio sinal que o modelo está tentando
+capturar, porque aqui a "anomalia real" e o "ruído" têm escalas de tempo
+parecidas (minutos), diferente do cenário do Francisco onde a EWMA ajuda
+(lá o sinal de interesse evolui mais lentamente que o ruído pontual).
+
+**Decisão: EWMA-antes-do-limiar (`ENABLE_SCORE_EWMA`) não é recomendada
+para o grupo `TC382_T5_vibracao_mancais_multiescala`/EXP10c.** O código
+fica no pipeline como opção opt-in (default `False`, não afeta nenhum
+config existente) documentada e testada, para o caso de ser útil em
+outro sensor/grupo com dinâmica mais lenta, mas o EXP10c permanece a
+referência do projeto sem essa mudança.
