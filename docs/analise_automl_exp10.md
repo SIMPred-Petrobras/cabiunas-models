@@ -194,3 +194,81 @@ explicação física específica, não são sinal de fragilidade geral. O
 risco de otimismo nos 3 limiares de portão continua sem verificação
 formal — fica registrado aqui como pendência explícita, a fazer sob
 demanda se o ganho justificar o reprocessamento.
+
+## LOEO completo dos limiares de portão (2026-08-29)
+
+Script: `scripts/loeo_exp10c_portoes.py`. Task ClearML:
+`e33a4e804707489dbe791fd437a49332`. Fecha a pendência da seção anterior.
+
+**Escopo:** `LOAD_GATE_RAMP_MAX` (100°C/h) e `VOLATILITY_GATE_THRESHOLD`
+(0,39) — os 2 limiares com critério de seleção "custo zero" documentado
+(escolhidos varrendo uma grade contra os eventos disponíveis,
+preservando os "preditivos" e minimizando FP). `OFF_TARGET_ABS_THRESHOLD`
+(150°C) ficou de fora — veio de um piso físico observado num
+desligamento real específico, não de uma varredura contra os eventos de
+avaliação.
+
+**Método:** o modelo (`ocsvm`) e o pré-processamento foram reproduzidos
+localmente **uma única vez** (não usam rótulo de alarme, então não há
+necessidade de re-treinar por fold). As séries contínuas dos 2 portões
+(rampa, volatilidade) também foram calculadas uma única vez, com as
+janelas fixas do config — só o limiar de corte final é re-selecionado
+por fold. **Sanity check:** a reprodução local bateu com a task remota
+original: hit_rate 0,9250 (37/40), normal_alert_rate 0,00348 (referência:
+0,00350) — confirma que a reprodução é fiel antes de confiar no resto.
+
+Dos 16 episódios físicos OOS, 14 são "predizíveis" (o modelo sem nenhum
+portão já os alcança) — os 2 não-predizíveis são exatamente os glitches
+de instrumento já identificados na seção anterior (-21°C/-18°C), fora do
+escopo de qualquer ajuste de portão.
+
+Para cada um dos 14 episódios predizíveis: excluí-lo da visão, buscar
+numa grade (22 valores de `ramp_max` x 49 de `vol_threshold`, 1078
+combinações) o combo que preserva os outros 13 com o **menor**
+`normal_alert_rate` (mesmo critério "custo zero" documentado, sem ver o
+episódio em questão) e checar se esse combo ainda detecta o episódio
+retido.
+
+**Resultado: existe otimismo real, na mesma direção (e ordem de
+grandeza) do que já tínhamos visto na pipeline do Francisco.**
+
+| | valor |
+|---|---|
+| Fixo, vendo tudo (config atual: ramp=100/vol=0,39) | 14/14 (100%) |
+| Melhor combo da grade, vendo tudo (ramp=60/vol=0,21) | 14/14 (100%), FP=0,237% |
+| **LOEO honesto (re-seleciona por fold)** | **12/14 (85,7%)** |
+
+Os 2 episódios perdidos no LOEO:
+
+- **2026-03-13 10:33–10:38** (2 alarmes) — combo escolhido sem vê-lo:
+  ramp=50/vol=0,19 (mais agressivo que o necessário para os outros 13).
+- **2026-03-25 10:45** (1 alarme único) — combo escolhido: ramp=30/vol=0,23
+  (ainda mais agressivo).
+
+Os dois têm em comum ser episódios com poucos alarmes (1–2), no limite
+inferior da distribuição — exatamente o tipo de evento mais sensível a
+qual conjunto de "outros eventos" está definindo a fronteira de
+custo-zero em cada fold.
+
+**Achado colateral (fora do LOEO em si):** a grade encontrou um combo
+(ramp=60/vol=0,21) que **preserva os 14/14 com FP menor** que o
+configurado em produção (0,237% vs 0,348%) — os limiares atuais
+(100/0,39) não estão na fronteira ótima da própria grade cheia. Vale
+como candidato de ajuste independente do resultado do LOEO.
+
+**Leitura honesta para o EXP10c:** o "92,5%/0,35%" (ou "87,5% por
+evento", 14/16, da seção anterior) é o número de melhor-caso, calibrado
+vendo todos os eventos de uma vez. A estimativa fora-da-amostra mais
+honesta para a parcela dos 3 portões cai para **12/14 (85,7%) dos
+episódios predizíveis** — ou **12/16 (75,0%)** se incluirmos os 2
+glitches estruturalmente fora de alcance. Não invalida o EXP10c (a queda
+é de ~15pp, não um colapso, e concentrada em episódios de 1-2 alarmes só,
+o tipo de evento mais marginal da amostra) — mas o número a comunicar daqui
+pra frente é essa faixa (75-86%), não o 92,5% otimista, sempre que o
+assunto for expectativa de detecção em produção, não o placar do
+backtest.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/loeo_exp10c_portoes.py
+```
