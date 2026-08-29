@@ -583,3 +583,74 @@ de verdade, como feito aqui.
 ```bash
 PYTHONPATH=. python scripts/combinado_exp10c_final.py
 ```
+
+## Duração do score: TP vs FP residual (2026-08-29)
+
+Script: `scripts/analise_duracao_score_exp10c.py`. Task ClearML:
+`51106f4ef05f4bc0a7460b2d774443d6`.
+
+PERGUNTA DO USUÁRIO: os precursores reais (os 37 alarmes batidos) ficam
+com o score do modelo continuamente acima do limiar por mais tempo do
+que os episódios de falso positivo residual? Se sim, duração mínima
+poderia ser mais um filtro. Diferente do debounce por **contagem de
+pontos** já testado e descartado no EXP7 (`docs/analise_automl_exp10.md`,
+seção "Caminho testado e descartado — debounce") — aquele teste foi
+feito **antes** dos portões de máscara/rampa/volatilidade existirem,
+sobre um perfil de FP muito maior; valia re-testar no residual de hoje.
+
+**Método:** score bruto (sem nenhum portão, só máscara operacional) >
+limiar p99,9 — episódios contínuos medidos por duração real (RLE). Para
+cada um dos 37 alarmes batidos, pega o maior episódio que se sobrepõe à
+janela ±24h (o "sinal" que gerou a detecção). Para FP: episódios fora de
+qualquer janela de alarme, no período OOS, marcando quais sobrevivem aos
+portões de produção hoje (FP residual, n=285) vs. os que os portões já
+suprimem.
+
+| | n | média | mediana | p10 | p25 | p75 | p90 | max |
+|---|---|---|---|---|---|---|---|---|
+| TP (precursor batido) | 37 | 127,7min | **49,5min** | 6,6 | 8,0 | 62,0 | 247,0 | 1379,0 |
+| FP residual (sobrevive hoje) | 285 | 5,8min | **2,5min** | 0,5 | 1,0 | 5,0 | 7,0 | 240,5 |
+
+**Separação real de ~20x na mediana** (49,5min vs 2,5min) — confirma a
+intuição. Mas há sobreposição nas caudas: o TP mais curto é 0,5min (um
+único ponto de 30s) e o FP mais longo é 240,5min (4h) — duração sozinha
+não separa 100% dos casos, só a maioria.
+
+**Filtro de duração mínima — grade fina em torno do ponto de virada:**
+
+| duração mín. | TP perdidos (de 37) | normal_alert_rate | redução vs. 0,348% |
+|---|---|---|---|
+| 1min | 1 | 0,342% | 1,8% |
+| 3min | 1 | 0,310% | 11,0% |
+| **6min** | **1** | **0,235%** | **32,7%** |
+| 7min | 4 | 0,218% | 37,5% |
+| 9min | 13 | 0,206% | 41,0% |
+| 15min | 14 | 0,184% | 47,1% |
+
+(`normal_alert_rate` estimado ponderando cada episódio residual pela sua
+duração real em pontos, não por contagem de episódios — 74% dos
+episódios têm duração ≤5min mas pesam pouco no total de pontos; o FP
+residual é dominado por um número menor de episódios mais longos.)
+
+**Ponto de virada nítido em 6min.** Até 6min, só se perde 1 dos 37 TP
+(um único ponto de 30s isolado — o alarme `2026-01-17 00:59`, uma
+detecção já no limite de ser ruído, não um precursor sustentado) e o FP
+cai 32,7%. Passar de 6 para 7min já custa 4 TP (3 detecções reais a mais
+perdidas por 5pp de FP a mais) — claramente do lado ruim da curva.
+**6 minutos de duração mínima contínua é o melhor candidato de filtro
+encontrado até agora nesta investigação** — maior redução de FP
+(32,7%) pelo menor custo (1 detecção marginal) de qualquer mecanismo
+testado (walk-forward: 19%; veto de sensor congelado: 7,2%).
+
+**Ainda não testado:** interação deste filtro com walk-forward mensal e
+com o veto de sensor congelado — a lição da seção "Combinação dos
+ganhos validados" (limiares de portão que pareciam custo-zero quebraram
+ao trocar o modelo) se aplica igualmente aqui: um filtro calibrado
+contra o score do modelo **congelado** não é garantidamente seguro
+contra o score de um modelo retreinado mensalmente. Precisa validação
+conjunta antes de qualquer recomendação de combinar os dois.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/analise_duracao_score_exp10c.py
+```
