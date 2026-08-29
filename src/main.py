@@ -90,8 +90,17 @@ def _upload_run_artifacts(task: Task, run_info: Dict) -> None:
                     artifact_name = f"{sensor}/figs/{name}"
                     _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
 
-        hp_path = os.path.join(output_dir, "best_model", "best_hyperparameters.json")
-        _publish_artifact(task, f"{sensor}/best_hyperparameters_json", hp_path, local_task_dir / sensor)
+        # best_model/ so subia best_hyperparameters.json -- o binario do
+        # modelo (model.pkl / model.keras) nunca era persistido no ClearML,
+        # so no disco local do worker. Descoberto tentando recuperar os
+        # artefatos do EXP10c; ver simpred-cabiunas/docs/tc33003a.md secao 5.
+        best_model_dir = os.path.join(output_dir, "best_model")
+        if os.path.isdir(best_model_dir):
+            for name in sorted(os.listdir(best_model_dir)):
+                file_path = os.path.join(best_model_dir, name)
+                if os.path.isfile(file_path):
+                    artifact_name = f"{sensor}/best_model/{name}"
+                    _publish_artifact(task, artifact_name, file_path, local_task_dir / sensor)
 
 
 def main():

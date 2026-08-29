@@ -334,6 +334,14 @@ def run_automl_group(
     if len(df_normal) < 10:
         return {"group": group_name, "sensors": sensors, "skipped": True, "reason": "few_normal_points"}
 
+    # Captura os quantis de clipping calculados sobre df_normal PRE-clip --
+    # clip_outliers nao os retorna, e ate aqui nenhum artefato do pipeline
+    # os persistia. Necessario para portar o modelo a producao (ver
+    # simpred-cabiunas/docs/tc33003a.md secao 5 -- essa lacuna foi
+    # descoberta tentando recuperar os artefatos do EXP10c).
+    _clip_q_low = df_normal.quantile(cfg.OUTLIER_Q_LOW).to_dict() if cfg.OUTLIER_MODE.lower() == "quantile" else None
+    _clip_q_high = df_normal.quantile(cfg.OUTLIER_Q_HIGH).to_dict() if cfg.OUTLIER_MODE.lower() == "quantile" else None
+
     df_normal = clip_outliers(df_normal, cfg)
     df_all = clip_outliers(df_all, cfg)
 
@@ -346,7 +354,7 @@ def run_automl_group(
     if len(df_normal_fit) < 10:
         return {"group": group_name, "sensors": sensors, "skipped": True, "reason": "few_normal_points_before_oos_split"}
 
-    df_normal_z, df_all_z, _, _ = normalize_train_only(cfg, df_normal_fit, df_all)
+    df_normal_z, df_all_z, _normalize_center, _normalize_scale = normalize_train_only(cfg, df_normal_fit, df_all)
 
     x_normal = df_normal_z.values.astype(np.float32)
     x_all = df_all_z.values.astype(np.float32)
@@ -504,6 +512,26 @@ def run_automl_group(
     model_path = _save_model(best_model_type, best_model_obj, out_dirs)
     with open(os.path.join(out_dirs["best_model"], "best_hyperparameters.json"), "w", encoding="utf-8") as f:
         json.dump({k: v for k, v in best_trial.items()}, f, indent=2, ensure_ascii=False)
+
+    # Ver nota acima de _clip_q_low/_clip_q_high. Necessario para produzir
+    # o predictor.py em simpred-cabiunas -- normalizacao/clipping em
+    # producao usam estatisticas fixas de treino, que ate aqui nunca eram
+    # persistidas por este pipeline.
+    with open(os.path.join(out_dirs["best_model"], "normalization_stats.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "feature_columns": feature_cols,
+                "normalize_mode": cfg.NORMALIZE_MODE,
+                "normalize_center": {k: float(v) for k, v in _normalize_center.to_dict().items()},
+                "normalize_scale": {k: float(v) for k, v in _normalize_scale.to_dict().items()},
+                "clip_mode": cfg.OUTLIER_MODE,
+                "clip_q_low": {k: float(v) for k, v in (_clip_q_low or {}).items()},
+                "clip_q_high": {k: float(v) for k, v in (_clip_q_high or {}).items()},
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
     assert best_point_df is not None
     best_point_df.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
