@@ -272,3 +272,80 @@ backtest.
 ```bash
 PYTHONPATH=. python scripts/loeo_exp10c_portoes.py
 ```
+
+## Diagnóstico de deriva temporal — vale a pena retreino mensal? (2026-08-29)
+
+MOTIVAÇÃO: próximo item do "menu" de melhorias do EXP10c era avaliar
+retreino periódico (walk-forward mensal) em vez do corte único atual
+(modelo treinado uma vez em dados anteriores a `AUTOML_OOS_SPLIT_DATE`
+2025-07-01, aplicado sem re-treino nos 10 meses seguintes). Antes de
+construir a infraestrutura (retreinar, re-selecionar limiar/portões a
+cada mês, redefinir a régua de avaliação OOS), vale checar se há
+evidência de que o modelo congelado está degradando ao longo desses 10
+meses — dois diagnósticos baratos, reaproveitando dados já existentes,
+sem retreinar nada.
+
+**Diagnóstico 1 — FP mensal.** `normal_alert_rate` do EXP10c (task
+`6ac3b1b5...`), quebrado por mês dentro do período OOS:
+
+| Mês | FP | Mês | FP |
+|---|---|---|---|
+| 2025-07 | 0,086% | 2025-12 | 0,325% |
+| 2025-08 | 0,405% | 2026-01 | 0,081% |
+| 2025-09 | 0,177% | 2026-02 | 0,357% |
+| 2025-10 | 0,861% | 2026-03 | 0,365% |
+| 2025-11 | 0,182% | 2026-04 | 0,556% |
+
+Correlação com "meses desde o corte": **0,20** (fraca). Inclinação da
+reta: 0,016pp/mês, desprezível frente ao desvio-padrão entre meses
+(0,225pp) — variação parece ruído operacional (meses com mais
+manobra), não degradação progressiva. Reforça isso: os 2 episódios
+perdidos (glitches de instrumento, seção anterior) caem em **agosto e
+novembro de 2025** — logo no início da janela OOS, não no fim, o oposto
+do que "modelo ficando desatualizado" preveria.
+
+**Diagnóstico 2 — deriva na distribuição das features brutas.** Pontos
+"on" e fora de qualquer janela de alarme (±24h, RUNNING_A≥0,9 como
+proxy), agregados por mês, para os 12 sensores do grupo
+(`TC382_03_A`, `T5_AVG_A`, 10 canais de vibração `TV_35*`) — z-score de
+cada mês em relação à média/desvio do próprio período de treino
+(tudo antes de 2025-07-01), toda a série 2024-07 a 2026-04:
+
+- |z| médio dos 10 meses OOS: **0,774**. |z| médio dentro do próprio
+  período de treino (variabilidade interna, mesma régua): **0,609**
+  (desvio 0,318). Ou seja, o período OOS está dentro de ~1 desvio-padrão
+  da variabilidade que o próprio treino já continha — não é um regime
+  novo.
+- Correlação entre |z| mensal e "meses desde o corte", **dentro do OOS**:
+  **0,07** — praticamente zero. Sem tendência crescente.
+- Os meses com |z| mais alto no OOS (2026-02 e 2026-03, ~1,2-1,3,
+  puxados principalmente pelos canais de vibração `TV_354Y_A`/`TV_355X_A`)
+  coincidem com o trimestre de maior atividade de alarme (episódios em
+  10/02, 24/02, 25/02, 13/03, 16/03, 25/03 — ver seção do LOEO) — leitura
+  mais provável é "trimestre mecanicamente mais agitado" (mais eventos
+  reais próximos, contaminando o rótulo de "normal" nas bordas da janela
+  de exclusão de ±24h), não "sensor perdendo calibração com o tempo".
+  Esses picos de |z| tem magnitude comparável a picos que já existem
+  DENTRO do próprio período de treino (ex: 2024-08, |z|=1,373) — não é
+  um patamar novo.
+
+**Conclusão: sem evidência de deriva nos 10 meses observados.** Os dois
+diagnósticos (FP-rate e distribuição bruta das features) concordam: não
+há tendência monotônica de degradação no horizonte OOS atual. O caso de
+negócio para construir retreino walk-forward mensal *agora*, motivado
+por deriva já observada, não se sustenta com os dados disponíveis. Isso
+não fecha a pergunta em definitivo (10 meses pode ser curto demais para
+deriva lenta aparecer, e o argumento de "robustez preventiva" é
+independente de evidência already-observed), mas muda a prioridade: não
+é um problema com sintoma já visível hoje.
+
+**Reprodução:** os dois diagnósticos foram feitos como scripts ad-hoc
+(não commitados como script reprodutível — reaproveitam artefatos já
+existentes via ClearML `Task.artifacts`/`Dataset.get`, sem processamento
+novo do modelo). Query 1: agrupa `point_anomalies_all.csv` da task
+`6ac3b1b52a45433a83568d61fafadda6` por mês, filtra `operational_state ==
+"on"` e fora de ±1440min de qualquer um dos 40 alarmes OOS. Query 2: lê
+`RUNNING_A` + os 12 sensores do grupo direto do CSV do dataset
+(`a97ba56ba14840fbb1125c2a82f883c9`), mesmo filtro "on"/fora-de-alarme
+(aplicado a toda a série 2024-2026, não só OOS), z-score mensal contra
+média/desvio do período de treino.
