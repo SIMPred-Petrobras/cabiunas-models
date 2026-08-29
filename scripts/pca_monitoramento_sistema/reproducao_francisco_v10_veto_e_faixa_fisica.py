@@ -94,7 +94,16 @@ PCA_VARIANCE = 0.95
 EXCLUDE_ALARM_H = 1.0      # blackout no baseline ao redor de QUALQUER ativacao de alarme
 
 # -------- v10: faixa fisica fixa (nao clip por quantil) ---------------------
-PHYSICAL_RANGE_TEMP = (-15.0, 900.0)
+# Piso corrigido para 0 C (nao -15 C, valor do Francisco): o proprio projeto
+# ja tinha concluido, antes deste experimento, que leitura de temperatura
+# proxima de zero/negativa nestes sensores e falha de sensor/comunicacao,
+# nao ambiente frio real -- os alarmes UNDER investigados em
+# docs/analise_automl_exp7.md caem em -18 a -22 C (um caso extremo em
+# -38 C) em TC382_03_A, cuja faixa normal de operacao e ~600-800 C.
+# -15 C nao esta errado aritmeticamente (ja bloquearia -18), mas nao faz
+# sentido fisico pra este equipamento -- a faixa de erro confirmada
+# comeca bem acima disso. 0 C fica com boa margem sobre ela.
+PHYSICAL_RANGE_TEMP = (0.0, 900.0)
 PHYSICAL_RANGE_PRESS = (-1.5, 120.0)
 
 # -------- v10: veto de sensor congelado (por familia) ------------------------
