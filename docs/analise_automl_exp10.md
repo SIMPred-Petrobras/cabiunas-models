@@ -349,3 +349,75 @@ novo do modelo). Query 1: agrupa `point_anomalies_all.csv` da task
 (`a97ba56ba14840fbb1125c2a82f883c9`), mesmo filtro "on"/fora-de-alarme
 (aplicado a toda a série 2024-2026, não só OOS), z-score mensal contra
 média/desvio do período de treino.
+
+## Retreino walk-forward mensal (2026-08-29)
+
+Script: `scripts/walkforward_exp10c_retrain_mensal.py`. Task ClearML:
+`16a98571ab16434cbc8f7429048cd0de`. Mesmo sem evidência de deriva (seção
+anterior), o teste empírico direto é barato o suficiente pra vir na
+frente de qualquer suposição.
+
+**Escopo:** isola só a cadência de retreino do modelo (`ocsvm` +
+normalização + limiar de percentil, recomputados a cada mês, janela
+**expansiva** — cada mês usa todo o histórico normal anterior). Máscara
+operacional, portões de rampa/volatilidade e limites de clipping de
+outlier ficam **fixos** nos valores de produção — não é sobre isso este
+teste (já tratado na seção do LOEO).
+
+**Método:** para cada um dos 10 meses do período OOS, treina do zero em
+todo o normal disponível antes do início do mês, mede hit/FP só daquele
+mês. Roda também o modelo **congelado** atual (o do EXP10c) pela mesma
+rotina de avaliação mês a mês, para comparação pareada.
+**Sanity check:** o congelado, reavaliado mês a mês, bateu exatamente
+com a referência conhecida — hit_rate 0,9250 (37/40), normal_alert_rate
+0,00348 (0,35%).
+
+| Mês | Congelado (FP) | Walk-forward (FP) |
+|---|---|---|
+| 2025-07 | 70/81406 | 70/81406 |
+| 2025-08 | 283/69853 | 292/69853 |
+| 2025-09 | 152/85665 | 91/85665 |
+| 2025-10 | 693/80458 | 650/80458 |
+| 2025-11 | 51/28089 | 42/28089 |
+| 2025-12 | 280/86108 | 177/86108 |
+| 2026-01 | 47/57789 | 41/57789 |
+| 2026-02 | 220/61658 | 118/61658 |
+| 2026-03 | 160/43871 | 98/43871 |
+| 2026-04 | 310/55744 | 247/55744 |
+
+**Resultado agregado:**
+
+| | hit_rate | normal_alert_rate |
+|---|---|---|
+| Congelado (referência) | 92,50% (37/40) | 0,348% |
+| **Walk-forward mensal** | **92,50% (37/40)** | **0,281%** |
+
+**Ganho real, sem custo de detecção.** Mesmos 37/40 alarmes detectados
+(hit_rate idêntico, nenhum episódio perdido nem ganho), FP cai ~19%
+relativo (0,348%→0,281%). Em 9 dos 10 meses o walk-forward empata ou
+melhora o congelado; só agosto/2025 piora ligeiramente (283→292, 1º mês
+completo após o corte, janela de treino ainda quase idêntica à do
+congelado).
+
+**Sobre o mecanismo — não é "correção de deriva".** O treino do `ocsvm`
+já era subamostrado para `AUTOML_OCSVM_MAX_TRAIN_SAMPLES=50000` pontos
+mesmo no congelado (386492 normais disponíveis) — cada mês do
+walk-forward *também* amostra só 50000, então o ganho não vem de "mais
+dados de treino" no sentido bruto. Vem de a amostra de 50000 ser tirada
+de um conjunto-candidato cada vez maior e mais recente — mais variedade
+de condições operacionais normais representadas no fit, não uma
+correção de um alvo que se move (a seção anterior não achou deriva). É
+uma leitura mais modesta que "o modelo estava ficando desatualizado",
+mas o ganho de FP é real e mensurável.
+
+**Recomendação:** candidato sólido para produção — ganho líquido sem
+custo de detecção, mecanismo simples de entender (retreinar mensalmente
+com janela expansiva, tudo mais igual). Custo operacional: implica
+infraestrutura de retreino periódico (hoje o pipeline treina uma vez por
+task); não foi construída aqui, só o experimento que mede o potencial
+ganho.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/walkforward_exp10c_retrain_mensal.py
+```
