@@ -605,6 +605,87 @@ testar `ae` (autoencoder) como terceira opção de arquitetura nos nossos
 scripts v6-v8, já que na grade dele ele supera `pca` na maioria das
 configurações aprovadas.
 
+### `arch_sweep`: `mahal` empata com `ae`, ~35× mais barato
+
+Rodamos também `--mode arch_sweep` (mesmo código, sem alteração): 3888
+configurações comparando as 9 arquiteturas dele em 3 baselines
+(1400h/3000h/acumulativo — não inclui os 4000h vencedores do
+`policy_sweep`, por isso o teto aqui é 5/9, não 6/9).
+
+| Arquitetura | Máx. eventos (aprovados, FP≤1/mês) |
+|---|---|
+| `ae`, `ae_wide`, `gmm`, `mahal` | 5/9 (empatados) |
+| `ae_deep`, `pca` | 4/9 |
+| `ocsvm_sgd`, `pca_t2` | 3/9 |
+| `iforest` | 1/9 |
+
+Achado de custo/benefício: **`mahal` (Mahalanobis com covariância
+encolhida Ledoit-Wolf) empata com `ae`/`gmm`/`ae_wide`**, sendo ~35×
+mais barato de ajustar (documentado por ele: 0,06s contra 2,1s do
+autoencoder). Candidato forte pra simplificar a arquitetura sem perder
+desempenho. `iforest` (1/9) e `pca_t2` (3/9) confirmados como os
+piores — consistente com o que ele já documentou (`iforest` "nunca
+passa de 2/8" no dataset dele). Tabela completa em
+`scripts/pca_monitoramento_sistema/resultado_arch_sweep_francisco/`.
+
+## v9: corrige a reprodução pra formulação ATUAL (doc oficial de 28/08/2026)
+
+O usuário forneceu `DOCUMENTACAO_DETECTOR_TC33003A.pdf` (11 páginas,
+gerado em 28/08/2026) — a especificação oficial e **atual** da
+configuração realmente em produção, mais confiável que o `config.py`
+antigo (branch `feat/pdm-deteccao-4sinais`) usado como referência em
+v6/v7/v8. Rótulo da config em uso:
+
+```
+pca|2min|b3000h|excl0d|alm1.0h|ewma2h|q99.9|sust30min|conf2|min0min
+```
+
+Resultado documentado: **6 de 8 falhas, 18,3h de antecedência média,
+0,94 FP/mês**, 20 episódios de alerta em 16 meses.
+
+### Quatro correções em relação a v6/v7/v8
+
+| Parâmetro | v6/v7/v8 (baseado no `config.py` antigo) | Real (doc atual) |
+|---|---|---|
+| Confirmação | Par fixo `temperatura` E `mancal_spread` | **Votação 2-de-4 genérica** entre os 4 sinais — o que a nossa própria v5 já fazia, sem sabermos que era isso |
+| EWMA | 1h (multivariado) / 30min (univariado) | **2h uniforme pros 4 sinais** |
+| Limiar | 2,0×p99 (PCA-Q) / `\|z\|>3,0` (univariado) | **Percentil 99,9 direto do baseline suavizado, igual pros 4 sinais** — `mancal_spread`/`selagem_z` entram como valor bruto com sinal, não normalizado por mediana/MAD |
+| Grade temporal | 30s nativo | **Reamostrado pra 2min (mediana)** |
+
+Implementadas em
+`scripts/pca_monitoramento_sistema/reproducao_francisco_v9_formulacao_atual.py`,
+mais `exclude_alarm_h=1h` (blackout no baseline ao redor de qualquer
+ativação de alarme, busca binária) e `exclude_days=0` (desligado, igual
+à config real). **Não implementado ainda**: veto de sensor congelado
+(por família, auto-calibrado a 5% de tempo travado) e o critério de
+"detector vivo" (silêncio máximo).
+
+**Checagem de consistência importante**: com a grade em 2min, nosso
+algoritmo de ground-truth achou **9 eventos físicos** — igual ao que o
+código original dele (`automl_clearml_original.py`, Seção anterior)
+achou rodando no mesmo dataset. Confirma que a correção de grade foi
+implementada certa (na grade de 30s anterior, v6/v7/v8 achavam 11).
+
+### Resultado: v9 vs. a config exata dele (mesmos parâmetros, datasets diferentes)
+
+| | Config exata dele, no nosso dataset (via grade do `policy_sweep`) | v9 (nossa reimplementação da mesma formulação) |
+|---|---|---|
+| Eventos | 3/9 (33%) | **5/9 (55,6%)** |
+| Lead médio | 9,9h | 11,3h |
+| FP/mês | 0,69 | 1,51 |
+
+Mesma formulação "no papel", resultado ainda diferente — v9 detecta
+mais eventos, mas com mais FP. Gaps mais prováveis pra explicar a
+diferença residual, ainda não implementados:
+
+1. **Veto de sensor congelado** (30min de desvio-padrão zero anula o
+   score da família) — reduziria FP espúrio de instrumento travado.
+2. **Faixa física fixa vs. clip por quantil**: ele descarta leitura
+   fora de limites físicos absolutos (temp -15/900°C, pressão -1,5/120);
+   nós usamos `clip_outliers` por quantil (0,1%/99,9%) ajustado por
+   dataframe, mais agressivo nas caudas — pode estar comprimindo sinal
+   real de anomalia extrema.
+
 ## Script
 
 - `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
