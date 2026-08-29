@@ -686,6 +686,40 @@ diferença residual, ainda não implementados:
    dataframe, mais agressivo nas caudas — pode estar comprimindo sinal
    real de anomalia extrema.
 
+## v10: veto + faixa física fixa — hipótese testada e refutada
+
+Script `reproducao_francisco_v10_veto_e_faixa_fisica.py`: implementa as
+duas lacunas do v9 acima. Piso da faixa de temperatura corrigido de
+-15°C (valor dele) pra **0°C** — o projeto já tinha concluído, antes
+deste experimento, que leitura de temperatura próxima de zero/negativa
+em `TC382_03_A` (faixa normal ~600-800°C) é falha de sensor/comunicação,
+não ambiente frio real (alarmes `UNDER` em -18 a -22°C, extremo em
+-38°C — `docs/analise_automl_exp7.md`). -15°C não estava errado
+aritmeticamente (já bloquearia -18), mas não fazia sentido físico pro
+equipamento.
+
+| | v9 (referência) | v10 (piso -15°C) | v10 corrigido (piso 0°C) |
+|---|---|---|---|
+| Eventos | 5/9 (55,6%) | 5/9 (55,6%) | 5/9 (55,6%) |
+| FP/mês | **1,51** | 2,07 | 2,07 (praticamente igual) |
+
+**Hipótese refutada nas duas versões.** Nem o veto de sensor congelado
+nem a faixa física fixa (com qualquer um dos dois pisos testados)
+melhoraram o resultado — pelo contrário, o FP piorou em todos os sinais
+individuais. A correção do piso (-15°C→0°C) não mudou
+praticamente nada o resultado agregado, o que **confirma** que o
+problema não é o valor exato do piso: é que qualquer faixa física fixa
+é inerentemente mais ruidosa que o `clip_outliers` por quantil pra este
+dataset, porque não suprime ruído estatístico dentro da faixa
+fisicamente válida (o quantil faz isso, reajustando a cada mês/split;
+a faixa fixa só descarta o que é fisicamente impossível, deixando
+passar ruído normal de instrumentação que ainda está dentro dos
+limites físicos mas fora do padrão estatístico usual daquele mês).
+
+**v9 continua sendo a melhor reprodução corrigida que temos** (5/9,
+1,51 FP/mês). O veto de sensor congelado pode ainda valer a pena
+isolado (sem trocar a faixa fixa) — não foi testado separadamente.
+
 ## Script
 
 - `scripts/pca_monitoramento_sistema/pca_walkforward.py` — **v1**,
@@ -727,13 +761,31 @@ diferença residual, ainda não implementados:
   — **v7**, idêntico ao v6 exceto por `ENABLE_DERIVED_FEATURES=False`
   nas famílias PCA-Q. **Confirmou a hipótese e melhorou nas duas
   métricas ao mesmo tempo** (4/11 eventos, 0,73 FP/mês) — ver seção v7.
-  **Versão de referência atual** pra política de 2 sinais.
+  Superado pelo v9 (baseado no `config.py` desatualizado; ver v9).
 - `scripts/pca_monitoramento_sistema/reproducao_francisco_v8_confirmacao_por_mecanismo.py`
   — **v8**, idêntico ao v7 exceto pela regra de confirmação
   (`temperatura` E qualquer um dos 3 confirmadores, em vez do par fixo).
   **Hipótese refutada**: cobertura idêntica (4/11), FP mais que dobrou
   (0,73→1,63/mês) — ver seção v8. Mantido como registro do experimento
-  negativo; v7 continua sendo a referência.
+  negativo.
+- `scripts/pca_monitoramento_sistema/francisco_automl_clearml_original.py`
+  — cópia byte-a-byte de `scripts/automl_clearml.py` da branch dele,
+  **sem nenhuma alteração de código**. Rodada via CLI (`--dataset-id`)
+  nos modos `quick`/`policy_sweep`/`arch_sweep`. Melhor resultado da
+  grade: 6/9 eventos a 0,82 FP/mês (`ae`, baseline 4000h) — ver seção
+  "Reprodução literal" acima.
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v9_formulacao_atual.py`
+  — **v9**, corrige v6/v7/v8 pra bater com a formulação ATUAL e
+  oficial (`DOCUMENTACAO_DETECTOR_TC33003A.pdf`, não o `config.py`
+  desatualizado): votação 2-de-4 genérica, EWMA 2h uniforme, percentil
+  99,9 direto, grade reamostrada pra 2min. **Versão de referência
+  atual** — 5/9 eventos (55,6%), 1,51 FP/mês.
+- `scripts/pca_monitoramento_sistema/reproducao_francisco_v10_veto_e_faixa_fisica.py`
+  — **v10**, testa fechar as duas lacunas restantes do v9 (veto de
+  sensor congelado + faixa física fixa em vez de clip por quantil).
+  **Hipótese refutada nas duas versões testadas** (piso -15°C e 0°C
+  corrigido) — FP piorou de 1,51 para 2,07/mês sem ganho de cobertura;
+  ver seção v10. v9 continua sendo a referência.
 
 Nenhuma está integrada ao `automl_pipeline.py` (a estrutura de
 retreino mensal + avaliação contra catálogo completo é suficientemente
