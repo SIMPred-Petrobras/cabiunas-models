@@ -421,3 +421,49 @@ ganho.
 ```bash
 PYTHONPATH=. python scripts/walkforward_exp10c_retrain_mensal.py
 ```
+
+## Veto de sensor congelado (2026-08-29)
+
+Script: `scripts/veto_sensor_congelado_exp10c.py`. Task ClearML:
+`d28df72a954d46409bafff29207a5e16`.
+
+MOTIVAÇÃO: a ideia já tinha sido tentada (e refutada) na reprodução
+manual da pipeline do Francisco (`docs/analise_pca_monitoramento_sistema.md`,
+seção v10) — mas lá foi testada **em conjunto** com outra mudança (faixa
+física fixa em vez de clip por quantil) e o próprio doc registra que
+"pode ainda valer a pena isolado — não foi testado separadamente". Além
+disso é uma pipeline diferente (PCA multi-sinal, não o `ocsvm` do
+EXP10c). Existe uma coluna pré-computada no dataset (`any_sensor_constant_run`)
+mas é `True` ~99,8% do tempo (calculada sobre todo o painel de ~40 tags,
+não só os 12 do grupo) — inútil como está.
+
+**Método:** aditivo sobre a config de referência do EXP10c (modelo,
+portões, máscara — tudo fixo). Sensor "congelado" = valor bruto
+literalmente sem mudar (`diff()==0`) por uma janela sustentada de W
+minutos, em qualquer um dos 12 sensores do grupo; veto suprime
+`is_anom_point` quando congelado (mesma direção dos outros portões — só
+remove, nunca adiciona detecção). Varrida grade W ∈ {5, 10, ..., 120}min.
+**Sanity check:** reprodução local bateu com a referência (0,9250/37-40,
+FP 0,00348 vs 0,00350).
+
+| W (min) | FP | Δ vs. referência | episódios perdidos (de 14) | % tempo congelado (OOS) |
+|---|---|---|---|---|
+| 5–45 | 0,323% | **−7,2%** | 0/14 | 11,0% → 4,4% |
+| 60 | 0,325% | −6,8% | 0/14 | 3,9% |
+| 90–120 | 0,327% | −6,2% | 0/14 | 3,5% → 3,4% |
+
+**Ganho real, modesto, sem custo de detecção.** Melhor ponto: W=5min (o
+mais agressivo testado, resultado idêntico até W=45min) — FP cai ~7,2%
+(0,348%→0,323%), nenhum dos 14 episódios predizíveis é perdido em
+nenhuma janela testada. Menor que o ganho do walk-forward (~19%) ou do
+ajuste de limiares de portão (~32%, seção do LOEO), mas é um mecanismo
+diferente — **combinável** com os outros (é uma camada adicional de
+supressão, não substitui nenhuma existente). Not-LOEO-validado: assim
+como os outros limiares de portão, W foi escolhido vendo todos os 14
+episódios de uma vez — o mesmo risco de otimismo de seleção da seção do
+LOEO se aplica aqui, não verificado formalmente.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/veto_sensor_congelado_exp10c.py
+```
