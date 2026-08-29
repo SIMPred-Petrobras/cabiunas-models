@@ -595,6 +595,27 @@ usa arquitetura **`ae`** (autoencoder denso via `MLPRegressor`), não
 z-robusto) que reproduzimos manualmente em v6-v8. Sem restringir o teto
 de FP, a grade chega a 7/9 eventos (77,8%) a partir de 2,58 FP/mês.
 
+### Repetindo no período exato dele (fev/2025–abr/2026), pra descartar viés de período
+
+A extensão do período avaliado (mar/2024 em diante, pra usar mais do
+nosso histórico) poderia estar inflando ou distorcendo o resultado.
+Repetimos o `policy_sweep` restrito ao período exato dele
+(`--eval-start 2025-02 --eval-end 2026-04`): 4320 configs, 51 min,
+1342 aprovadas.
+
+| | Período estendido (mar/2024+) | Período exato dele (fev/2025+) |
+|---|---|---|
+| Melhor config aprovada | `ae`, 4000h: 6/9, 0,82 FP/mês | `ae`, 3000h+idade180d: 6/9, 0,94 FP/mês |
+| Config exata dele (`pca\|3000h\|ewma2h\|q99.9\|conf2`) | 3/9, 0,69 FP/mês | 3/9, 0,86 FP/mês |
+
+**O resultado é consistente nos dois períodos** — não é artefato de
+ter usado mais ou menos histórico. Em ambos: (a) a config exata dele
+roda bem nos nossos dados só que com cobertura bem menor (3/9 em vez
+de 6/8), e (b) existe uma config alternativa (sempre `ae`, sempre
+baseline na casa de 3000-4000h) que recupera 6/9 com FP comparável ao
+dele. Tabela completa salva em
+`scripts/pca_monitoramento_sistema/resultado_policy_sweep_periodo_dele/`.
+
 Tabelas completas (4320 linhas) e top-30 aprovados salvos em
 `scripts/pca_monitoramento_sistema/resultado_policy_sweep_francisco/`.
 
