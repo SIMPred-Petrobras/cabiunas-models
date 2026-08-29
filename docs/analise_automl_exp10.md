@@ -467,3 +467,63 @@ LOEO se aplica aqui, não verificado formalmente.
 ```bash
 PYTHONPATH=. python scripts/veto_sensor_congelado_exp10c.py
 ```
+
+## Votação 2-de-2 entre famílias independentes (2026-08-29) — refutado
+
+Script: `scripts/votacao_2de2_exp10c.py`. Task ClearML:
+`17ce17b63e00474fb91798051682e064`.
+
+MOTIVAÇÃO: ver `ALARMES_POR_SENSOR_EFEITO_CASCATA.md` — um evento físico
+real dispara dezenas de tags porque várias grandezas reagem à mesma
+causa raiz. A hipótese: treinar 2 `ocsvm` **independentes** — família
+térmica (`TC382_03_A`, `T5_AVG_A`) e família de vibração (10 canais
+`TV_35*`) — e exigir que as duas concordem (dentro de uma janela de
+tolerância causal) deveria filtrar ruído de uma família isolada, igual à
+lógica de votação N-de-4 da pipeline do Francisco.
+
+**Método:** mesma máscara operacional e mesmos alarmes de exclusão
+compartilhados entre as 2 famílias; portões de rampa/volatilidade da
+produção aplicados sobre o resultado combinado. Família "ativa" em t =
+sinalizou em algum ponto de `[t-W, t]` (dilatação causal). Combinado =
+ativa(térmica) E ativa(vibração). Varrida grade de janela de votação W
+∈ {30min, ..., 24h}. **Sanity check:** o modelo único (mesma rotina,
+recalculado neste script) bateu com a referência (0,9250/37-40, FP
+0,00348).
+
+| W | FP | FP vs. modelo único | episódios (de 14 do modelo único) |
+|---|---|---|---|
+| 30min | 0,804% | **2,3x pior** | 13/14 |
+| 1h | 1,741% | 5,0x pior | 13/14 |
+| 2h | 3,849% | 11,1x pior | 13/14 |
+| 4h | 7,446% | 21,4x pior | 13/14 |
+| 8h | 13,402% | 38,5x pior | 13/14 |
+| 12h | 18,978% | 54,5x pior | 13/14 |
+| 24h | 32,372% | 93,0x pior | 13/14 |
+
+**Refutado com clareza — pior nos dois eixos, em toda a grade.** Mesmo
+na janela mais curta testada (30min), o FP já é 2,3x maior que o modelo
+único; cresce descontroladamente com a janela (93x pior em 24h) e a
+detecção **nunca** chega a 14/14 (fica em 13/14 mesmo com um dia inteiro
+de tolerância) — ou seja, uma das duas famílias, sozinha, simplesmente
+nunca sinaliza nada perto de um dos episódios, independente de quanto
+tempo de tolerância se dê à outra.
+
+**Leitura:** separar os 12 sensores em 2 modelos independentes joga fora
+a estrutura de correlação conjunta que o modelo único explora — uma
+combinação temperatura+vibração pode estar fora do padrão normal
+*junto*, mesmo que cada família isolada ainda pareça dentro do seu
+próprio envelope individual (a família de vibração, com 10 canais
+correlacionados comprimidos num único detector, parece especialmente
+ruidosa sozinha). A dilatação causal (rolling-max) amplifica esse ruído
+de cada família antes do "E", e o resultado da combinação nunca volta a
+ficar melhor que o modelo conjunto original. A intuição por trás da
+votação (histórica, da pipeline do Francisco — sinais fisicamente
+independentes concordando é evidência mais forte) não se traduziu numa
+implementação vantajosa aqui: o EXP10c já captura naturalmente a
+correlação entre as famílias por tratá-las como um único espaço de
+features, o que a arquitetura de votação joga fora deliberadamente.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/votacao_2de2_exp10c.py
+```
