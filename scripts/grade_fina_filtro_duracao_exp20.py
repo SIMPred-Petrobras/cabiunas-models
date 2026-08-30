@@ -176,7 +176,10 @@ raw_flags = (all_err > threshold) & on_arr
 print(f"[GRADE] threshold p{pct}={threshold:.6f}  base_flags={int(raw_flags.sum())}", flush=True)
 
 # sanity check: sem filtro de duracao, so os portoes -- deve bater com a referencia conhecida
-df_point0 = pd.DataFrame({"is_anom_point": raw_flags.astype(int)}, index=all_index)
+operational_state_col = np.where(on_arr, "on", "off")
+df_point0 = pd.DataFrame(
+    {"is_anom_point": raw_flags.astype(int), "operational_state": operational_state_col}, index=all_index
+)
 df_point0 = apply_load_gate(
     df_point0, load_gate_series, ramp_max=cfg.LOAD_GATE_RAMP_MAX, level_min=cfg.LOAD_GATE_LEVEL_MIN,
     ramp_halflife_minutes=cfg.LOAD_GATE_RAMP_HALFLIFE_MINUTES, window_minutes=cfg.LOAD_GATE_WINDOW_MINUTES,
@@ -194,7 +197,9 @@ print(f"[GRADE] Varrendo {len(DURATION_GRID_MIN)} cortes de duracao (ordem corre
       flush=True)
 results = []
 for min_dur in DURATION_GRID_MIN:
-    df_point = pd.DataFrame({"is_anom_point": raw_flags.astype(int)}, index=all_index)
+    df_point = pd.DataFrame(
+        {"is_anom_point": raw_flags.astype(int), "operational_state": operational_state_col}, index=all_index
+    )
     df_point = apply_min_duration_filter(df_point, min_dur)
     df_point = apply_load_gate(
         df_point, load_gate_series, ramp_max=cfg.LOAD_GATE_RAMP_MAX, level_min=cfg.LOAD_GATE_LEVEL_MIN,
