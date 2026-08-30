@@ -801,11 +801,13 @@ detecções reais sob walk-forward. Nenhum filtro de duração (fixo ou
 adaptativo) — as duas tentativas de compor duração com walk-forward
 foram refutadas.
 
-**Resultado esperado (validado via script ad-hoc antes de virar
-feature): 92,50% hit_rate (37/40) / 0,256% normal_alert_rate** — mesma
-detecção de hoje, ~26% menos falso alerta. Suíte de testes (`pytest
-tests/`) passa inalterada (15/15) — confirma que nenhum config existente
-é afetado pelos campos novos.
+**Resultado confirmado via `src/main.py` (entrypoint padrão, não script
+ad-hoc)** — task ClearML `577f136aa36c4d3c938a62daa44da95b`,
+`calibration_report.json`: `hit_rate=0,925 (37/40)`,
+`normal_alert_rate=0,002559` (0,256%) — bate exatamente com o validado
+nos scripts desta investigação. Suíte de testes (`pytest tests/`) passa
+inalterada (15/15) — confirma que nenhum config existente é afetado
+pelos campos novos.
 
 **Reprodução (via entrypoint padrão, não script ad-hoc):**
 ```bash
