@@ -454,6 +454,15 @@ def run_automl_group(
         state = state.reindex(all_index)
 
     near_alarm_mask = build_exclusion_mask(all_index, alarm_times, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
+    if cfg.EXTRA_NEAR_ALARM_TAGS:
+        if "Tag" not in df_alarm.columns:
+            raise ValueError("EXTRA_NEAR_ALARM_TAGS exige a coluna 'Tag' no alarme.")
+        extra_alarm_times = (
+            df_alarm.loc[df_alarm["Tag"].isin(cfg.EXTRA_NEAR_ALARM_TAGS), "Data da Ocorrencia"]
+            .dropna().sort_values()
+        )
+        extra_near_mask = build_exclusion_mask(all_index, extra_alarm_times, cfg.EXTRA_NEAR_ALARM_WINDOW_MINUTES)
+        near_alarm_mask = near_alarm_mask | extra_near_mask
 
     # Alarmes usados na avaliacao: so os do periodo OOS, se houver split.
     if oos_start is not None:

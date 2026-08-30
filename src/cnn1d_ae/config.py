@@ -356,6 +356,30 @@ class PipelineConfig:
     ENABLE_MIN_DURATION_FILTER: bool = False
     MIN_DURATION_FILTER_MINUTES: float = 6.0
 
+    # Tags de alarme EXTRAS (fora de `eval_sensors`) cuja janela de
+    # +-EXTRA_NEAR_ALARM_WINDOW_MINUTES tambem e excluida do denominador
+    # de normal_alert_rate -- NAO afeta treino nem hit_rate/eval_sensors,
+    # so reconhece que um ponto marcado anomalo perto de um evento real
+    # de OUTRO sensor (nao um dos avaliados) nao deveria contar como
+    # falso alerta "do nada". Motivado por achado empirico no EXP20: 72%
+    # dos pontos oficialmente contados como FP coincidiam (+-24h) com um
+    # alarme de algum dos outros 45 tags do catalogo (principalmente
+    # pressao -- PI_6240319_AL/PAL_6240315/PDAL_6240302), e a maioria dos
+    # que sobram isolados ainda mostra pressao se movendo 2-3 desvios-
+    # padrao acima do normal, so que abaixo do limiar oficial de alarme.
+    # Ver docs/analise_automl_exp10.md, secao "Portao de pressao (EXP21)".
+    #
+    # Janela PROPOSITALMENTE curta (default 120min = +-2h, nao os
+    # +-1440min usados pros 40 alarmes raros do target): esses 3 tags de
+    # pressao ocorrem ~1x/dia no periodo OOS -- uma janela de +-24h
+    # cobriria 60% do tempo todo (checado empiricamente), inviabilizando
+    # a metrica; +-2h cobre ~8,5%, proporcional a escala de tempo real
+    # dos episodios residuais que motivaram este portao (a maioria dura
+    # minutos, nao horas). None (default) = comportamento anterior
+    # inalterado, nenhum config existente e afetado.
+    EXTRA_NEAR_ALARM_TAGS: Optional[List[str]] = None
+    EXTRA_NEAR_ALARM_WINDOW_MINUTES: float = 120.0
+
     # =========================
     # SUPERVISIONADO (EXP7/EXP8 item 4 -- classificador de alerta precoce,
     # em vez de detector de anomalia nao-supervisionado. Reusa as mesmas
