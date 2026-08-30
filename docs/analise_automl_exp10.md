@@ -914,10 +914,48 @@ referência.
 dado além de **2026-04-30**. Não foi possível estender a série temporal
 para este treino; usa o mesmo range de sempre.
 
-**Resultado esperado (já validado via script ad-hoc):** 90,0% hit_rate
-(36/40) / 0,235% normal_alert_rate (−32,7% vs. referência) — a maior
-redução de FP isolada de toda a investigação, ao custo de 1 detecção já
-marginal (ponto único de 30s).
+**Dois bugs encontrados rodando de verdade (2026-08-30) — resultado real
+é diferente do estimado:**
+
+1. **Bug de ordem (corrigido):** a 1ª implementação aplicava o filtro de
+   duração **depois** dos portões de rampa/volatilidade/veto de
+   congelamento — media a duração de episódios já fragmentados por eles
+   (um precursor real longo vira vários pedaços curtos, cada um mais
+   curto que o corte mesmo sem ser ruído). Resultado da 1ª rodada:
+   hit_rate=47,5% (19/40) — muito pior que qualquer coisa vista na
+   investigação. Corrigido: filtro de duração agora roda logo após a
+   máscara operacional, **antes** dos outros portões.
+2. **A estimativa original (90%/0,235%) era uma aproximação, não uma
+   simulação literal** — a análise de duração (`analise_duracao_score_exp10c.py`)
+   caracterizou as distribuições TP/FP e estimou o efeito do filtro por
+   contagem/peso, sem de fato reconstruir a série e reavaliar. Rodando
+   de verdade (ordem corrigida), o resultado muda: **2 alarmes a mais**
+   são perdidos, ambos com episódio de duração bem próxima do corte de
+   6min (2025-10-20, medido em ~6,0min na análise exploratória —
+   sensível a diferença de arredondamento entre a medição aproximada e
+   o RLE vetorizado real).
+
+**Resultado real, confirmado via `src/main.py`** (task
+`16a66da5cb034307bba53ac968d5a09e`):
+
+| | hit_rate | normal_alert_rate |
+|---|---|---|
+| Referência (sem filtro) | 92,50% (37/40) | 0,348% |
+| **EXP20 (filtro de duração 6min, ordem corrigida)** | **85,0% (34/40)** | **0,189% (−45,7%)** |
+
+Perde 3 alarmes a mais que a referência (além dos 3 já estruturalmente
+não-detectáveis: os 2 glitches de instrumento + o ponto único de 30s de
+2026-01-17) — 2025-10-20 e mais uma linha de 2026-01-17. Em troca, a
+redução de FP é **maior** que a estimativa original (45,7% vs 32,7%
+estimado) — é um ponto diferente (mais agressivo) da curva
+custo-benefício, não simplesmente pior.
+
+**Lição geral:** qualquer estimativa de filtro que não seja uma
+reconstrução+reavaliação literal deve ser tratada como aproximada,
+principalmente perto de fronteiras exatas de corte — a mesma disciplina
+de "rodar de verdade antes de confiar no número" que motivou várias
+correções nesta investigação (walk-forward, veto) se aplica aqui
+também.
 
 **Reprodução:**
 ```bash
