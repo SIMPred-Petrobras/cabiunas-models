@@ -961,3 +961,52 @@ também.
 ```bash
 PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp20_filtro_duracao.json
 ```
+
+## Grade fina literal do filtro de duração (2026-08-30)
+
+Script: `scripts/grade_fina_filtro_duracao_exp20.py`. Task ClearML:
+`49f6c33a356044178c8267ab1dfbcd05` (após corrigir mais um bug de
+metodologia: a 1ª rodada desse script também tinha o denominador do FP
+sem restringir a "on" — mesma classe de erro já vista antes — sanity
+check deu 0,291% em vez de 0,350%; corrigido e revalidado).
+
+Ao contrário de toda a análise anterior (por contagem/peso), esta grade
+reconstrói a série de verdade a cada corte candidato, usando a própria
+função de produção (`scoring.apply_min_duration_filter`, mesma ordem —
+antes dos portões). **Sanity check bate exatamente:** 0,9250 (37/40) /
+0,00348 sem filtro de duração.
+
+| corte | hit_rate | normal_alert_rate | redução |
+|---|---|---|---|
+| 3,0–4,5min | **90,0% (36/40)** | 0,293%→0,247% | 15,8%→**29,1%** |
+| **5,0min** | **85,0% (34/40)** | 0,232% | 33,4% |
+| 5,5–6,1min | 85,0% (34/40) | 0,213%→**0,189%** | 38,9%→**45,7%** |
+| 6,5–7,0min | 82,5% (33/40) | 0,174%→0,170% | 50,1%→51,3% |
+| 7,5–8,0min | 70,0–75,0% (28–30/40) | 0,160% | 54,0% |
+| 9,0–10,0min | 60,0% (24/40) | 0,156%→0,157% | 54,9%→55,3% |
+
+**Não existe meio-termo que recupere o alarme de fronteira mantendo a
+redução de 45,7%.** A queda de 36→34 acontece de forma abrupta entre
+4,5min e 5,0min (não suavemente perto de 6min como a análise
+aproximada sugeria) — a duração real do episódio de 2025-10-20 está
+nessa faixa, não nos ~6,0min estimados antes. Acima de 6,1min, o
+platô também é curto: 6,5min já custa mais 1 alarme (33/40) por pouco
+FP a mais, e a partir de 7,5min a curva desmorona (70-75%, depois 60%).
+
+**Dois pontos de operação genuinamente bons, escolha por prioridade:**
+
+| Prioridade | Corte | hit_rate | FP | redução |
+|---|---|---|---|---|
+| Máxima detecção | **4,5min** | **90,0% (36/40)** | 0,247% | 29,1% |
+| Máxima redução de FP | **6,0min** | 85,0% (34/40) | **0,189%** | **45,7%** |
+
+O config `test_grupo_exp20_filtro_duracao.json` está com `6.0` — mantém
+a redução de FP mais agressiva encontrada em toda a investigação, ao
+custo de 2 detecções a mais (34/40) que o originalmente estimado
+(36/40). Trocar `MIN_DURATION_FILTER_MINUTES` para `4.5` recupera as 2
+detecções, com FP ainda 29,1% menor que a referência.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/grade_fina_filtro_duracao_exp20.py
+```
