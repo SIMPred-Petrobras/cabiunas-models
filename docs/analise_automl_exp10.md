@@ -654,3 +654,53 @@ conjunta antes de qualquer recomendação de combinar os dois.
 ```bash
 PYTHONPATH=. python scripts/analise_duracao_score_exp10c.py
 ```
+
+## Filtro de duração + walk-forward + veto — refutado com força (2026-08-29)
+
+Script: `scripts/combinado_exp10c_com_duracao.py`. Task ClearML:
+`dfda933c81f245c4a02389ccfbe08dae`.
+
+Testando exatamente a pendência da seção anterior: o filtro de duração
+mínima (6min, −32,7% de FP isolado) sobrevive à combinação com
+walk-forward mensal + veto de sensor congelado (a combinação segura D)?
+
+**Método:** as flags de cada mês do walk-forward (D completo: modelo
+retreinado + portões de produção + veto) são concatenadas numa série
+contínua do período OOS inteiro **antes** do RLE, evitando que o
+chunking mensal corte artificialmente um episódio que atravesse
+fronteira de mês. **Sanity check:** D reproduzido aqui bateu exatamente
+com o valor já conhecido (92,50%/0,256%). Aplicado o filtro de 6min
+sobre essa série:
+
+| | hit_rate | normal_alert_rate |
+|---|---|---|
+| D (walk-forward + veto, sem filtro) | 92,50% (37/40) | 0,256% |
+| **E = D + filtro de duração (6min)** | **40,00% (16/40)** | 0,124% |
+
+**Refutado com força — pior que qualquer combinação testada até agora.**
+21 de 37 detecções reais desaparecem (hit_rate despenca pra 40%), muito
+mais grave que a quebra do ajuste de limiares (que custou 5 de 37). A
+explicação é a mesma raiz, só que mais severa: o filtro de 6min foi
+calibrado sobre a duração dos episódios de score do modelo **congelado**
+único. Sob walk-forward, cada mês tem um modelo com fronteira de decisão
+diferente — o formato da subida do score perto de um precursor real muda
+de mês pra mês, e para muitos meses o mesmo precursor que durava >6min
+sob o modelo congelado passa a durar menos sob o modelo daquele mês
+específico, sendo descartado pelo filtro.
+
+**Conclusão — o filtro de duração fica associado ao modelo congelado,
+não ao walk-forward.** Não há evidência, com o que foi testado, de que
+essa combinação específica valha a pena sem uma re-calibração completa
+do limiar de duração por mês (o que reabriria a mesma questão de viés
+de seleção já tratada na seção do LOEO, sem garantia de payoff). A
+recomendação prática do EXP10c permanece a combinação **D** (walk-forward
++ veto, sem filtro de duração, sem trocar limiares de portão): 92,50%
+hit_rate / 0,256% FP — o filtro de duração de 6min fica registrado como
+um ganho válido **apenas em cima do modelo congelado de produção
+atual** (92,50%/0,235%, seção anterior), não como parte de uma pilha
+com walk-forward.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/combinado_exp10c_com_duracao.py
+```
