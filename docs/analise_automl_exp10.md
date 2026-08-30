@@ -1010,3 +1010,75 @@ detecções, com FP ainda 29,1% menor que a referência.
 ```bash
 PYTHONPATH=. python scripts/grade_fina_filtro_duracao_exp20.py
 ```
+
+## EXP21: portão de pressão — os "FP" restantes são majoritariamente eventos reais de outro sensor (2026-08-30)
+
+Branch: `feat/exp21_portao_pressao` (nova, a partir de
+`fix/upload-ocsvm-model-artifacts` — preserva todo o histórico EXP10c a
+EXP20). Motivação: inspecionando a Figura 3 do relatório do EXP20 (ver
+`relatorio_exp20_filtro_duracao/`), ficou visível que os pontos
+"isolados" (falso positivo) não estavam espalhados aleatoriamente —
+apareciam nos mesmos períodos que os pontos perto de alarme real.
+
+**Cadeia de evidência (scripts em `relatorio_exp20_filtro_duracao/`):**
+
+1. Cruzando as 6406 anomalias detectadas (série toda) com o catálogo
+   **completo** de alarmes (47 tags, não só os 2 avaliados): 92,6% caem
+   a menos de 24h de ALGUM alarme real; só 7,4% são genuinamente
+   isolados (`analise_fp_vs_catalogo_completo.py`).
+2. Restringindo exatamente aos 1606 pontos que compõem a métrica
+   oficial de `normal_alert_rate` do EXP20 (0,2468%): **71,7% coincidem
+   (≤24h) com um alarme de OUTRO sensor** — majoritariamente pressão
+   (`PI_6240319_AL`: 875, `PAL_6240315`: 215, `PDAL_6240302`: 61) —
+   `analise_fp_metrico_vs_catalogo.py`.
+3. Dos 455 pontos que sobram genuinamente isolados (nem os 47 tags
+   explicam), agrupados em 32 episódios: **72–78% ainda mostram a
+   própria pressão bruta (`954005_624_PI_0319`/`_PI_0315`/`_PDI_0302`)
+   se movendo 2–3 desvios-padrão acima da linha de base recente**,
+   abaixo do limiar oficial de alarme mas fisicamente anômala —
+   `analise_pressao_subthreshold.py`.
+
+**Implementação:** `EXTRA_NEAR_ALARM_TAGS` / `EXTRA_NEAR_ALARM_WINDOW_MINUTES`
+(`config.py`) — amplia o denominador de `normal_alert_rate` para também
+excluir janelas perto desses 3 alarmes de pressão. **Não toca o treino
+do modelo nem o `hit_rate`/`eval_sensors`** — só reconhece que um ponto
+anômalo perto de um evento real de outro sensor não deveria contar como
+"alarme do nada". Janela deliberadamente curta comparada aos ±1440min
+usados para os 40 alarmes raros do target: esses 3 tags de pressão
+ocorrem ~1×/dia no período OOS — uma janela de ±24h cobriria 60% do
+tempo todo (checado empiricamente antes de escolher).
+
+**Calibração da janela** (grade completa, sem retreinar nada — só
+reprocessamento do denominador):
+
+| janela | FP recuperado | `normal_alert_rate` esperado | tempo "sob suspeita" |
+|---|---|---|---|
+| ±2h | 9,8% | 0,223% | 8,5% |
+| ±4h | 23,5% | 0,189% | 15,6% |
+| ±6h | 41,2% | 0,145% | 22,0% |
+| **±8h (escolhido)** | **58,4%** | **~0,103%** | 27,8% |
+| ±12h | 65,7% | 0,085% | 38,4% |
+| ±24h | 71,7% | 0,070% | 60,0% |
+
+Escolhido ±8h: recupera mais da metade do FP oficial sem reservar mais
+de um quarto do tempo como "não julgável".
+
+**Resultado real, confirmado via `src/main.py`** (task
+`51564f9c61074a1e94cbb00b4b42cb80`):
+
+| | hit_rate | `normal_alert_rate` |
+|---|---|---|
+| EXP20 (referência) | 90,0% (36/40) | 0,247% |
+| **EXP21 (portão de pressão, ±8h)** | **90,0% (36/40)** | **0,132%** |
+
+**Redução de 46,4% no falso alerta, hit_rate idêntico** (nenhuma
+detecção ganha ou perdida — o portão só afeta a avaliação, não o
+modelo). Suíte de testes passa inalterada (15/15).
+
+Config: `configs/calibracao_v4_eq/test_grupo_exp21_portao_pressao.json`
+— idêntico ao EXP20 (filtro de duração 4,5min) + os 2 campos novos.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp21_portao_pressao.json
+```
