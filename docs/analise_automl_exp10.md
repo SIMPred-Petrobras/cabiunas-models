@@ -761,3 +761,53 @@ filtro de duração), 92,50% hit_rate / 0,256% FP.**
 ```bash
 PYTHONPATH=. python scripts/combinado_exp10c_duracao_adaptativa.py
 ```
+
+## EXP19: combinação D promovida a config de produção (2026-08-29)
+
+A combinação segura (walk-forward mensal + veto de sensor congelado,
+portões/mascara inalterados) deixou de ser um script ad-hoc e virou
+recurso de primeira classe do pipeline, do mesmo jeito que os outros
+portões (EXP10/10b/10c) — dois campos novos em `config.py`, ambos com
+default que preserva 100% o comportamento anterior:
+
+- `ENABLE_FROZEN_SENSOR_VETO` / `FROZEN_SENSOR_VETO_WINDOW_MINUTES`
+  (default `False`/`5.0`) — `scoring.py:compute_frozen_sensor_mask`/
+  `apply_frozen_sensor_veto`, mesma camada dos outros portões (só
+  remove detecção, nunca adiciona).
+- `ENABLE_WALKFORWARD_RETRAIN` / `WALKFORWARD_RETRAIN_FREQ` (default
+  `False`/`"MS"`) — `automl_pipeline.py:_walkforward_fit_periods`:
+  re-treina do zero a cada período (janela expansiva), com
+  normalização e limiar de percentil recalculados a partir do **próprio**
+  `train_err` de cada período — nunca um valor global aplicado depois.
+  É essa disciplina (percentil sempre relativo ao modelo do momento,
+  nunca um número fixo herdado de outro modelo) que faltou nas duas
+  tentativas de filtro de duração — documentado como comentário no
+  código, ao lado do campo, para não repetir o erro em cima disso no
+  futuro.
+
+**Limitação assumida:** `AUTOML_SEED_SWEEP_N` é ignorado quando o trial
+vencedor usou walk-forward (`_seed_sweep`/`_refit_with_seed` só sabem
+re-treinar no split único) — mediria a variância de semente do modelo
+errado. Rodar walk-forward com `AUTOML_SEED_SWEEP_N=0`.
+
+**Config de produção:**
+`configs/calibracao_v4_eq/test_grupo_exp19_walkforward_veto.json` —
+idêntica ao EXP10c, exceto `ENABLE_WALKFORWARD_RETRAIN: true` e
+`ENABLE_FROZEN_SENSOR_VETO: true` (`window=5min`). `LOAD_GATE_RAMP_MAX`/
+`VOLATILITY_GATE_THRESHOLD` **mantidos em 100/0,39** (os valores de
+produção) — a seção "Combinação dos ganhos validados" mostrou que
+trocá-los para os "custo zero contra o congelado" (60/0,21) perde 5
+detecções reais sob walk-forward. Nenhum filtro de duração (fixo ou
+adaptativo) — as duas tentativas de compor duração com walk-forward
+foram refutadas.
+
+**Resultado esperado (validado via script ad-hoc antes de virar
+feature): 92,50% hit_rate (37/40) / 0,256% normal_alert_rate** — mesma
+detecção de hoje, ~26% menos falso alerta. Suíte de testes (`pytest
+tests/`) passa inalterada (15/15) — confirma que nenhum config existente
+é afetado pelos campos novos.
+
+**Reprodução (via entrypoint padrão, não script ad-hoc):**
+```bash
+PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp19_walkforward_veto.json
+```

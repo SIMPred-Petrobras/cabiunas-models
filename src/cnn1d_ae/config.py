@@ -294,6 +294,43 @@ class PipelineConfig:
     # de cada um em calibration_report.json["seed_sweep"]. 0/None = desliga.
     AUTOML_SEED_SWEEP_N: int = 0
 
+    # Veto de sensor congelado: suprime is_anom_point quando QUALQUER
+    # sensor do grupo fica com leitura literalmente constante (diff()==0)
+    # por uma janela sustentada de FROZEN_SENSOR_VETO_WINDOW_MINUTES --
+    # indica falha de instrumento/comunicacao, nao sinal real. Mesma
+    # camada dos outros portoes (rampa/volatilidade): so remove deteccao,
+    # nunca adiciona. Validado no EXP10c: W=5min reduz normal_alert_rate
+    # em ~7,2% sem custar nenhuma deteccao real (ver
+    # docs/analise_automl_exp10.md, secao "Veto de sensor congelado").
+    # False (default) = comportamento anterior inalterado.
+    ENABLE_FROZEN_SENSOR_VETO: bool = False
+    FROZEN_SENSOR_VETO_WINDOW_MINUTES: float = 5.0
+
+    # Retreino walk-forward mensal: em vez de um unico ajuste (modelo +
+    # normalizacao + limiar de percentil) sobre todo o normal anterior a
+    # AUTOML_OOS_SPLIT_DATE, re-treina do zero a cada
+    # WALKFORWARD_RETRAIN_FREQ (alias de frequencia do pandas, ex "MS" =
+    # inicio de mes) usando janela EXPANSIVA (todo o normal disponivel
+    # antes daquele ponto), pontuando so o proximo periodo com o modelo
+    # daquele momento. Portoes/mascara operacional continuam FIXOS nos
+    # valores do config -- so a cadencia de retreino do modelo muda.
+    # Exige AUTOML_OOS_SPLIT_DATE definido (walk-forward so faz sentido
+    # dentro do periodo de avaliacao OOS). Validado no EXP10c: reduz
+    # normal_alert_rate em ~19% mantendo o mesmo hit_rate (ver
+    # docs/analise_automl_exp10.md, secao "Retreino walk-forward mensal").
+    # CUIDADO: um limiar/filtro adicional calibrado contra um UNICO
+    # modelo (congelado) nao e garantidamente seguro sob walk-forward --
+    # a mesma secao do doc mostra 2 tentativas (limiares de portao mais
+    # agressivos, filtro de duracao) que pareciam "custo zero" contra o
+    # modelo congelado e quebraram (perderam deteccoes reais) quando
+    # combinadas com retreino mensal, porque a distribuicao de score
+    # muda a cada retreino. Antes de adicionar qualquer novo
+    # limiar/filtro dependente de score/duracao, revalidar especificamente
+    # com ENABLE_WALKFORWARD_RETRAIN=true, nao So contra o modelo
+    # congelado. False (default) = comportamento anterior inalterado.
+    ENABLE_WALKFORWARD_RETRAIN: bool = False
+    WALKFORWARD_RETRAIN_FREQ: str = "MS"
+
     # =========================
     # SUPERVISIONADO (EXP7/EXP8 item 4 -- classificador de alerta precoce,
     # em vez de detector de anomalia nao-supervisionado. Reusa as mesmas

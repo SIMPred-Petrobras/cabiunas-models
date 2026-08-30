@@ -325,6 +325,35 @@ def apply_volatility_gate(df_point: pd.DataFrame, volatility_index: pd.Series, t
     return df_point
 
 
+def compute_frozen_sensor_mask(df_sensors: pd.DataFrame, window_minutes: float) -> pd.Series:
+    """True quando QUALQUER coluna de `df_sensors` fica com leitura
+    literalmente constante (`diff()==0`) por uma janela sustentada de
+    `window_minutes` -- indica falha de instrumento/comunicacao (sensor
+    travado), nao sinal real. Causal por construcao (rolling trailing).
+    Validado no EXP10c com W=5min -- ver docs/analise_automl_exp10.md,
+    secao "Veto de sensor congelado"."""
+    dt_seconds = df_sensors.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    w_samples = max(1, int(round((float(window_minutes) * 60.0) / dt_seconds)))
+    diff_zero = df_sensors.diff() == 0
+    frozen_any = pd.Series(False, index=df_sensors.index)
+    for col in df_sensors.columns:
+        sustained = diff_zero[col].rolling(w_samples, min_periods=w_samples).sum() >= w_samples
+        frozen_any = frozen_any | sustained.fillna(False)
+    return frozen_any
+
+
+def apply_frozen_sensor_veto(df_point: pd.DataFrame, frozen_mask: pd.Series) -> pd.DataFrame:
+    """Suprime is_anom_point quando `compute_frozen_sensor_mask` indica
+    algum sensor do grupo travado."""
+    mask_at_point = frozen_mask.reindex(df_point.index).fillna(False)
+    df_point = df_point.copy()
+    df_point["frozen_sensor_blocked"] = mask_at_point.values
+    df_point.loc[mask_at_point.values, "is_anom_point"] = 0
+    return df_point
+
+
 def mask_anomaly_seq_by_operational_state(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,

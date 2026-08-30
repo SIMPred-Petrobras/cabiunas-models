@@ -30,6 +30,8 @@ from .scoring import (
     apply_load_gate,
     compute_volatility_index,
     apply_volatility_gate,
+    compute_frozen_sensor_mask,
+    apply_frozen_sensor_veto,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -186,6 +188,58 @@ def _seed_sweep(
     return results
 
 
+def _walkforward_fit_periods(
+    cfg: PipelineConfig,
+    fitter,
+    params: Tuple[float, Any] | None,
+    df_normal: pd.DataFrame,
+    df_all: pd.DataFrame,
+    oos_start: pd.Timestamp,
+    n_features: int,
+) -> List[Dict[str, Any]]:
+    """Re-treina do zero a cada `WALKFORWARD_RETRAIN_FREQ` (janela EXPANSIVA
+    -- cada periodo usa TODO o normal disponivel antes dele, nao uma janela
+    movel fixa), pontuando so o proximo periodo com o modelo daquele
+    momento -- normalizacao (center/scale) tambem recomputada por periodo.
+    Fit e feito UMA vez por periodo aqui (independente do percentil/debounce
+    testados depois); o chamador aplica o percentil por cima de cada
+    `train_err` de periodo pra montar `anomaly_flags`. Ver
+    ENABLE_WALKFORWARD_RETRAIN em config.py e docs/analise_automl_exp10.md,
+    secao "Retreino walk-forward mensal" (validado: mesmo hit_rate do
+    modelo congelado, normal_alert_rate ~19% menor)."""
+    data_end = df_all.index.max()
+    period_starts = list(pd.date_range(oos_start, data_end, freq=cfg.WALKFORWARD_RETRAIN_FREQ))
+    periods: List[Dict[str, Any]] = []
+    for i, period_start in enumerate(period_starts):
+        period_end = period_starts[i + 1] if i + 1 < len(period_starts) else data_end + pd.Timedelta(seconds=1)
+        score_slice = df_all.loc[(df_all.index >= period_start) & (df_all.index < period_end)]
+        if score_slice.empty:
+            continue
+        train_slice = df_normal.loc[df_normal.index < period_start]
+        if len(train_slice) < 10:
+            continue
+
+        df_normal_z, df_score_z, _center, _scale = normalize_train_only(cfg, train_slice, score_slice)
+        x_train = df_normal_z.values.astype(np.float32)
+        x_score = df_score_z.values.astype(np.float32)
+
+        if params is not None:
+            nu, gamma = params
+            train_err, score_err, model_obj, model_params = fitter(cfg, x_train, x_score, n_features, nu=nu, gamma=gamma)
+        else:
+            train_err, score_err, model_obj, model_params = fitter(cfg, x_train, x_score, n_features)
+
+        periods.append({
+            "period_start": period_start, "index": score_slice.index,
+            "train_err": train_err, "score_err": score_err,
+            "model_obj": model_obj, "model_params": model_params,
+        })
+
+    if not periods:
+        raise ValueError("ENABLE_WALKFORWARD_RETRAIN: nenhum periodo com dados suficientes para treinar.")
+    return periods
+
+
 def _save_model(model_type: str, model_obj: Any, out_dirs: Dict[str, str]) -> str:
     if model_type == "dense":
         path = os.path.join(out_dirs["best_model"], "model.keras")
@@ -238,6 +292,10 @@ def run_automl_group(
     sensors = valid_sensors
     if target_sensor and target_sensor not in sensors:
         target_sensor = None
+
+    # Valores BRUTOS dos sensores do grupo (pre-restricao a feature_cols) --
+    # e disso que o veto de sensor congelado precisa (nao das derivadas).
+    raw_sensor_values = df_use[sensors].copy()
 
     feature_cols = select_feature_columns(cfg, df_use, sensors)
     if cfg.ENABLE_THERMAL_ARRAY_SPREAD and THERMAL_ARRAY_SPREAD_COL in df_use.columns:
@@ -309,6 +367,14 @@ def run_automl_group(
         if missing_vol:
             raise ValueError(f"VOLATILITY_GATE_SENSORS fora de `sensors` do grupo: {missing_vol}")
         volatility_index = compute_volatility_index(df_use[vol_sensors], cfg.VOLATILITY_GATE_WINDOW_MINUTES)
+
+    # Veto de sensor congelado: suprime is_anom_point quando qualquer
+    # sensor BRUTO do grupo fica com leitura constante por uma janela
+    # sustentada (falha de instrumento/comunicacao). Ver
+    # docs/analise_automl_exp10.md, secao "Veto de sensor congelado".
+    frozen_mask = None
+    if cfg.ENABLE_FROZEN_SENSOR_VETO:
+        frozen_mask = compute_frozen_sensor_mask(raw_sensor_values, cfg.FROZEN_SENSOR_VETO_WINDOW_MINUTES)
 
     if "Tag" in df_alarm.columns:
         df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
@@ -408,24 +474,52 @@ def run_automl_group(
             param_combos = [None]
 
         for params in param_combos:
-            if params is not None:
-                nu, gamma = params
-                print(f"[AUTOML] group={group_name} model={model_type} nu={nu} gamma={gamma} — treinando...")
-                train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features, nu=nu, gamma=gamma)
+            walkforward_periods = None
+            if cfg.ENABLE_WALKFORWARD_RETRAIN:
+                if oos_start is None:
+                    raise ValueError("ENABLE_WALKFORWARD_RETRAIN=true exige AUTOML_OOS_SPLIT_DATE definido.")
+                label = f"nu={params[0]} gamma={params[1]}" if params is not None else ""
+                print(f"[AUTOML] group={group_name} model={model_type} {label} — walk-forward "
+                      f"({cfg.WALKFORWARD_RETRAIN_FREQ}, janela expansiva)...")
+                walkforward_periods = _walkforward_fit_periods(
+                    cfg, fitter, params, df_normal, df_all, oos_start, n_features
+                )
+                model_obj = walkforward_periods[-1]["model_obj"]
+                model_params = walkforward_periods[-1]["model_params"]
             else:
-                print(f"[AUTOML] group={group_name} model={model_type} — treinando...")
-                train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features)
+                if params is not None:
+                    nu, gamma = params
+                    print(f"[AUTOML] group={group_name} model={model_type} nu={nu} gamma={gamma} — treinando...")
+                    train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features, nu=nu, gamma=gamma)
+                else:
+                    print(f"[AUTOML] group={group_name} model={model_type} — treinando...")
+                    train_err, all_err, model_obj, model_params = fitter(cfg, x_normal, x_all, n_features)
 
-            if cfg.ENABLE_SCORE_EWMA:
-                halflife = pd.Timedelta(cfg.SCORE_EWMA_HALFLIFE)
-                train_err_s = pd.Series(train_err, index=df_normal_fit.index)
-                all_err_s = pd.Series(all_err, index=all_index)
-                train_err = train_err_s.ewm(halflife=halflife, times=train_err_s.index).mean().values
-                all_err = all_err_s.ewm(halflife=halflife, times=all_err_s.index).mean().values
+                if cfg.ENABLE_SCORE_EWMA:
+                    halflife = pd.Timedelta(cfg.SCORE_EWMA_HALFLIFE)
+                    train_err_s = pd.Series(train_err, index=df_normal_fit.index)
+                    all_err_s = pd.Series(all_err, index=all_index)
+                    train_err = train_err_s.ewm(halflife=halflife, times=train_err_s.index).mean().values
+                    all_err = all_err_s.ewm(halflife=halflife, times=all_err_s.index).mean().values
 
             for pct in percentiles:
-                threshold = float(np.percentile(train_err, pct))
-                anomaly_flags = (all_err > threshold).astype(int)
+                if walkforward_periods is not None:
+                    # Um percentil, N modelos: cada periodo usa o proprio
+                    # threshold (percentil do PROPRIO train_err daquele
+                    # retreino) -- nao um threshold global aplicado depois.
+                    # Ver docs/analise_automl_exp10.md: um limiar/filtro
+                    # calibrado contra UM modelo nao transferiu pra outros
+                    # meses quando testado assim; aqui o percentil e
+                    # recalculado a cada periodo desde o inicio, por design.
+                    anomaly_flags = np.zeros(len(all_index), dtype=int)
+                    threshold = None
+                    for p in walkforward_periods:
+                        threshold = float(np.percentile(p["train_err"], pct))
+                        pos = all_index.get_indexer(p["index"])
+                        anomaly_flags[pos] = (p["score_err"] > threshold).astype(int)
+                else:
+                    threshold = float(np.percentile(train_err, pct))
+                    anomaly_flags = (all_err > threshold).astype(int)
 
                 for debounce in debounces:
                     df_point = map_seq_to_point_anomalies(
@@ -443,6 +537,8 @@ def run_automl_group(
                         )
                     if volatility_index is not None:
                         df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
+                    if frozen_mask is not None:
+                        df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
 
                     # Janela de match do hit_rate usa o df_point inteiro (um alarme
                     # OOS perto do corte ainda pode casar com pontos um pouco antes
@@ -463,6 +559,8 @@ def run_automl_group(
                         "threshold_percentile": pct,
                         "debounce": int(debounce),
                         "threshold": threshold,
+                        "walkforward": walkforward_periods is not None,
+                        "n_walkforward_periods": len(walkforward_periods) if walkforward_periods is not None else None,
                         "anomaly_rate_points_per_day": compute_anomaly_rate_per_day(df_point.loc[df_point_eval_idx]),
                         **model_params,
                         **eval_stats,
@@ -483,7 +581,13 @@ def run_automl_group(
     df_ranking.to_csv(os.path.join(out_dirs["csv"], "automl_ranking.csv"), index=False)
 
     seed_sweep = None
-    if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED:
+    # _seed_sweep/_refit_with_seed re-treinam so no split unico (x_normal/
+    # x_all congelados) e nao aplicam o veto de sensor congelado -- nao
+    # tem o mesmo significado pro trial vencedor quando ele veio do
+    # walk-forward (retreino por periodo). Desligado nesse caso; a
+    # variancia de semente do walk-forward exigiria re-rodar todos os
+    # periodos por semente (nao implementado, custo N vezes maior).
+    if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED and not best_trial.get("walkforward"):
         seed_sweep_kwargs = {"load_gate_series": load_gate_series, "volatility_index": volatility_index}
         if best_model_type == "ocsvm":
             seed_sweep_kwargs["nu"] = best_trial.get("nu")
