@@ -813,3 +813,69 @@ pelos campos novos.
 ```bash
 PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp19_walkforward_veto.json
 ```
+
+## Terceira tentativa de duração — adaptativo-recente, mesma falha (2026-08-30)
+
+Script: `scripts/combinado_exp10c_duracao_adaptativa_recente.py`. Task
+ClearML: `40045ea00dfb4f96bed75d4de683c330`.
+
+Diagnóstico da tentativa anterior: medir "ruído" sobre o treino
+expansivo inteiro (+1 ano) captura contaminação de longo prazo. Correção
+testada aqui: restringir a medição aos **últimos 60 dias** antes de cada
+retreino (não o histórico todo), usando o **máximo** observado (não um
+percentil alto, dado a amostra menor) como corte adaptativo.
+
+| mês | nº episódios de ruído (60d) | corte adaptativo |
+|---|---|---|
+| 2025-07 | 2 | 2,5min |
+| 2025-08 | 3 | 4,0min |
+| 2025-09 | 20 | 5,0min |
+| 2025-10 | 20 | 15,0min |
+| 2025-11 | 7 | 8,5min |
+| 2025-12 | 11 | 9,0min |
+| 2026-01 | 16 | 11,5min |
+| 2026-02 | 9 | 10,5min |
+| 2026-03 | 13 | **35,0min** |
+| 2026-04 | 12 | 9,0min |
+
+| | hit_rate | normal_alert_rate |
+|---|---|---|
+| D (walk-forward + veto, sem filtro) | 92,50% (37/40) | 0,256% |
+| **G = D + filtro de duração adaptativo-recente** | **15,00% (6/40)** | 0,122% |
+
+**Falhou de novo, na mesma magnitude — mesmo restringindo a janela de
+"ruído" a 60 dias.** A maioria dos meses ainda produz um corte entre
+5 e 35min (só julho/agosto ficam abaixo da zona segura de ~6min
+encontrada contra o modelo congelado) — na prática, equivalente a testar
+um filtro fixo de 9-35min em cada mês, faixa que a grade fina da
+primeira tentativa já tinha mostrado ser destrutiva (perde 13+/37 TP a
+partir de ~9min). Restringir a janela de medição não resolveu porque o
+problema não é "contaminação de longo prazo" per se — é que, sob
+retreino mensal, o score de VÁRIOS meses tem um comportamento de "quase
+limiar" mais persistente que o do modelo congelado, tanto em ruído
+quanto (como a 1ª tentativa de duração já mostrou) em precursor real. A
+separação limpa TP-vs-FP por duração que existe pro modelo congelado
+(mediana 49,5min vs 2,5min) não se sustenta da mesma forma mês a mês
+quando o modelo muda todo mês.
+
+**Veredito, com 3 tentativas independentes de duração falhando por
+razões relacionadas mas distintas (fixo, adaptativo-expansivo,
+adaptativo-recente): duração e retreino walk-forward mensal não são
+compatíveis nesta arquitetura, não é uma questão de calibração — é
+estrutural.** Não há mais tentativa de duração planejada para esta
+combinação. A recomendação prática do EXP10c/EXP19 permanece:
+
+- **Se for usar walk-forward**: combinação D (walk-forward + veto),
+  sem filtro de duração — 92,50%/0,256%, já promovida a config de
+  produção (EXP19).
+- **Se preferir não mexer na cadência de retreino**: filtro de duração
+  fixo de 6min sozinho, em cima do modelo congelado atual — 90,0%
+  (36/40) / 0,235% FP (−32,7%), a maior redução de FP isolada encontrada
+  em toda a investigação, ao custo de 1 detecção já marginal (ponto
+  único de 30s). Não implementado como feature de pipeline ainda — fica
+  como candidato caso o walk-forward não seja adotado operacionalmente.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/combinado_exp10c_duracao_adaptativa_recente.py
+```
