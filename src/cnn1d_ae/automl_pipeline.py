@@ -173,6 +173,13 @@ def _seed_sweep(
         if state is not None:
             df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
             df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+        # Filtro de duracao ANTES dos portoes de rampa/volatilidade/veto de
+        # congelamento -- mede a persistencia do score BRUTO (pos-mascara
+        # apenas), nao o que sobra depois desses portoes fragmentarem um
+        # episodio longo em pedacos curtos (ver nota identica mais abaixo,
+        # no laco principal de trials).
+        if cfg.ENABLE_MIN_DURATION_FILTER:
+            df_point = apply_min_duration_filter(df_point, cfg.MIN_DURATION_FILTER_MINUTES)
         if load_gate_series is not None:
             df_point = apply_load_gate(
                 df_point, load_gate_series, ramp_max=cfg.LOAD_GATE_RAMP_MAX,
@@ -183,8 +190,6 @@ def _seed_sweep(
             df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
         if frozen_mask is not None:
             df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
-        if cfg.ENABLE_MIN_DURATION_FILTER:
-            df_point = apply_min_duration_filter(df_point, cfg.MIN_DURATION_FILTER_MINUTES)
         eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
         normal_rate = compute_normal_alert_rate(
             df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
@@ -541,6 +546,17 @@ def run_automl_group(
                     if state is not None:
                         df_point["operational_state"] = state.reindex(df_point.index).fillna("on")
                         df_point.loc[df_point["operational_state"] != "on", "is_anom_point"] = 0
+                    # Filtro de duracao ANTES dos portoes de rampa/volatilidade/
+                    # veto de congelamento -- precisa medir a persistencia do
+                    # score BRUTO (so pos-mascara operacional), nao o que sobra
+                    # depois desses portoes fragmentarem um episodio real longo
+                    # em varios pedacos curtos (cada um mais curto que o corte
+                    # de duracao mesmo sem ser ruido). Ordem validada em
+                    # docs/analise_automl_exp10.md, secao "EXP20": aplicar
+                    # depois dos outros portoes derrubava o hit_rate de 90%
+                    # (validado) pra 47,5% (bug de ordem, corrigido aqui).
+                    if cfg.ENABLE_MIN_DURATION_FILTER:
+                        df_point = apply_min_duration_filter(df_point, cfg.MIN_DURATION_FILTER_MINUTES)
                     if load_gate_series is not None:
                         df_point = apply_load_gate(
                             df_point, load_gate_series, ramp_max=cfg.LOAD_GATE_RAMP_MAX,
@@ -551,8 +567,6 @@ def run_automl_group(
                         df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
                     if frozen_mask is not None:
                         df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
-                    if cfg.ENABLE_MIN_DURATION_FILTER:
-                        df_point = apply_min_duration_filter(df_point, cfg.MIN_DURATION_FILTER_MINUTES)
 
                     # Janela de match do hit_rate usa o df_point inteiro (um alarme
                     # OOS perto do corte ainda pode casar com pontos um pouco antes

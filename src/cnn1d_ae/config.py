@@ -335,12 +335,14 @@ class PipelineConfig:
     # is_anom_point mais curtos que MIN_DURATION_FILTER_MINUTES --
     # precursores reais tendem a persistir muito mais tempo que ruido
     # residual (mediana 49,5min vs 2,5min no EXP10c congelado). Aplicado
-    # por ULTIMO no laco de portoes (depois de mascara/rampa/volatilidade/
-    # veto de congelamento), mede a duracao do que sobra apos todos os
-    # outros filtros. Validado contra o modelo CONGELADO: 6min reduz
-    # normal_alert_rate em ~32,7% custando so 1 deteccao ja marginal (um
-    # unico ponto de 30s) de 37 -- ver docs/analise_automl_exp10.md,
-    # secao "Duracao do score: TP vs FP residual".
+    # logo apos a mascara operacional, ANTES dos portoes de rampa/
+    # volatilidade/veto de congelamento -- aplicar depois deles mediria a
+    # duracao de episodios ja fragmentados (derrubou hit_rate de 90% pra
+    # 47,5% num primeiro teste, bug de ordem ja corrigido). Validado
+    # contra o modelo CONGELADO: 6min reduz normal_alert_rate em ~32,7%
+    # custando so 1 deteccao ja marginal (um unico ponto de 30s) de 37 --
+    # ver docs/analise_automl_exp10.md, secao "Duracao do score: TP vs FP
+    # residual".
     #
     # INCOMPATIVEL COM ENABLE_WALKFORWARD_RETRAIN: 3 tentativas
     # independentes (limiar fixo, adaptativo sobre o treino expansivo,

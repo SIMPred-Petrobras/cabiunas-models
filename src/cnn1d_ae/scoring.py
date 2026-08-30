@@ -356,15 +356,19 @@ def apply_frozen_sensor_veto(df_point: pd.DataFrame, frozen_mask: pd.Series) -> 
 
 def apply_min_duration_filter(df_point: pd.DataFrame, min_duration_minutes: float) -> pd.DataFrame:
     """Suprime episodios CONTINUOS de `is_anom_point` mais curtos que
-    `min_duration_minutes` -- aplicado por ultimo no laco de portoes
-    (depois de mascara/rampa/volatilidade/veto de congelamento), mede a
-    duracao do que sobra apos todos os outros filtros. Precursores reais
+    `min_duration_minutes` -- aplicado logo apos a mascara operacional,
+    ANTES dos portoes de rampa/volatilidade/veto de congelamento
+    (automl_pipeline.py). Ordem importa: aplicar depois desses portoes
+    mediria a duracao de episodios ja fragmentados por eles (um
+    precursor real longo pode virar varios pedacos curtos), derrubando
+    hit_rate sem motivo -- ver docs/analise_automl_exp10.md, secao
+    "EXP20" (bug de ordem encontrado e corrigido: hit_rate 47,5% com a
+    ordem errada vs 90% validado com a ordem certa). Precursores reais
     tendem a persistir muito mais tempo que ruido residual (mediana
-    49,5min vs 2,5min no EXP10c congelado) -- ver
-    docs/analise_automl_exp10.md, secao "Duracao do score: TP vs FP
-    residual". So valido contra um modelo UNICO/congelado -- 3 tentativas
-    mostraram que nao sobrevive a ENABLE_WALKFORWARD_RETRAIN (ver secoes
-    seguintes do mesmo doc); `run_automl_group` impede a combinacao."""
+    49,5min vs 2,5min no EXP10c congelado) -- ver secao "Duracao do
+    score: TP vs FP residual". So valido contra um modelo UNICO/
+    congelado -- 3 tentativas mostraram que nao sobrevive a
+    ENABLE_WALKFORWARD_RETRAIN; `run_automl_group` impede a combinacao."""
     flags = df_point["is_anom_point"].values.astype(bool)
     dt_seconds = df_point.index.to_series().diff().dt.total_seconds().median()
     if not np.isfinite(dt_seconds) or dt_seconds <= 0:
