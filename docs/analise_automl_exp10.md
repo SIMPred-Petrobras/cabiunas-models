@@ -704,3 +704,60 @@ com walk-forward.
 ```bash
 PYTHONPATH=. python scripts/combinado_exp10c_com_duracao.py
 ```
+
+## Filtro de duração adaptativo — pior ainda (2026-08-29)
+
+Script: `scripts/combinado_exp10c_duracao_adaptativa.py`. Task ClearML:
+`7ce47c0fc6c44eaabf33632540a6ae78`.
+
+IDEIA (levantada em conversa): em vez de um número fixo de minutos, o
+corte de duração deveria se auto-calibrar a cada retreino — a mesma
+lógica já usada pro limiar de **score**, que nunca é um valor fixo, é o
+percentil 99,9 do erro do próprio treino daquele mês. Aplicando o mesmo
+princípio um nível acima: por definição, ~0,1% dos pontos de treino
+cruzam esse limiar — são os "falsos positivos" intrínsecos aquele
+modelo específico, ocorrendo em dados 100% normais. Hipótese: a duração
+desses episódios de ruído do próprio treino seria a régua natural de
+"ruído de fundo" daquele mês, ajustando-se sozinha quando o retreino
+muda a fronteira de decisão.
+
+**Método:** para cada mês do walk-forward, mede a duração dos episódios
+onde o erro do PRÓPRIO treino cruza o limiar (RLE ciente de buracos no
+índice de tempo — o treino exclui períodos inteiros, então vizinhos na
+tabela podem estar longe no tempo real). Corte adaptativo = percentil 99
+dessa distribuição, aplicado só nos pontos daquele mês.
+
+| | hit_rate | normal_alert_rate |
+|---|---|---|
+| D (walk-forward + veto, sem filtro) | 92,50% (37/40) | 0,256% |
+| Filtro fixo (6min, seção anterior) | 40,00% (16/40) | 0,124% |
+| **Filtro adaptativo (p99 do ruído de treino)** | **15,00% (6/40)** | 0,102% |
+
+**Piorou ainda mais — a hipótese "duração do ruído de treino = régua de
+ruído de fundo" não se sustenta.** Os cortes adaptativos calculados
+(8 a 15min por mês) saíram **maiores** que o filtro fixo de 6min que já
+tinha sido refutado. Causa: o treino cobre uma janela histórica de mais
+de um ano (crescente no walk-forward) — "ruído" nesse conjunto não é
+white noise pontual e independente; existem trechos estruturais de erro
+sistematicamente mais alto (variação sazonal, pequenos desvios não
+capturados pelos 2 sensores de alarme avaliados, etc.) que se
+manifestam como episódios de cruzamento-de-limiar bem mais longos do
+que um "flicker" de ruído puro. O percentil 99 dessa distribuição
+contaminada vira um corte mais agressivo que o fixo, não menos.
+
+**Conclusão — duração não é seguro contra walk-forward de nenhuma forma
+testada até agora.** Nem o valor fixo (calibrado contra o modelo
+congelado) nem a versão auto-calibrada (calibrada contra o próprio
+ruído do treino de cada mês, mas contaminada por estrutura de longo
+prazo) sobrevivem à troca de modelo mensal. Um caminho ainda não testado
+seria restringir a medição de "ruído" a uma janela **recente** (ex:
+últimos 30 dias de treino) em vez do histórico expansivo inteiro, para
+evitar a contaminação por efeitos de escala longa — mas dado que já são
+3 tentativas de duração falhando em cadeia, a recomendação prática
+permanece a mesma: **combinação D (walk-forward + veto, sem nenhum
+filtro de duração), 92,50% hit_rate / 0,256% FP.**
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python scripts/combinado_exp10c_duracao_adaptativa.py
+```
