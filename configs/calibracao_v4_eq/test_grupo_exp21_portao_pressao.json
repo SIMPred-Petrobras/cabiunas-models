@@ -15,7 +15,7 @@
   "LOG_TIME_AUDIT_SAMPLES": 3,
 
   "DATA_START_DATE": "2024-07-01",
-  "DATA_END_DATE": null,
+  "DATA_END_DATE": "2026-04-20",
 
   "OUTPUT_ROOT": "runs_exp21_portao_pressao",
   "OUTPUT_DIR_TEMPLATE": "OUTPUT_CNN1D_AE_{sensor}",
