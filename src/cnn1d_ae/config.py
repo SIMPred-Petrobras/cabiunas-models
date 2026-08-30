@@ -331,6 +331,29 @@ class PipelineConfig:
     ENABLE_WALKFORWARD_RETRAIN: bool = False
     WALKFORWARD_RETRAIN_FREQ: str = "MS"
 
+    # Filtro de duracao minima: suprime episodios continuos de
+    # is_anom_point mais curtos que MIN_DURATION_FILTER_MINUTES --
+    # precursores reais tendem a persistir muito mais tempo que ruido
+    # residual (mediana 49,5min vs 2,5min no EXP10c congelado). Aplicado
+    # por ULTIMO no laco de portoes (depois de mascara/rampa/volatilidade/
+    # veto de congelamento), mede a duracao do que sobra apos todos os
+    # outros filtros. Validado contra o modelo CONGELADO: 6min reduz
+    # normal_alert_rate em ~32,7% custando so 1 deteccao ja marginal (um
+    # unico ponto de 30s) de 37 -- ver docs/analise_automl_exp10.md,
+    # secao "Duracao do score: TP vs FP residual".
+    #
+    # INCOMPATIVEL COM ENABLE_WALKFORWARD_RETRAIN: 3 tentativas
+    # independentes (limiar fixo, adaptativo sobre o treino expansivo,
+    # adaptativo sobre janela recente de 60d) mostraram que duracao
+    # calibrada contra retreino mensal derruba o hit_rate de 92,5% pra
+    # 15-40% -- nao e questao de calibracao, e estrutural (o score de
+    # varios meses tem comportamento de "quase-limiar" mais persistente
+    # que o do modelo congelado, tanto em ruido quanto em precursor
+    # real). `run_automl_group` levanta erro se as duas flags estiverem
+    # ligadas juntas. False (default) = comportamento anterior inalterado.
+    ENABLE_MIN_DURATION_FILTER: bool = False
+    MIN_DURATION_FILTER_MINUTES: float = 6.0
+
     # =========================
     # SUPERVISIONADO (EXP7/EXP8 item 4 -- classificador de alerta precoce,
     # em vez de detector de anomalia nao-supervisionado. Reusa as mesmas

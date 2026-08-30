@@ -32,6 +32,7 @@ from .scoring import (
     apply_volatility_gate,
     compute_frozen_sensor_mask,
     apply_frozen_sensor_veto,
+    apply_min_duration_filter,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -152,7 +153,7 @@ def _seed_sweep(
     state: pd.Series | None, df_alarm_eval: pd.DataFrame, df_point_eval_idx: pd.Index,
     near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
     nu: float | None = None, gamma: Any = None, load_gate_series: pd.Series | None = None,
-    volatility_index: pd.Series | None = None,
+    volatility_index: pd.Series | None = None, frozen_mask: pd.Series | None = None,
 ) -> List[Dict[str, Any]]:
     """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce/nu/gamma
     do melhor trial) com N seeds extras, pra medir o quanto hit_rate/
@@ -180,6 +181,10 @@ def _seed_sweep(
             )
         if volatility_index is not None:
             df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
+        if frozen_mask is not None:
+            df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
+        if cfg.ENABLE_MIN_DURATION_FILTER:
+            df_point = apply_min_duration_filter(df_point, cfg.MIN_DURATION_FILTER_MINUTES)
         eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
         normal_rate = compute_normal_alert_rate(
             df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
@@ -266,6 +271,13 @@ def run_automl_group(
     Diferente do CNN-1D (sequencial), os modelos aqui operam ponto-a-ponto:
     cada instante vira uma amostra de treino, sem janelamento temporal.
     """
+    if cfg.ENABLE_MIN_DURATION_FILTER and cfg.ENABLE_WALKFORWARD_RETRAIN:
+        raise ValueError(
+            "ENABLE_MIN_DURATION_FILTER=true com ENABLE_WALKFORWARD_RETRAIN=true nao e suportado -- "
+            "3 tentativas independentes (docs/analise_automl_exp10.md) mostraram que filtro de duracao "
+            "nao sobrevive a retreino mensal (derruba hit_rate de 92,5% pra 15-40%). Use um ou outro."
+        )
+
     group_name = group["name"]
     sensors = list(group["sensors"])
     target_sensor = group.get("target_sensor")
@@ -539,6 +551,8 @@ def run_automl_group(
                         df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
                     if frozen_mask is not None:
                         df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
+                    if cfg.ENABLE_MIN_DURATION_FILTER:
+                        df_point = apply_min_duration_filter(df_point, cfg.MIN_DURATION_FILTER_MINUTES)
 
                     # Janela de match do hit_rate usa o df_point inteiro (um alarme
                     # OOS perto do corte ainda pode casar com pontos um pouco antes
@@ -588,7 +602,8 @@ def run_automl_group(
     # variancia de semente do walk-forward exigiria re-rodar todos os
     # periodos por semente (nao implementado, custo N vezes maior).
     if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED and not best_trial.get("walkforward"):
-        seed_sweep_kwargs = {"load_gate_series": load_gate_series, "volatility_index": volatility_index}
+        seed_sweep_kwargs = {"load_gate_series": load_gate_series, "volatility_index": volatility_index,
+                             "frozen_mask": frozen_mask}
         if best_model_type == "ocsvm":
             seed_sweep_kwargs["nu"] = best_trial.get("nu")
             seed_sweep_kwargs["gamma"] = best_trial.get("gamma")

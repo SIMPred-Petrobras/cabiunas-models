@@ -879,3 +879,47 @@ combinação. A recomendação prática do EXP10c/EXP19 permanece:
 ```bash
 PYTHONPATH=. python scripts/combinado_exp10c_duracao_adaptativa_recente.py
 ```
+
+## EXP20: opção B (filtro de duração fixo, sem walk-forward) como config (2026-08-30)
+
+Promovido a feature de pipeline igual ao EXP19, mantendo o EXP19
+intocado — as duas opções (A: walk-forward+veto; B: filtro de duração
+sozinho) coexistem como configs separadas, para comparação lado a lado.
+
+- `ENABLE_MIN_DURATION_FILTER` / `MIN_DURATION_FILTER_MINUTES` (default
+  `False`/`6.0`) — `scoring.py:apply_min_duration_filter`, aplicado por
+  **último** no laço de portões (depois de máscara/rampa/volatilidade/
+  veto de congelamento) — mede a duração do que sobra após todos os
+  outros filtros.
+- Guarda de segurança: `run_automl_group` levanta `ValueError` se
+  `ENABLE_MIN_DURATION_FILTER` e `ENABLE_WALKFORWARD_RETRAIN` estiverem
+  ligados juntos — as 3 tentativas de compor os dois (seções acima)
+  derrubaram o hit_rate pra 15-40%; a combinação nunca deveria ser
+  usada em produção.
+- Correção incidental: `_seed_sweep` (variância de semente) não estava
+  aplicando `frozen_mask` nem (agora) o filtro de duração — corrigido
+  para as duas camadas, garantindo que o seed-sweep meça exatamente o
+  mesmo pipeline do trial vencedor. Não afeta nenhum config existente
+  (`ENABLE_FROZEN_SENSOR_VETO`/`ENABLE_MIN_DURATION_FILTER` são `False`
+  por padrão em todos os configs anteriores ao EXP19).
+
+**Config:** `configs/calibracao_v4_eq/test_grupo_exp20_filtro_duracao.json`
+— idêntica ao EXP10c, exceto `ENABLE_MIN_DURATION_FILTER: true`,
+`MIN_DURATION_FILTER_MINUTES: 6.0`. Sem walk-forward, sem veto, sem
+trocar limiares de portão — só o filtro de duração em cima da
+referência.
+
+**Dado disponível:** verificado nos 13 datasets do ClearML (incluindo
+`Cabiunas consolidado 2022-2026`, criado em 18/08/2026) — nenhum tem
+dado além de **2026-04-30**. Não foi possível estender a série temporal
+para este treino; usa o mesmo range de sempre.
+
+**Resultado esperado (já validado via script ad-hoc):** 90,0% hit_rate
+(36/40) / 0,235% normal_alert_rate (−32,7% vs. referência) — a maior
+redução de FP isolada de toda a investigação, ao custo de 1 detecção já
+marginal (ponto único de 30s).
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp20_filtro_duracao.json
+```

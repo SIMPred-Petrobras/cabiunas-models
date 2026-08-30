@@ -354,6 +354,39 @@ def apply_frozen_sensor_veto(df_point: pd.DataFrame, frozen_mask: pd.Series) -> 
     return df_point
 
 
+def apply_min_duration_filter(df_point: pd.DataFrame, min_duration_minutes: float) -> pd.DataFrame:
+    """Suprime episodios CONTINUOS de `is_anom_point` mais curtos que
+    `min_duration_minutes` -- aplicado por ultimo no laco de portoes
+    (depois de mascara/rampa/volatilidade/veto de congelamento), mede a
+    duracao do que sobra apos todos os outros filtros. Precursores reais
+    tendem a persistir muito mais tempo que ruido residual (mediana
+    49,5min vs 2,5min no EXP10c congelado) -- ver
+    docs/analise_automl_exp10.md, secao "Duracao do score: TP vs FP
+    residual". So valido contra um modelo UNICO/congelado -- 3 tentativas
+    mostraram que nao sobrevive a ENABLE_WALKFORWARD_RETRAIN (ver secoes
+    seguintes do mesmo doc); `run_automl_group` impede a combinacao."""
+    flags = df_point["is_anom_point"].values.astype(bool)
+    dt_seconds = df_point.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    min_samples = max(1, int(round((float(min_duration_minutes) * 60.0) / dt_seconds)))
+
+    m = flags.astype(np.int8)
+    d = np.diff(np.concatenate(([0], m, [0])))
+    starts = np.where(d == 1)[0]
+    ends = np.where(d == -1)[0]
+
+    filtered = flags.copy()
+    for s, e in zip(starts, ends):
+        if (e - s) < min_samples:
+            filtered[s:e] = False
+
+    df_point = df_point.copy()
+    df_point["duration_filter_blocked"] = flags & ~filtered
+    df_point["is_anom_point"] = filtered.astype(int)
+    return df_point
+
+
 def mask_anomaly_seq_by_operational_state(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,
