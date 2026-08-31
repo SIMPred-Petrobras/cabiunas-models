@@ -1144,6 +1144,27 @@ vibração, independentes do alvo, e não teve esse problema). **Não
 promovido para nenhuma config de referência** — fica registrado como
 experimento negativo instrutivo, não como recomendação de produção.
 
+## EXP24: só o portão "seguro" (duração + volatilidade), sem rampa/mudança de nível (2026-08-31)
+
+Depois do EXP23 identificar a causa raiz (rampa/mudança de nível
+apontados pro próprio sensor-alvo suprimem o próprio TRIP), tenta
+reter só os dois mecanismos que **não** dependem de um sensor de
+referência independente:
+- `ENABLE_MIN_DURATION_FILTER=true` (4,5min) — opera sobre a
+  persistência do score bruto, não sobre nenhum sensor específico.
+- `ENABLE_VOLATILITY_GATE=true`, mesmos 10 canais de vibração e mesmo
+  limiar 0,39 do EXP22 — aqui a herança é mais defensável que no
+  EXP23: são os MESMOS sensores físicos (`TV_35[1-5][X/Y]_A`), não o
+  sensor-alvo, então o portão está de fato olhando pra algo
+  independente do que está sendo avaliado (`PALL_6240309`/pressão de
+  óleo).
+- `ENABLE_LOAD_GATE=false`, `ENABLE_STEP_CHANGE_GATE=false` — ambos
+  desligados, já que não existe no grupo um proxy de carga
+  genuinamente independente do alvo (ver causa raiz do EXP23).
+
+**Config**: `configs/calibracao_v4_eq/test_grupo_exp24_trip_portao_seguro.json`.
+**Status: rodando** — resultado ainda não coletado nesta seção.
+
 ## Reframe operacional: alertas por mês, não pontos de 30s (2026-08-31)
 
 Pedido do setor operacional: "não quero o sistema alarmando a toda
