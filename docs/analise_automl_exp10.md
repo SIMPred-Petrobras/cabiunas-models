@@ -1092,9 +1092,57 @@ ao 36/40 do grupo TC382. Resultado deve ser lido com essa ressalva.
 - `EXTRA_NEAR_ALARM_TAGS=null` — **não** copiado do EXP21 (aqueles 3 tags de pressão de gás combustível são de outro subsistema físico, sem base para transferir); se o resultado justificar, fazer o mesmo tipo de cruzamento com o catálogo completo específico para este alvo antes de adicionar
 - `AUTOML_THRESHOLD_PERCENTILES` ampliado para `[99.0, 99.5, 99.9]` (EXP16c só testou 99,5) — única variável nova além dos portões, pra dar mais chance ao AutoML
 
-**Status: rodando** — task submetida via `src/main.py --config
-configs/calibracao_v4_eq/test_grupo_exp23_trip_oleo_lub_gates.json`.
-Resultado ainda não coletado nesta seção.
+**Task:** `3982f8a399854d5982801b32f1e5a7a6`.
+
+**Resultado: trade-off real, não é vitória limpa.**
+
+| | EXP16c (baseline, sem portões) | EXP23 (pilha EXP20-22) |
+|---|---|---|
+| hit_rate (OOS, 2 alarmes `PALL_6240309`) | **100% (2/2)** | **50% (1/2)** |
+| `normal_alert_rate` | 7,60% | 0,66%-0,88% (3 percentis testados) |
+
+Os portões cortaram o FP em ~90%, mas custaram **1 dos 2 alarmes** do
+período OOS — proporcionalmente um custo enorme (a amostra de 2 é tão
+pequena que perder 1 já é 50pp de hit_rate).
+
+**Causa raiz identificada** (inspeção de `point_anomalies_all.csv`,
+colunas `*_blocked`, nos dois alarmes OOS): o alarme perdido
+(`2025-11-04 06:22:18`) tem `is_anom_point=0` na janela ±24h inteira,
+com `step_change_gate_blocked` verdadeiro em **4.156 dos 5.760 pontos
+da janela (72%)** e `volatility_gate_blocked` em 379. O alarme mantido
+(`2026-02-26`, 70 pontos ainda detectados) tem uma condição de portão
+ainda mais extrema (`step_change_gate_blocked` em 88% da janela) e
+mesmo assim sobrevive por pouco.
+
+**O erro de configuração**: `STEP_CHANGE_GATE_SENSOR` e
+`LOAD_GATE_SENSOR` foram apontados para `954005_624_PI_0308` — que é o
+**próprio sensor-alvo/saúde** do grupo, não um proxy de carga
+independente como `T5_AVG_A` era pro grupo TC382. Um TRIP real de
+óleo lub. **é, por definição, um degrau/mudança abrupta nesse mesmo
+sensor** — então o portão de mudança de nível, ao monitorar o próprio
+alvo, acaba classificando o evento de falha real como "manobra
+operacional" e suprimindo a detecção. No grupo TC382 isso não
+acontecia porque o sensor de referência (`T5_AVG_A`, carga) é
+fisicamente independente do sensor de saúde (`TC382_03_A`,
+temperatura) — a premissa por trás do portão (distinguir "mudou o
+regime operacional" de "o equipamento está degradando") só vale
+quando as duas coisas são sensores diferentes. `LOAD_GATE_SENSOR`
+mesmo erro conceitual, mas ficou inofensivo aqui só por sorte de
+escala (`LOAD_GATE_RAMP_MAX=100`, copiado do EXP22, nunca foi
+ultrapassado pela taxa de variação da pressão de óleo — `load_gate_blocked=0`
+nas duas janelas).
+
+**Conclusão prática:** não dá pra copiar os portões de rampa/mudança
+de nível cegamente entre grupos — eles exigem um sensor de referência
+**operacionalmente relevante mas fisicamente independente** do
+alvo/saúde monitorado. Para este grupo, precisaria de um proxy de
+carga de verdade (não catalogado neste grupo — talvez a rotação da
+máquina ou outra tag de processo fora dos 12 sensores atuais) ou
+desligar `ENABLE_LOAD_GATE`/`ENABLE_STEP_CHANGE_GATE` e manter só o
+filtro de duração + portão de volatilidade (que usa os 10 canais de
+vibração, independentes do alvo, e não teve esse problema). **Não
+promovido para nenhuma config de referência** — fica registrado como
+experimento negativo instrutivo, não como recomendação de produção.
 
 ## Reframe operacional: alertas por mês, não pontos de 30s (2026-08-31)
 
