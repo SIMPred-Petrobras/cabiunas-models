@@ -945,3 +945,81 @@ mesmo framework agora). Todas reaproveitam os fitters/avaliação
 (`automl_models.py`, `scoring.py`, `preprocess.py`) do projeto, exceto
 o v6 (usa `sklearn.decomposition.PCA` direto pro PCA-Q, fora do
 `automl_models.py`, pra reproduzir a arquitetura exata do Francisco).
+
+## Lista padronizada de 8 eventos do Francisco (2026-08-31) — cross-check contra nossos modelos
+
+Francisco enviou uma lista "padronizada correta" de paradas reais
+(início na grade de 2min), reportando 3 variantes do sistema dele
+(4 sinais + votação) que **antecipam as mesmas 5 falhas** (as 5 de
+causa `mancal`), diferindo só no FP: **2,0 / 8,7 / 10,2 horas de
+alarme falso por mês** (não FP/mês em contagem de eventos como nas
+seções v6-v13 acima — métrica nova, em HORAS).
+
+**Achado de fuso importante**: Francisco avisa que os horários dele
+estão em UTC−3. Conferimos e os 2 eventos de `oleo_lub` batem
+**exatamente** (minuto a minuto) com os timestamps já usados nos
+nossos catálogos (`alarmes_selecionados_turbina_a.csv`,
+`sensores_full_2024_2026_30s.csv`) **sem nenhum deslocamento** — ou
+seja, apesar do rótulo "UTC" nas nossas configs
+(`SOURCE_TZ=UTC`/`APPLY_HOUR_SHIFT=false`), nossos timestamps já
+carregam o mesmo relógio de parede UTC−3 que o Francisco usa. Não é
+um bug que afete cálculos internos (alarme e sensor estão no mesmo
+referencial, então hit/miss e antecedência continuam corretos) — só
+significa que o rótulo "UTC" nas configs é, na prática, hora local
+(São Paulo). Usamos os horários do Francisco literalmente (sem somar
+3h) contra nossos CSVs.
+
+**Lista** (`data/hora local`, duração da parada, causa):
+
+| # | início (local) | duração | causa |
+|---|---|---|---|
+| 1 | 27/02/2025 08:38 | 4,4h | selagem |
+| 2 | 17/03/2025 18:16 (+ queda 18/03 11:16, mesmo evento) | 6,2h | mancal |
+| 3 | 07/04/2025 21:18 | 18,3h | mancal |
+| 4 | 11/04/2025 17:04 | 41,4h | mancal |
+| 5 | 29/04/2025 03:04 | 564,2h | mancal |
+| 6 | 04/11/2025 06:22 | 144,1h | óleo lub. |
+| 7 | 09/12/2025 08:36 | 7,8h | mancal |
+| 8 | 26/02/2026 15:34 | 5,7h | óleo lub. |
+
+**Cross-check contra nossos modelos já validados** (bearing = EXP22
+`TC382_T5_vibracao_mancais_multiescala`; óleo = EXP24
+`trip_oleo_lub_pdit0305_portao_seguro`; janela de busca = até 5 dias
+antes do início da parada):
+
+| # | causa | modelo usado | resultado | antecedência |
+|---|---|---|---|---|
+| 1 | selagem | bearing | HIT (provável coincidência — grupo não tem sensor de selagem) | 105,0h |
+| 2 | mancal | bearing | HIT | 9,5h (contra a 2ª queda, 18/03 11:16) |
+| 3 | mancal | bearing | HIT | 108,9h |
+| 4 | mancal | bearing | HIT | 102,9h |
+| 5 | mancal | bearing | HIT | 69,6h |
+| 6 | óleo lub. | óleo (EXP24) | **HIT (OOS)** | 13,4h |
+| 7 | mancal | bearing | **HIT (OOS)** | 5,7h |
+| 8 | óleo lub. | óleo (EXP24) | **HIT (OOS)** | 51,3h |
+
+**Ressalva essencial**: eventos 1-5 (fev-abr/2025) caem **antes** do
+corte OOS dos nossos modelos (`AUTOML_OOS_SPLIT_DATE=2025-07-01`) —
+ou seja, esse período foi usado pra AJUSTAR o modelo (percentil de
+threshold calibrado nele), não é teste genuíno de generalização como
+os 36/40 e 2/2 que já validamos. Só os eventos **6, 7 e 8** são
+verificação OOS de verdade, e os 3 batem. O evento 1 (selagem) quase
+certamente é falso-positivo-coincidente, não detecção real do
+fenômeno de selagem (nosso grupo não inclui nenhum sensor desse
+subsistema).
+
+**Comparação de FP em horas/mês (rascunho, cautela metodológica)**:
+convertendo o `normal_alert_rate` do EXP22 (0,047%, domínio on+OOS,
+~9,8 meses, ~596h "on" por mês em média) dá **~0,28h/mês** de alarme
+falso — abaixo mesmo do melhor ponto do Francisco (2,0h/mês). **Não é
+uma comparação apples-to-apples ainda**: nossa contagem de "FP" exclui
+qualquer coisa perto dos 2 tags oficiais + pressão (portão do EXP21),
+enquanto a definição de "alarme falso" do Francisco provavelmente usa
+o critério dele de ground-truth curado (que pode ser mais ou menos
+rígido). Não declarar vitória sem antes alinhar a definição exata de
+"hora de alarme falso" nos dois lados.
+
+**Próximo passo, se o usuário quiser aprofundar**: alinhar com o
+Francisco a definição exata de "hora de alarme falso" (conta cada
+episódio? soma duração de episódios? desconta janela de quê?) antes
+de comparar os números diretamente.
