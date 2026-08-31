@@ -1082,3 +1082,62 @@ Config: `configs/calibracao_v4_eq/test_grupo_exp21_portao_pressao.json`
 ```bash
 PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp21_portao_pressao.json
 ```
+
+## Investigando os 455 restantes: buraco de dado real no fim do dataset (2026-08-30)
+
+Aprofundando a investigação dos 455 pontos genuinamente isolados (nem
+os 47 tags do catálogo explicam, seção anterior), agrupados em 32
+episódios: 2 desses episódios (start em 2026-04-21 04:35 e 2026-04-22
+00:10, 41+92=133 pontos) deram z-score de pressão **zero/NaN** — não
+porque a pressão estava normal, mas porque **os dados de pressão (e de
+todos os outros sensores, incluindo o próprio `TC382_03_A`) simplesmente
+não existem** nesse período.
+
+**Achado: buraco de dado real e permanente no fim do dataset.**
+`TC382_03_A` para de ter leitura em **2026-04-21 00:50:00** e nunca mais
+volta até o fim do arquivo (2026-04-30 23:59:30) — 71 horas (quase 9,5
+dias) de `NaN` cru. O pipeline interpola só até `INTERPOLATE_LIMIT=3`
+amostras (90s); além disso, `ffill().bfill()` arrasta o último valor
+válido indefinidamente — esse platô artificial de ~9,5 dias é pontuado
+pelo modelo como dado real, e sua textura anormalmente "morta" (sem o
+ruído natural que sempre existe em operação) dispara o limiar de
+anomalia.
+
+**Impacto quantificado:** 159 dos 455 pontos genuinamente isolados
+(34,9%) caem dentro desse buraco — incluindo 3 dos episódios mais
+longos já identificados na análise de duração (13min, 20,5min e 46min
+em 21-22/04/2026, que antes pareciam "cauda genuína" sem explicação).
+**Nenhum dos 40 alarmes avaliados ocorre depois de 16/04/2026** — cortar
+esse período não afeta `hit_rate` em nada.
+
+**Correção:** `DATA_END_DATE: "2026-04-20"` no config do EXP21 (era
+`null`, usava o arquivo inteiro).
+
+**Resultado confirmado via `src/main.py`** (task
+`e271fa9258c24495b5d9ea2075e079b3`):
+
+| | hit_rate | `normal_alert_rate` |
+|---|---|---|
+| EXP21 (portão de pressão, sem cortar) | 90,0% (36/40) | 0,132% |
+| **EXP21 + `DATA_END_DATE` corrigido** | **90,0% (36/40)** | **0,103% (−21,9%)** |
+
+**Resumo acumulado da investigação inteira** (mesma detecção, 90%/36-40,
+desde o EXP20):
+
+| etapa | `normal_alert_rate` | redução acumulada vs. EXP10c |
+|---|---|---|
+| EXP10c (referência original) | 0,348% | — |
+| EXP20 (filtro de duração 4,5min) | 0,247% | 29,1% |
+| EXP21 (+ portão de pressão ±8h) | 0,132% | 62,1% |
+| **EXP21 (+ corte do buraco de dados)** | **0,103%** | **70,4%** |
+
+**Lição de processo:** vale sempre checar se um resíduo "sem explicação
+física" não é, na verdade, um problema de qualidade do dado antes de
+aceitar como limite estrutural do modelo — os episódios de duração mais
+longa e mais "suspeitos" da primeira análise (seção "Duração do score")
+eram exatamente esses.
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp21_portao_pressao.json
+```
