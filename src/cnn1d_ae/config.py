@@ -380,6 +380,28 @@ class PipelineConfig:
     EXTRA_NEAR_ALARM_TAGS: Optional[List[str]] = None
     EXTRA_NEAR_ALARM_WINDOW_MINUTES: float = 120.0
 
+    # Portao de MUDANCA DE NIVEL (step-change): complementa o portao de
+    # rampa (que reage a TAXA de variacao suavizada por EWMA) -- pensado
+    # pra pegar degraus de carga quase instantaneos (temperatura E
+    # vibracao mudando de patamar juntas em poucos minutos), rapido
+    # demais pro portao de rampa reagir (a suavizacao de 15min dilui a
+    # taxa percebida bem na hora da transicao). Indice = |media curta -
+    # media longa| / (desvio longo + eps) do mesmo proxy de carga
+    # (LOAD_GATE_SENSOR) -- mesma matematica do "localz" ja usado como
+    # FEATURE do modelo em _build_changepoint_features (preprocess.py),
+    # aqui aplicado como PORTAO (suprime deteccao, nao alimenta o
+    # modelo). Suprime is_anom_point quando o indice ultrapassa
+    # STEP_CHANGE_THRESHOLD. Validado no EXP22: threshold=1.5 (janelas
+    # 5min/60min) reduz normal_alert_rate em ~54,5% sem custar nenhuma
+    # das 36 deteccoes do EXP21 -- ver docs/analise_automl_exp10.md,
+    # secao "Portao de mudanca de nivel (EXP22)". False (default) =
+    # comportamento anterior inalterado.
+    ENABLE_STEP_CHANGE_GATE: bool = False
+    STEP_CHANGE_GATE_SENSOR: Optional[str] = None  # None = usa LOAD_GATE_SENSOR
+    STEP_CHANGE_SHORT_WINDOW_MINUTES: float = 5.0
+    STEP_CHANGE_LONG_WINDOW_MINUTES: float = 60.0
+    STEP_CHANGE_THRESHOLD: float = 1.5
+
     # =========================
     # SUPERVISIONADO (EXP7/EXP8 item 4 -- classificador de alerta precoce,
     # em vez de detector de anomalia nao-supervisionado. Reusa as mesmas

@@ -33,6 +33,8 @@ from .scoring import (
     compute_frozen_sensor_mask,
     apply_frozen_sensor_veto,
     apply_min_duration_filter,
+    compute_step_change_index,
+    apply_step_change_gate,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -154,6 +156,7 @@ def _seed_sweep(
     near_alarm_mask: pd.Series, pct: float, debounce: int, n_seeds: int,
     nu: float | None = None, gamma: Any = None, load_gate_series: pd.Series | None = None,
     volatility_index: pd.Series | None = None, frozen_mask: pd.Series | None = None,
+    step_change_index: pd.Series | None = None,
 ) -> List[Dict[str, Any]]:
     """Re-treina o mesmo modelo (mesmo threshold_percentile/debounce/nu/gamma
     do melhor trial) com N seeds extras, pra medir o quanto hit_rate/
@@ -190,6 +193,8 @@ def _seed_sweep(
             df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
         if frozen_mask is not None:
             df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
+        if step_change_index is not None:
+            df_point = apply_step_change_gate(df_point, step_change_index, cfg.STEP_CHANGE_THRESHOLD)
         eval_stats = eval_alarm_hit_rate(df_alarm_eval, df_point, cfg.EXCLUDE_MINUTES_AROUND_ALARM)
         normal_rate = compute_normal_alert_rate(
             df_point.loc[df_point_eval_idx], near_alarm_mask.loc[df_point_eval_idx]
@@ -393,6 +398,24 @@ def run_automl_group(
     if cfg.ENABLE_FROZEN_SENSOR_VETO:
         frozen_mask = compute_frozen_sensor_mask(raw_sensor_values, cfg.FROZEN_SENSOR_VETO_WINDOW_MINUTES)
 
+    # Portao de mudanca de nivel (step-change): complementa o portao de
+    # rampa (taxa suavizada) para pegar degraus de carga quase
+    # instantaneos. Ver docs/analise_automl_exp10.md, secao "Portao de
+    # mudanca de nivel (EXP22)".
+    step_change_index = None
+    if cfg.ENABLE_STEP_CHANGE_GATE:
+        step_sensor = cfg.STEP_CHANGE_GATE_SENSOR or cfg.LOAD_GATE_SENSOR
+        if not step_sensor:
+            raise ValueError("ENABLE_STEP_CHANGE_GATE=true exige STEP_CHANGE_GATE_SENSOR ou LOAD_GATE_SENSOR definido.")
+        if step_sensor not in sensors:
+            df_step, _ = build_sensor_dataframe(cfg, df_feat, df_raw, step_sensor)
+            step_series = df_step[step_sensor]
+        else:
+            step_series = df_use[step_sensor]
+        step_change_index = compute_step_change_index(
+            step_series, cfg.STEP_CHANGE_SHORT_WINDOW_MINUTES, cfg.STEP_CHANGE_LONG_WINDOW_MINUTES
+        )
+
     if "Tag" in df_alarm.columns:
         df_alarm_group = df_alarm.loc[df_alarm["Tag"].isin(eval_sensors)].copy()
     else:
@@ -576,6 +599,8 @@ def run_automl_group(
                         df_point = apply_volatility_gate(df_point, volatility_index, cfg.VOLATILITY_GATE_THRESHOLD)
                     if frozen_mask is not None:
                         df_point = apply_frozen_sensor_veto(df_point, frozen_mask)
+                    if step_change_index is not None:
+                        df_point = apply_step_change_gate(df_point, step_change_index, cfg.STEP_CHANGE_THRESHOLD)
 
                     # Janela de match do hit_rate usa o df_point inteiro (um alarme
                     # OOS perto do corte ainda pode casar com pontos um pouco antes
@@ -626,7 +651,7 @@ def run_automl_group(
     # periodos por semente (nao implementado, custo N vezes maior).
     if cfg.AUTOML_SEED_SWEEP_N and best_model_type in _SEED_SWEEP_SUPPORTED and not best_trial.get("walkforward"):
         seed_sweep_kwargs = {"load_gate_series": load_gate_series, "volatility_index": volatility_index,
-                             "frozen_mask": frozen_mask}
+                             "frozen_mask": frozen_mask, "step_change_index": step_change_index}
         if best_model_type == "ocsvm":
             seed_sweep_kwargs["nu"] = best_trial.get("nu")
             seed_sweep_kwargs["gamma"] = best_trial.get("gamma")

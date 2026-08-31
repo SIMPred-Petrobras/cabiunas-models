@@ -391,6 +391,43 @@ def apply_min_duration_filter(df_point: pd.DataFrame, min_duration_minutes: floa
     return df_point
 
 
+def compute_step_change_index(load_series: pd.Series, short_window_minutes: float, long_window_minutes: float) -> pd.Series:
+    """Indice de mudanca de NIVEL (degrau), causal: |media movel curta -
+    media movel longa| / (desvio-padrao movel longo + eps) -- mesma
+    matematica do "localz" usado como feature em
+    preprocess.py:_build_changepoint_features, aqui aplicado como
+    indice de portao (nao alimenta o modelo). Complementa
+    `compute_load_ramp_gate` (que reage a TAXA de variacao suavizada,
+    nao ao nivel em si) -- pensado pra degraus quase instantaneos que a
+    suavizacao por EWMA do portao de rampa dilui. Ver
+    docs/analise_automl_exp10.md, secao "Portao de mudanca de nivel
+    (EXP22)"."""
+    s = pd.to_numeric(load_series, errors="coerce")
+    dt_seconds = s.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    sw = max(2, int(round((float(short_window_minutes) * 60.0) / dt_seconds)))
+    lw = max(sw + 1, int(round((float(long_window_minutes) * 60.0) / dt_seconds)))
+
+    short_mean = s.rolling(sw, min_periods=1).mean()
+    long_mean = s.rolling(lw, min_periods=1).mean()
+    long_std = s.rolling(lw, min_periods=1).std().fillna(0.0)
+    return ((short_mean - long_mean).abs() / (long_std + 1e-6)).fillna(0.0)
+
+
+def apply_step_change_gate(df_point: pd.DataFrame, step_index: pd.Series, threshold: float) -> pd.DataFrame:
+    """Suprime is_anom_point quando `compute_step_change_index` ultrapassa
+    `threshold` -- causal por construcao (a serie de entrada ja e uma
+    janela trailing)."""
+    idx_at_point = step_index.reindex(df_point.index, method="ffill")
+    blocked = (idx_at_point > float(threshold)).fillna(False)
+
+    df_point = df_point.copy()
+    df_point["step_change_gate_blocked"] = blocked.values
+    df_point.loc[blocked.values, "is_anom_point"] = 0
+    return df_point
+
+
 def mask_anomaly_seq_by_operational_state(
     anomaly_seq: np.ndarray,
     index: pd.DatetimeIndex,
