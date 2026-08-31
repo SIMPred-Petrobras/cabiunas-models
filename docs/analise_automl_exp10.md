@@ -1141,3 +1141,75 @@ eram exatamente esses.
 ```bash
 PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp21_portao_pressao.json
 ```
+
+## EXP22: portão de mudança de nível — degraus de carga (2026-08-30)
+
+Investigando os 455 pontos genuinamente isolados do EXP21 mais a fundo:
+plotando o contexto bruto (temperatura, vibração, pressão ±3h) dos 5
+episódios com menor z-score de pressão, 3 de 5 mostram um **degrau real
+de operação** — temperatura E vibração mudando de patamar juntas, em
+minutos, exatamente na hora do ponto marcado (2025-12-16 01:31,
+2025-08-27 07:39, 2025-08-27 01:51). Não é ruído — é manobra de carga
+real que o portão de rampa atual não pega, porque reage à **taxa**
+suavizada por EWMA (meia-vida 15min); um degrau quase instantâneo tem
+sua taxa percebida diluída por essa suavização.
+
+**Achado secundário (ressalva):** no mesmo exame, `PI_6240319_AL` (o tag
+de pressão que mais "recuperou" FP no EXP21) mostra em alguns períodos
+um padrão de onda quadrada errático entre 0 e 45 — sinal de
+*chattering* de instrumento (sensor ruidoso perto do limiar,
+disparando/desarmando repetidamente), não evento físico puro. Não
+invalida o portão de pressão (a correlação com vibração/temperatura
+continua real nos casos examinados), mas é uma limitação de dado
+conhecida a registrar.
+
+**Implementação:** `ENABLE_STEP_CHANGE_GATE` / `STEP_CHANGE_GATE_SENSOR`/
+`_SHORT_WINDOW_MINUTES`/`_LONG_WINDOW_MINUTES`/`_THRESHOLD` (`config.py`)
+— `scoring.py` ganha `compute_step_change_index`/`apply_step_change_gate`:
+índice = `|média curta − média longa| / (desvio longo + eps)` do proxy
+de carga (`T5_AVG_A`) — mesma matemática do `localz` já usado como
+**feature** do modelo em `_build_changepoint_features`
+(`preprocess.py`), aqui aplicado como **portão** (suprime detecção, não
+alimenta o modelo). Mesma camada dos outros portões — ordem
+independente entre eles.
+
+**Calibração (grade literal, script
+`relatorio_exp21_portao_pressao/grade_step_change_gate.py`)** —
+reconstrói a série de verdade a cada limiar candidato, em cima do
+`point_anomalies_all.csv` já calculado do EXP21 (janelas 5min/60min
+fixas, só o limiar varrido):
+
+| limiar | hit_rate | `normal_alert_rate` |
+|---|---|---|
+| 1,0 | 82,5% (perde 3) | 0,0349% |
+| **1,5 (escolhido, custo zero)** | **90,0% (36/40)** | **0,0469%** |
+| 2,0–3,5 | 90,0% | 0,065%–0,103% |
+| ≥4,0 | 90,0% (sem efeito) | 0,1031% |
+
+**Sanity check** (sem o portão novo) bateu exatamente com o EXP21 atual:
+90,0%/0,1031%.
+
+**Resultado confirmado via `src/main.py`** (task
+`d252e94b51b3407186e68908a8a1c26c`, `automl_ranking.csv`):
+`hit_rate=0,90` (36/40), `normal_alert_rate=0,000469` (0,0469%) — bate
+exatamente com a grade.
+
+**Resumo acumulado da investigação inteira** (mesma detecção, 90%/36-40,
+desde o EXP20):
+
+| etapa | `normal_alert_rate` | redução acumulada vs. EXP10c |
+|---|---|---|
+| EXP10c (referência original) | 0,348% | — |
+| EXP20 (filtro de duração 4,5min) | 0,247% | 29,1% |
+| EXP21 (+ portão de pressão ±8h) | 0,132% | 62,1% |
+| EXP21 (+ corte do buraco de dados) | 0,103% | 70,4% |
+| **EXP22 (+ portão de mudança de nível)** | **0,047%** | **86,5%** |
+
+Config: `configs/calibracao_v4_eq/test_grupo_exp22_portao_mudanca_nivel.json`
+— idêntico ao EXP21 + o portão novo ligado. Suíte de testes passa
+inalterada (15/15).
+
+**Reprodução:**
+```bash
+PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp22_portao_mudanca_nivel.json
+```
