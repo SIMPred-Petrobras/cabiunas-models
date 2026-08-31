@@ -1163,7 +1163,34 @@ referência independente:
   genuinamente independente do alvo (ver causa raiz do EXP23).
 
 **Config**: `configs/calibracao_v4_eq/test_grupo_exp24_trip_portao_seguro.json`.
-**Status: rodando** — resultado ainda não coletado nesta seção.
+**Task**: `183de43939e4401b965d55bec734ec55`.
+
+**Resultado: hipótese confirmada.**
+
+| | EXP16c (baseline) | EXP23 (todos os portões) | **EXP24 (só duração+volatilidade)** |
+|---|---|---|---|
+| hit_rate (2 alarmes OOS) | 100% (2/2) | 50% (1/2) | **100% (2/2)** |
+| `normal_alert_rate` | 7,60% | 0,66%-0,88% | **5,74%-8,25%** (3 percentis) |
+
+No melhor ponto (percentil 99,9): `hit_rate=100%`, `normal_alert_rate=5,74%` —
+**redução de 24,5% no FP sem perder nenhum dos 2 alarmes**. Bem mais
+modesto que os 86,5% conseguidos no grupo TC382, mas confirma a causa
+raiz do EXP23: retirando os portões que dependiam do próprio
+sensor-alvo como referência (rampa, mudança de nível) e mantendo só os
+que usam sensores fisicamente independentes (filtro de duração sobre o
+score bruto + portão de volatilidade nos 10 canais de vibração), o
+modelo volta a capturar os TRIPs.
+
+**Nota**: essa rodada sofreu uma queda de conectividade Tailscale do
+lado do orquestrador (~1h40 sem acesso ao worker `cica`) entre o
+disparo da task e a coleta do resultado — a task em si rodou
+normalmente no worker o tempo todo, só a checagem de status ficou
+bloqueada localmente.
+
+**Próximo passo, se fizer sentido**: recalibrar `VOLATILITY_GATE_THRESHOLD`
+especificamente para este grupo (0,39 foi herdado do EXP22 sem
+validação própria) — pode haver mais FP pra cortar sem custo, já que
+o ganho aqui (24,5%) é bem menor que o do TC382.
 
 ## Reframe operacional: alertas por mês, não pontos de 30s (2026-08-31)
 
