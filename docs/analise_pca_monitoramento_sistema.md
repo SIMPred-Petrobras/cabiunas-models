@@ -1023,3 +1023,31 @@ rígido). Não declarar vitória sem antes alinhar a definição exata de
 Francisco a definição exata de "hora de alarme falso" (conta cada
 episódio? soma duração de episódios? desconta janela de quê?) antes
 de comparar os números diretamente.
+
+### Cross-check dos 6 episódios "preto" (FP persistente) do Francisco
+
+Francisco também enviou (fig `fig_nosso_estilo_francisco.png`) a
+duração dos episódios do sistema dele acima do score, separados em
+"preto" (FP, 6 episódios, 83,0h total em 16 meses, 13,8h/episódio em
+média) e "amarelo" (dentro de 48h de uma parada real, reclassificado
+pela "regra C", 6 episódios, 365,8h total). Os 6 pretos são o FP que
+**ele não conseguiu eliminar**:
+
+| episódio (Francisco) | duração dele | nosso `is_anom_point` final | sinal bruto (antes dos portões) | portão responsável |
+|---|---|---|---|---|
+| 23/08/2025 17:02–24/08 13:06 | 20,1h | **0** | 167 | step-change (149) + duração (22) |
+| 02/12/2025 13:40–03/12 22:28 | 32,8h | **0** | 615 | volatilidade (333) + step-change (354) |
+| 24/12/2025 12:16–16:04 | 3,8h | **0** | 60 | step-change (60, 100%) |
+| 16/01/2026 17:30–17/01 00:54 | 7,4h | **0** | 73 | step-change (73, 100%) |
+| 09/03/2026 20:20–10/03 00:38 | 4,3h | **0** | 18 | step-change (18, 100%) |
+| 08/04/2026 12:18–09/04 02:54 | 14,6h | **11 (residual)** | 638 | volatilidade (369) + step-change (306) |
+
+**5 de 6 episódios: zero pontos no nosso modelo final** — o sinal bruto
+existe (18-615 pontos), confirmando que é o mesmo fenômeno físico visto
+pelos dois sistemas, mas os nossos portões (majoritariamente o de
+mudança de nível, e volatilidade em 2 dos 6) suprimem antes de virar
+alarme. O 6º episódio sobra um resíduo pequeno (11 pontos, -98,3% vs.
+bruto). **Esses 6 FPs específicos que o Francisco não conseguiu
+eliminar já estão resolvidos do nosso lado** — evidência concreta a
+favor da pilha de portões EXP20-22 nessas datas exatas, além dos
+36/40+2/2 já validados.
