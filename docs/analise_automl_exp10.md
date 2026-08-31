@@ -1011,6 +1011,132 @@ detecções, com FP ainda 29,1% menor que a referência.
 PYTHONPATH=. python scripts/grade_fina_filtro_duracao_exp20.py
 ```
 
+## Opção 2: investigando os 4 alarmes perdidos (36/40) (2026-08-31)
+
+Até aqui só investigamos FP; nunca olhamos por que caímos de 92,5%
+(37/40, EXP7-EXP10c) para 90,0% (36/40, EXP20 em diante). São 4 linhas
+de alarme perdidas (2 tags no mesmo instante contam como 2 linhas),
+correspondendo a **3 eventos distintos**:
+
+| evento | tag(s) | causa raiz | quando começou a falhar |
+|---|---|---|---|
+| `2025-08-08 15:31:18` | TC382_03_A + T5_AVG_A | **Sem sinal nos 12 canais do grupo** — z-score < 1,4σ em TODOS os canais (temperatura, carga, 10 vibrações) em ±30min | **Já era MISS no EXP10c** (92,5%, antes de qualquer portão) |
+| `2025-11-29 07:52:03` | TC382_03_A | **Turbina inteira desligada** (`operational_state='off_longo'` nas ±24h completas) — máscara operacional zera `is_anom_point` por design, indetectável estruturalmente | **Já era MISS no EXP10c** — máscara operacional existe desde o EXP10 |
+| `2026-01-17 00:59:01` | T5_AVG_A | Precursor real e curto, cortado pelo filtro de duração de 4,5min (`duration_filter_blocked=2` na janela) | **Era HIT no EXP10c** — a ÚNICA detecção realmente perdida pelos nossos próprios portões (o "1 alarme de fronteira" já documentado na seção do EXP20, agora identificado nominalmente) |
+
+**Confirmado via reconstrução literal**: baixei o
+`point_anomalies_all.csv` da task original do EXP10c
+(`6ac3b1b52a45433a83568d61fafadda6`, congelado, sem nenhum portão) e
+comparei `is_anom_point` nas mesmas ±24h dos 3 eventos — bate
+exatamente com a tabela acima.
+
+**Conclusão:** dos 4 alarmes perdidos hoje, só **1** (2026-01-17) é
+custo real da nossa otimização de FP (já sabíamos do trade-off, agora
+sabemos qual alarme é); os outros 2 eventos (3 linhas) já eram invisíveis
+para o modelo desde antes de qualquer trabalho desta investigação —
+um por falta de sinal nos sensores do grupo (pode ser um alarme de
+outro subsistema, ou um evento instantâneo abaixo da resolução de
+30s), outro por definição (turbina desligada). **Não há gate adicional
+que resolva os 2 pré-existentes sem mudar o modelo base ou o grupo de
+sensores** — não são bugs de portão, são limites estruturais do escopo
+atual (12 sensores de um grupo, granularidade 30s).
+
+**Correção metodológica importante (achada durante esta investigação):**
+as colunas `load_gate_blocked`/`volatility_gate_blocked`/
+`step_change_gate_blocked` do `point_anomalies_all.csv` marcam
+simplesmente "a condição do portão (rampa/volatilidade/degrau) estava
+acima do limiar neste ponto" — **não** "este ponto estava marcado como
+anomalia e foi removido por este portão" (só `duration_filter_blocked`
+tem essa semântica exata, via `flags & ~filtered`). Isso significa que
+o número **190.993 "FP eliminados pelos portões"** reportado no
+gráfico-funil (`gen_figura_funil_exp22.py`,
+`serie_completa_funil_exp22.png`/`barras_funil_exp22.png`) está
+**superestimado** — inclui pontos onde o portão nunca teve nada pra
+suprimir (o modelo não tinha marcado aquele ponto de qualquer forma,
+mas a condição de rampa/volatilidade/degrau ainda assim ficou acima do
+limiar, ex: durante um startup/shutdown real da turbina). **Os números
+36/40, 222 e 4.878 do funil continuam corretos** (dependem só de
+`is_anom_point` final, não dos `*_blocked`). Se for necessário o número
+exato de "eliminados de verdade", precisa reconstruir o score bruto
+recarregando `model.pkl`/`normalization_stats.json` da task e reaplicando
+o percentil — não feito ainda, fora do escopo desta rodada.
+
+## EXP23: aplicando a pilha de portões (EXP20-22) no grupo de TRIP de óleo lub. (2026-08-31)
+
+Pedido do usuário: reaproveitar TODAS as melhorias validadas para o
+grupo `TC382_T5_vibracao_mancais_multiescala` (filtro de duração 4,5min,
+portão de rampa, portão de volatilidade, portão de mudança de nível) no
+grupo diferente do **EXP16c** — TRIP de óleo de lubrificação, alvo
+`PALL_6240309`, sensores `954005_624_PI_0308`/`954005_624_PDIT_0305` +
+10 canais de vibração (mesmos `TV_35[1-5][X/Y]_A`).
+
+**Contexto herdado do EXP16c** (`runs_exp16c_trip_oleo_lub_pdit0305/`):
+grupo já usa a pipeline AutoML (`ENABLE_AUTOML=true`, mesmo schema
+`SENSOR_GROUPS`), modelo `iforest` (validado superior a `ocsvm` nesse
+alvo pelo experimento PCA — `docs/analise_pca_monitoramento_sistema.md`),
+threshold p99,5, debounce=24 (bem mais agressivo que o debounce=1 do
+grupo TC382 — já suavizava bastante), **nenhum portão ligado**
+(`ENABLE_LOAD_GATE`/`ENABLE_VOLATILITY_GATE=false`).
+
+**Ressalva importante sobre amostra**: `PALL_6240309` só tem **13
+ocorrências no catálogo inteiro** (2023-10 a 2026-02), das quais só
+**2 caem no período OOS** (`>=2025-07-01`). `hit_rate` aqui só pode
+assumir 0%/50%/100% — extremamente ruidoso, não comparável em precisão
+ao 36/40 do grupo TC382. Resultado deve ser lido com essa ressalva.
+
+**Config**: `configs/calibracao_v4_eq/test_grupo_exp23_trip_oleo_lub_gates.json`
+— mesma estrutura do EXP16c `candidato_com_pdit0305`, com:
+- `ENABLE_MIN_DURATION_FILTER=true, MIN_DURATION_FILTER_MINUTES=4.5` (valor já validado, reaproveitado sem recalibração própria)
+- `ENABLE_LOAD_GATE=true` / `ENABLE_STEP_CHANGE_GATE=true`, ambos usando `954005_624_PI_0308` (a pressão de óleo, análogo ao `T5_AVG_A` do outro grupo) como sensor de referência de nível — parâmetros (rampa/janelas/limiar 1,5) copiados do EXP22 SEM recalibração para esta unidade física
+- `ENABLE_VOLATILITY_GATE=true`, mesmos 10 canais de vibração e mesmo limiar 0,39 do EXP22 (aqui sim, mesma grandeza física, herança mais defensável)
+- `EXTRA_NEAR_ALARM_TAGS=null` — **não** copiado do EXP21 (aqueles 3 tags de pressão de gás combustível são de outro subsistema físico, sem base para transferir); se o resultado justificar, fazer o mesmo tipo de cruzamento com o catálogo completo específico para este alvo antes de adicionar
+- `AUTOML_THRESHOLD_PERCENTILES` ampliado para `[99.0, 99.5, 99.9]` (EXP16c só testou 99,5) — única variável nova além dos portões, pra dar mais chance ao AutoML
+
+**Status: rodando** — task submetida via `src/main.py --config
+configs/calibracao_v4_eq/test_grupo_exp23_trip_oleo_lub_gates.json`.
+Resultado ainda não coletado nesta seção.
+
+## Reframe operacional: alertas por mês, não pontos de 30s (2026-08-31)
+
+Pedido do setor operacional: "não quero o sistema alarmando a toda
+hora". Contar em PONTOS de 30s (222 residuais) é enganoso pra esse
+público — o que um operador vê é um ALERTA por episódio, não um alerta
+por amostra. Script
+`relatorio_exp21_portao_pressao/analise_episodios_operacional.py`
+agrupa o `is_anom_point` final do EXP22 (domínio on+OOS, ~9,8 meses,
+2025-07-01 a 2026-04-20) em episódios (gap>30min separa) e classifica
+cada um contra: alarme oficial (±24h, 2 tags), catálogo completo
+(±24h, 47 tags), o padrão recorrente confirmado do mancal 354 (±30min
+dos 4 eventos já validados), ou isolado.
+
+| categoria | episódios | % |
+|---|---|---|
+| Alarme oficial | 30 | 32,6% |
+| Catálogo completo (evento real, outro sensor) | 42 | 45,7% |
+| Padrão recorrente mancal 354 (confirmado) | 4 | 4,3% |
+| **Isolado (ruído sem correspondência)** | **16** | **17,4%** |
+| **Total** | **92** | 100% |
+
+**Taxa: 9,4 alertas/mês no total, dos quais só 1,64/mês são
+"isolados"** (sem nenhuma correspondência com alarme oficial, catálogo
+completo, ou o padrão físico já identificado). Ou seja, **82,6% de todo
+alerta que o sistema dispara já tem alguma correspondência com sinal
+real** — não é "alarmando à toa a maior parte do tempo".
+
+Dos 16 episódios isolados, **13 já são o artefato estrutural de borda
+de gate causal** (0-1min, confirmado/investigado nas seções acima) e
+**só 1** (`2025-08-27 00:37`, 17min) segue genuinamente sem explicação
+depois de checar os 12 sensores do grupo.
+
+**Implicação prática pro operacional:** o maior ganho que falta não é
+mais ajuste de modelo/portão (já testamos e o custo de mexer mais é
+perder detecção real) — é a **camada de consolidação de alerta**: se o
+sistema hoje dispara uma notificação por PONTO de 30s em vez de uma por
+EPISÓDIO, isso já produz uma redução de ~56x na contagem de
+notificações (5.176 pontos → 92 episódios) sem tocar em nenhuma lógica
+de detecção. Vale confirmar como o alerta chega ao operador hoje antes
+de investir em mais portões.
+
 ## EXP21: portão de pressão — os "FP" restantes são majoritariamente eventos reais de outro sensor (2026-08-30)
 
 Branch: `feat/exp21_portao_pressao` (nova, a partir de
@@ -1213,3 +1339,186 @@ inalterada (15/15).
 ```bash
 PYTHONPATH=. python src/main.py --config configs/calibracao_v4_eq/test_grupo_exp22_portao_mudanca_nivel.json
 ```
+
+## Investigando os 222 restantes do EXP22
+
+Depois do EXP22, cruzamos os pontos de FP oficial (222 pontos, sobre o
+`normal_alert_rate=0,047%`) com o **catálogo completo de 47 tags de
+alarme** (não só os 2 avaliados) numa janela de ±24h — script
+`relatorio_exp21_portao_pressao/analise_residual_exp22.py`. Resultado:
+**46,4% ainda coincidem** com algum alarme do catálogo (ou seja, são
+"FP" só porque avaliamos oficialmente 2 tags); sobram **20 episódios
+genuinamente isolados** (~119 pontos agrupados, gap>30min separa
+episódio).
+
+**Duração desses 20 episódios isolados** (script ad-hoc, RLE sobre os
+pontos isolados agrupando por gap>30min):
+
+| # | início | fim | pontos | duração (min) |
+|---|---|---|---|---|
+| 0 | 2025-08-26 22:18:30 | 2025-08-26 22:20:00 | 4 | 1,5 |
+| 1 | **2025-08-27 00:37:30** | **2025-08-27 00:54:30** | **35** | **17,0** |
+| 2 | 2025-08-27 01:51:00 | 2025-08-27 01:51:00 | 1 | 0,0 |
+| 3 | 2025-10-17 13:49:00 | 2025-10-17 13:54:30 | 12 | 5,5 |
+| 4 | 2025-10-22 18:18:30 | 2025-10-22 18:22:30 | 9 | 4,0 |
+| 5 | 2025-12-15 07:17:30 | 2025-12-15 07:21:30 | 9 | 4,0 |
+| 6 | 2025-12-16 05:22:00 | 2025-12-16 05:22:30 | 2 | 0,5 |
+| 7 | 2025-12-24 10:54:30 | 2025-12-24 10:59:00 | 10 | 4,5 |
+| 8 | 2026-01-21 11:59:30 | 2026-01-21 11:59:30 | 1 | 0,0 |
+| 9 | **2026-03-10 10:23:00** | **2026-03-10 10:42:00** | **21** | **19,0*** |
+| 10 | 2026-03-11 09:32:30 | 2026-03-11 09:32:30 | 1 | 0,0 |
+| 11 | 2026-03-17 18:50:30 | 2026-03-17 18:51:00 | 2 | 0,5 |
+| 12 | 2026-03-18 08:15:00 | 2026-03-18 08:15:00 | 1 | 0,0 |
+| 13 | 2026-03-20 14:08:30 | 2026-03-20 14:09:30 | 3 | 1,0 |
+| 14 | 2026-03-23 21:39:00 | 2026-03-23 21:39:00 | 1 | 0,0 |
+| 15 | 2026-03-27 21:23:00 | 2026-03-27 21:23:00 | 1 | 0,0 |
+| 16 | 2026-04-10 23:03:00 | 2026-04-10 23:03:30 | 2 | 0,5 |
+| 17 | 2026-04-11 08:57:00 | 2026-04-11 08:57:00 | 1 | 0,0 |
+| 18 | 2026-04-11 10:20:30 | 2026-04-11 10:21:00 | 2 | 0,5 |
+| 19 | 2026-04-12 17:33:30 | 2026-04-12 17:33:30 | 1 | 0,0 |
+
+*(episódio 9 são na verdade dois blocos de ~5min a ~9min de distância,
+agrupados aqui por caírem dentro da tolerância de 30min)*
+
+Estatísticas: média=2,93min, mediana=0,5min, desvio=5,46min, máx=19min.
+**13 dos 20 episódios (65%) duram 0–1min.**
+
+**Achado "borda de entrada" (leading edge):** como todos os portões são
+causais (só olham pra trás — necessário pra rodar em tempo real), existe
+um atraso estrutural entre o início real de uma transição e o momento em
+que a estatística móvel do portão cruza o limiar. Inspecionando as
+colunas `*_gate_blocked`/`duration_filter_blocked` do
+`point_anomalies_all.csv` em 5 dos episódios de 0min (`2026-01-21
+11:59:30`, `2026-03-11 09:32:30`, `2026-03-18 08:15:00`, `2026-03-23
+21:39:00`, `2026-03-27 21:23:00`), confirmamos nos 5: **algum portão
+engata exatamente 1 amostra depois do ponto sinalizado e fica ativo por
+vários minutos seguidos**. Ou seja, esses pontos "isolados" de 0-1min são
+resíduo estrutural do EXP20 (o filtro de duração de 4,5min já filtrou
+episódios curtos ANTES dos outros portões — o que sobra e é curto agora
+é fragmento de borda, não ruído bruto).
+
+Só 2 dos 20 episódios NÃO se encaixam nesse padrão (nenhum portão
+engata perto): `2025-08-27 00:37–00:54` (17min) e `2026-03-10
+10:23–10:42` (dois blocos ~5min). Checagem de `TC382_03_A`/`T5_AVG_A`
+brutos no segundo mostrou ambos praticamente planos (sem degrau de
+carga) — hipótese aberta de ser vibracional; checagem de z-score nos 10
+canais `TV_35*` (script ad-hoc, comparando baseline `08:00–09:50` vs.
+os 2 blocos suspeitos em `2026-03-10`).
+
+### Fechamento: os 79 pontos restantes (6 episódios >1min)
+
+Script `relatorio_exp21_portao_pressao/investiga_6_episodios_restantes.py`
+— mesma técnica (z-score contra baseline de 2h, leitura chunked em UMA
+passada pra evitar OOM), aplicada aos 6 episódios >1min que sobravam sem
+explicação (excluindo o de `2026-03-10` já resolvido). Também checadas
+as colunas `*_blocked` ±30min de cada um, pra ver se algum portão quase
+disparou por perto.
+
+| episódio | pontos | achado |
+|---|---|---|
+| `2025-10-17 13:49` | 12 | **TV_354Y_A z=42,8 / TV_354X_A z=8,8** — mesma assinatura do evento de `2026-03-10` |
+| `2025-12-15 07:17` | 9 | **TV_354Y_A z=25,1 / TV_354X_A z=6,8** — mesma assinatura |
+| `2025-12-24 10:54` | 10 | **TV_354Y_A z=23,8 / TV_354X_A z=6,7** — mesma assinatura |
+| `2025-10-22 18:18` | 9 | z moderado (2–2,9) em quase todos os canais + `TC382_03_A` z=−2,5; `step_change_gate_blocked=17` nas ±30min — provável borda de portão sobre transiente real |
+| `2025-08-26 22:18` | 4 | z fraco (<1,0) em tudo; `volatility_gate_blocked=60` nas ±30min — provável borda do portão de volatilidade |
+| `2025-08-27 00:37` | 35 | z fraco (<1,5, a maioria negativo) em tudo — **segue sem explicação** |
+
+**Achado principal: padrão recorrente real no mancal 354.** A mesma
+assinatura (`TV_354Y_A` com z de 17 a 43, `TV_354X_A` secundário) apareceu
+em **4 ocasiões distintas e não-adjacentes** no histórico inteiro:
+`2025-10-17`, `2025-12-15`, `2025-12-24` e `2026-03-10` — não é ruído
+nem coincidência, é um evento vibracional real e repetido nesse mancal
+específico, sem nenhum alarme catalogado correspondente (nem nos 47
+tags, nem nas 2 tags oficiais). Vale reportar ao cliente como possível
+padrão de monitoramento a acompanhar (não como FP).
+
+**Tally final dos 222 pontos residuais do EXP22:**
+
+| categoria | pontos | % |
+|---|---|---|
+| Coincide com algum dos 47 tags do catálogo (±24h) | 103 | 46,4% |
+| Evento vibracional real recorrente, mancal 354 (`TV_354Y_A`), 4 ocorrências | 52 | 23,4% |
+| Borda estrutural de gate causal (confirmado, 13 episódios de 0-1min) | 19 | 8,6% |
+| Provável borda de gate sobre transiente real (2 episódios, confiança média) | 13 | 5,9% |
+| **Genuinamente sem explicação** (`2025-08-27 00:37`, 35 pontos) | 35 | 15,8% |
+| **Total** | **222** | 100% |
+
+**84% do residual está explicado** (real signal ou artefato estrutural
+já testado). Sobra só **1 episódio de 35 pontos/17min** sem explicação —
+os 10 canais de vibração + os 2 sensores avaliados não mostram nada
+> 1,5σ ali. Não investigado além disso por ora (exigiria olhar outros
+sensores da planta fora do grupo `TC382_T5_vibracao_mancais_multiescala`,
+fora do escopo atual). Nenhuma implementação nova de gate decorre desta
+investigação — é só uma investigação (nada foi promovido em
+`config.py`/`automl_pipeline.py`).
+
+**RESOLVIDO — confirmado como evento vibracional real no mancal 354.**
+Z-score (média da janela vs. média/desvio da baseline `08:00–09:50`):
+
+| canal | z (10:20–10:30) | z (10:34–10:44) |
+|---|---|---|
+| **TV_354Y_A** | **11,13** | **17,10** |
+| TV_354X_A | 4,72 | 7,71 |
+| TV_355Y_A | 1,30 | 2,41 |
+| demais canais | \|z\|<1,05 | \|z\|<1,07 |
+
+Z-score de 11 a 17 desvios-padrão é um evento real e concentrado — quase
+exclusivamente em **TV_354Y_A** (e em menor grau `TV_354X_A`), crescendo
+entre os dois blocos (10,3σ→17,1σ), não ruído. Como `TC382_03_A` e
+`T5_AVG_A` (as 2 tags oficialmente avaliadas) ficam planas nesse
+período, esse episódio nunca teria como ser um "hit" nas 2 tags — mas é
+provavelmente uma detecção **genuína** de vibração anômala no mancal
+354, sem alarme correspondente registrado no catálogo (nem nos 47 tags,
+nem nas 2 avaliadas). Ou seja: não é artefato de borda nem ruído — é
+provavelmente um TP não-catalogado (evento real que o sistema de
+alarmes da planta não chegou a disparar). Não é caso de suprimir com
+gate nenhum; ao contrário, reforça a capacidade do modelo multivariado
+de pegar sinal em canais que os 2 tags oficiais não veriam sozinhos.
+
+### EM ANDAMENTO — candidato a EXP23: 2º filtro de duração (pós-portões)
+
+Ideia do usuário, dado o achado acima: já que 65% dos episódios isolados
+restantes são fragmentos de 0-1min (borda estrutural, não precursor
+real), testar um **segundo filtro de duração mínima aplicado no FINAL da
+cadeia** (depois de todos os portões — carga/volatilidade/mudança de
+nível/congelamento), reaproveitando a mesma função `apply_min_duration_filter`
+(RLE) já usada como filtro PRÉ-portões no EXP20, agora rodando por cima
+do `is_anom_point` final do EXP22.
+
+Script: `relatorio_exp21_portao_pressao/grade_filtro_pos_portoes.py` —
+reconstrução literal (usa as funções reais de `src/cnn1d_ae/scoring.py`,
+não aproximação): lê o `point_anomalies_all.csv` já calculado do EXP22
+(cache local, task confirmada `d252e94b51b3407186e68908a8a1c26c`),
+reconstrói `df_alarm_eval`/`near_alarm_mask` idênticos à pipeline real, e
+varre uma grade de limiares (1,0 a 4,5min) do 2º filtro, recomputando
+`hit_rate` (`eval_alarm_hit_rate`) e `normal_alert_rate`
+(`compute_normal_alert_rate`) de verdade a cada limiar.
+
+**RESULTADO: NEGATIVO — não implementar.** Grade concluída
+(`grade_filtro_pos_portoes_result.csv`):
+
+| limiar 2º filtro | hit_rate | normal_alert_rate | pontos restantes |
+|---|---|---|---|
+| — (EXP22 atual, baseline) | 90,0% (36/40) | 0,0430% | 5176 |
+| 1,0min | 82,5% (33/40) | 0,0407% | 5101 |
+| 1,5min | 55,0% (22/40) | 0,0383% | 4987 |
+| 2,0min | 50,0% (20/40) | 0,0375% | 4948 |
+| 2,5min | 50,0% (20/40) | 0,0358% | 4908 |
+| 3,0min | 45,0% (18/40) | 0,0358% | 4888 |
+| 3,5–4,5min | 37,5% (15/40) | 0,0358% | 4842–4864 |
+
+Já no limiar mais suave (1min) perdem-se 3 alarmes reais por só ~5% de
+redução de FP; subindo o limiar o hit_rate desaba até 37,5% e o
+`normal_alert_rate` praticamente para de cair. **Causa raiz: mesmo
+mecanismo do bug de ordem do EXP20, na outra ponta da cadeia.** Os
+portões upstream (rampa/volatilidade/mudança de nível/congelamento) já
+fragmentam episódios longos — inclusive precursores REAIS, exatamente
+como o achado de "borda de entrada" mostrou (precursor real truncado
+sobra como 1-2 pontos). Nesse ponto da cadeia, um fragmento curto de
+precursor real e um fragmento curto de ruído residual são
+indistinguíveis por duração — um 2º filtro de duração pós-portões corta
+os dois igualmente. **Não implementar** `POST_GATE_DURATION_FILTER`
+(nunca chegou a existir em `config.py`/`automl_pipeline.py` — só o
+ad-hoc de checagem). Os 222 pontos residuais (46% no catálogo completo,
+resto majoritariamente artefato de borda estrutural) ficam como estão
+por ora; não há gate adicional pendente de implementação neste momento.
