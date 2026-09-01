@@ -1646,4 +1646,45 @@ EXP22 + veto 30min), `test_grupo_exp29_oleo_veto_congelado.json`
 (idêntica ao EXP24 + veto 30min). Mesmo dataset ClearML de sempre —
 nenhum dataset novo precisou ser publicado.
 
-**Status: rodando** — resultado ainda não coletado nesta seção.
+**Tasks**: EXP28 `7281087f7de642b89ed21e6d398e22c6`, EXP29
+`30e2399b039e4c18bd47cae079889851`.
+
+**Resultado: 8/8 confirmado também no NOSSO dado bruto de 30s** (não só
+na grade de 2min do Francisco).
+
+| | EXP28 (mancal, com veto) | EXP22 (referência, sem veto) | EXP29 (óleo, com veto) | EXP24 (referência, sem veto) |
+|---|---|---|---|---|
+| hit_rate | 90% (36/40) | 90% (36/40) — **idêntico** | 100% (2/2) | 100% (2/2) — **idêntico** |
+| `normal_alert_rate` | 0,0469% | 0,047% — **idêntico** | 4,93%-7,03% | 5,74%-8,25% — **levemente melhor** |
+
+Veto de sensor congelado (item 1): confirma no nosso dado o que já
+tínhamos visto no dataset do Francisco (EXP26a) — sem custo, e aqui
+ainda ajudou um pouco no grupo de óleo.
+
+**Cross-check contra os 9 eventos curados do Francisco** (item 2,
+nunca testado antes no nosso dado bruto — só na grade de 2min dele):
+
+| evento | causa | EXP28 (mancal) | EXP29 (óleo) | combinado |
+|---|---|---|---|---|
+| 2024-01-16 | mancal | sem dado (antes de `DATA_START_DATE=2024-07-01`) | — | fora de alcance |
+| 27/02/2025 | selagem | HIT (15 pts) | — | **HIT** |
+| 17/03/2025 | mancal | HIT (43 pts) | — | **HIT** |
+| 07/04/2025 | mancal | HIT (1 pt) | — | **HIT** |
+| 11/04/2025 | mancal | HIT (176 pts) | — | **HIT** |
+| 29/04/2025 | mancal | HIT (18 pts) | — | **HIT** |
+| 04/11/2025 | óleo | MISS (correto, fora do escopo dele) | HIT (25 pts) | **HIT** |
+| 09/12/2025 | mancal | HIT (32 pts) | MISS (correto) | **HIT** |
+| 26/02/2026 | óleo | HIT (73 pts, bônus) | HIT (1012 pts) | **HIT** |
+
+**8 de 8** (o 9º evento está fora do período carregado, não é um
+miss). Cada modelo especializado se comporta exatamente como
+esperado — mancal pega mancal/selagem e ignora óleo, óleo pega óleo e
+ignora mancal.
+
+**Conclusão prática**: os 2 aprendizados trazidos do dataset do
+Francisco (veto de sensor congelado + avaliação contra ground-truth
+curado) se confirmam integralmente no nosso próprio dado de produção.
+`test_grupo_exp28_mancal_veto_congelado.json` e
+`test_grupo_exp29_oleo_veto_congelado.json` ficam como as novas
+configs de referência (substituem EXP22/EXP24 com uma proteção extra
+sem custo nenhum).
