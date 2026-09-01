@@ -1024,6 +1024,70 @@ Francisco a definição exata de "hora de alarme falso" (conta cada
 episódio? soma duração de episódios? desconta janela de quê?) antes
 de comparar os números diretamente.
 
+## EXP25: rodando nossa pipeline sobre o dataset do Francisco (`8b06a98f8b264820a9ecf2075a188395`, `grade2min.parquet` + `falhas.csv`) (2026-08-31)
+
+`falhas.csv` tem na verdade **9 eventos** (não 8) — um evento adicional
+em `2024-01-16 09:10` (mancal) que a lista de texto do Francisco não
+incluía. `grade2min.parquet`: 612.630 linhas, grade de 2min, **37
+sensores** (vs. 12 do nosso grupo TC382).
+
+**Conversão**: `dataset_francisco_lara/converter_dataset_francisco.py`
+transforma o parquet em CSV(s) compatíveis com `io.py`
+(`data_datetime` + sensores) e `falhas.csv` num alarme-CSV compatível
+(`Tag Alarme`/`Data da Ocorrência`/`Status`), com tags sintéticas
+`FALHA_CURADA` (todos os 9) e por categoria (`FALHA_MANCAL` 6x,
+`FALHA_OLEO_LUB` 2x, `FALHA_SELAGEM` 1x, inferidas do texto da coluna
+`alarmes`). Timestamps usados literalmente (mesmo achado de fuso da
+seção anterior — sem deslocamento).
+
+**Restrição de memória do sandbox**: o CSV completo (38 sensores,
+235MB) causou **2 OOM kills** tentando carregar com
+`ENABLE_DERIVED_FEATURES=true`. Corrigido gerando CSVs por grupo (só
+os ~13 sensores necessários cada, ~87MB) — resolveu pro grupo óleo,
+mas o grupo mancal só rodou com `ENABLE_DERIVED_FEATURES=false`
+(as features multiescala que dão nome ao grupo).
+
+### EXP25a — grupo mancal (`FALHA_MANCAL`) — inconclusivo
+
+| | EXP22 (referência, dataset nosso, derived features ON) | EXP25a (dataset Francisco, derived features **OFF**) |
+|---|---|---|
+| hit_rate OOS (1 alarme: 09/12/2025) | 100% (implícito no 36/40 geral) | **0% (0/1)** |
+| `normal_alert_rate` | 0,047% | **12,94%** |
+
+**Não é comparação válida** — degradação esperada por desligar as
+features multiescala centrais ao grupo, não reflete diferença real
+entre datasets. Precisa retestar com `DERIVED_ROLLING_WINDOWS`
+reduzido (1-2 janelas em vez de 4) pra caber na memória sem descartar
+o mecanismo inteiro.
+
+### EXP25b — grupo óleo (`FALHA_OLEO_LUB`) — comparação válida, resultado misto
+
+Config idêntica ao EXP24 (duração + volatilidade, sem rampa/mudança de
+nível), nunca usou features derivadas em nenhum dos dois datasets —
+comparação direta e justa:
+
+| | EXP24 (dataset nosso, 30s) | EXP25b (dataset Francisco, grade 2min) |
+|---|---|---|
+| hit_rate OOS (2 alarmes) | **100% (2/2)** | **50% (1/2)** |
+| `normal_alert_rate` (melhor percentil) | 5,74% | **2,26%** (percentil 99,9) |
+
+**Evento perdido no EXP25b**: `2025-11-04` (o de menor antecedência —
+13,4h no EXP24). **Evento mantido**: `2026-02-26` (36 pontos
+detectados). Hipótese: a grade de 2min (vs. 30s) dilui um precursor
+mais curto o suficiente pra sumir do sinal na resolução mais grossa —
+consistente com o EXP24 já ter achado esse era o evento de menor
+antecedência dos dois. FP menor no dataset do Francisco pode ser só
+efeito de menos "arestas" por amostra mais espaçada, não
+necessariamente um dado mais limpo.
+
+**Conclusão parcial**: dataset do Francisco não superou o nosso nesta
+comparação (perdeu 1 detecção que já tínhamos), mas a comparação do
+grupo mancal ainda está pendente de uma rodada válida (com features
+derivadas reduzidas, não desligadas). Scripts e configs:
+`configs/calibracao_v4_eq/test_grupo_exp25a_mancal_dataset_francisco.json`,
+`test_grupo_exp25b_oleo_dataset_francisco.json`,
+`dataset_francisco_lara/converter_dataset_francisco.py`.
+
 ### Cross-check dos 6 episódios "preto" (FP persistente) do Francisco
 
 Francisco também enviou (fig `fig_nosso_estilo_francisco.png`) a
