@@ -581,4 +581,143 @@ fragmento curto de ruído genuíno são \textbf{indistinguíveis por
 duração} -- por isso a supressão cirúrgica precisa usar o critério
 causal (portão real engatando), não duração isolada.
 
+% ======================================================================
+\section{Por que dois experimentos separados (mancal e óleo)?}
+\label{sec:porque-dois-experimentos}
+
+A pipeline roda como \textbf{dois experimentos independentes}, cada um
+com seu próprio grupo de sensores, seu próprio modelo e sua própria
+config JSON:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{3cm}p{5.7cm}p{5.7cm}}
+\toprule
+& \textbf{EXP28/30 -- mancal} & \textbf{EXP29/31 -- óleo} \\
+\midrule
+Sensores-alvo & TC382\_03\_A, T5\_AVG\_A (temperatura de mancal) & PI\_0308 (pressão de óleo), PDIT\_0305 (diferencial de selagem) \\
+Sensores de contexto & 10 canais de vibração (\texttt{TV\_*}) & os mesmos 10 canais de vibração \\
+Modelo & OCSVM & Isolation Forest \\
+Mecanismo de falha & desgaste/aquecimento de mancal & perda de pressão/vazamento de óleo lubrificante \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Isso não é uma limitação técnica -- é uma escolha de
+arquitetura validada empiricamente duas vezes nesta investigação:}
+
+\begin{enumerate}
+  \item \textbf{Mancal e óleo são mecanismos físicos distintos}, com
+    sensores-alvo diferentes e dinâmicas diferentes (temperatura de
+    mancal evolui em horas; pressão de óleo pode cair em minutos). Um
+    único modelo treinado sobre os 4 sensores-alvo ao mesmo tempo tem
+    que aprender uma noção de "normal" que mistura os dois regimes --
+    dilui a sensibilidade do modelo para o mecanismo mais sutil de
+    cada evento.
+  \item \textbf{Testamos exatamente essa unificação (EXP27,
+    Seção~\ref{sec:unificado}) e ela piorou}: 7 de 9 contra os 8 de 8
+    obtidos com os dois modelos especializados juntos. Os 2 eventos
+    perdidos foram justamente os mais sutis de cada mecanismo --
+    exatamente onde a diluição por sensores irrelevantes do outro
+    subsistema pesa mais.
+  \item \textbf{É a mesma lição que já orienta o detector de produção
+    do Francisco}: ele usa 4 sinais independentes (temperatura,
+    pressão de óleo, \textit{spread} de mancal, selagem) em vez de um
+    modelo único sobre os 39 sensores -- chegamos à mesma conclusão de
+    forma independente.
+\end{enumerate}
+
+Na prática, os dois experimentos rodam em paralelo e alimentam o mesmo
+dashboard -- o operador não precisa saber que são dois modelos
+por trás; ele só recebe alertas de mancal e de óleo, cada um calibrado
+especificamente pro seu próprio mecanismo de falha.
+
+% ======================================================================
+\section{Como isso funciona operacionalmente}
+\label{sec:operacional}
+
+A anotação de contexto (\texttt{ENABLE\_ALERT\_CATALOG\_CONTEXT},
+implementada nos experimentos EXP30/31) roda como o \textbf{último
+passo} da pipeline, depois de todos os portões já terem decidido
+\texttt{is\_anom\_point} -- ela nunca decide, apenas acrescenta
+contexto (\texttt{alert\_catalog\_tag}, \texttt{alert\_catalog\_time},
+\texttt{alert\_catalog\_distance\_h}, \texttt{alert\_confidence}) para
+quem consome o alerta.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{diagrama_fluxo_operacional.png}
+\caption{Fluxo operacional completo: da série bruta até a priorização
+sugerida no dashboard. A anotação de contexto (caixa amarela) é
+puramente aditiva -- \texttt{is\_anom\_point} já está decidido antes
+dela.}
+\end{figure}
+
+\subsection{Achado importante: TRIP real também dispara o catálogo}
+
+Antes de sugerir qualquer regra de priorização, verificamos se os 358
+pontos verdes (acerto de TRIP) também apareciam marcados como
+\texttt{explicado\_catalogo}. Resultado:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+& \textbf{explicado\_catalogo} & \textbf{isolado} \\
+\midrule
+Perto de TRIP curado (358 pontos) & \textbf{358 (100\%)} & 0 \\
+Longe de TRIP curado (4.818 pontos) & 4.692 (97,4\%) & 126 (2,6\%) \\
+\bottomrule
+\end{tabular}
+\caption{Todo TRIP real do período também disparou algum alarme do
+catálogo de 47 tags dentro de $\pm$24h -- faz sentido fisicamente,
+uma falha real de mancal ou óleo tende a disparar vários alarmes de
+processo ao mesmo tempo, não só o nosso modelo.}
+\end{table}
+
+\textbf{Consequência prática: a tag \texttt{alert\_confidence =
+"explicado\_catalogo"} sozinha NÃO pode ser lida como "seguro
+ignorar"} -- ela só diz que existe outro alarme por perto, não diz se
+é o mesmo evento real (como um TRIP) ou um alarme de processo
+rotineiro sem relação. Por isso a árvore de decisão do diagrama acima
+sempre checa primeiro a proximidade de um TRIP conhecido; só depois
+disso é que a tag específica do catálogo (rotineira vs. crítica) entra
+como critério de priorização.
+
+\subsection{Três casos reais, lado a lado}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figura_operacional_exemplos.png}
+\caption{Três alertas reais e como o dashboard os apresentaria. (1) Um
+precursor real de TRIP (07/04/2025) -- prioridade máxima, mesmo já
+corroborado pelo catálogo (\texttt{PAL\_6240315}, 1,98\,h de
+distância). (2) Um alerta explicado por uma tag rotineira
+(\texttt{PI\_6240319\_AL}, a mais frequente do catálogo, nunca
+associada a um TRIP real) -- prioridade baixa. (3) O único alerta
+genuinamente isolado de toda a investigação (27/08/2025) -- prioridade
+média, mesmo status do caso descrito na Seção~\ref{sec:fechamento24}.}
+\end{figure}
+
+\subsection{Resumo da regra de priorização sugerida}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{4.3cm}p{4.3cm}p{5.4cm}}
+\toprule
+\textbf{Situação} & \textbf{Prioridade} & \textbf{Ação sugerida} \\
+\midrule
+Perto de um TRIP/falha curada conhecida & Máxima & Escalar imediatamente, independente de qualquer outra tag \\
+Explicado por tag do catálogo pouco frequente/crítica & Alta & Investigar -- pode ser o mesmo evento real disparando dois alarmes \\
+Explicado por tag do catálogo rotineira/muito frequente (ex: \texttt{PI\_6240319\_AL}) & Baixa & Registrar, não escalar automaticamente \\
+Isolado (nenhum alarme do catálogo em $\pm$24h) & Média & Checagem manual (mesma disciplina de z-score da Seção~\ref{sec:fechamento24}) -- historicamente metade desses casos eram sinal físico real \\
+\bottomrule
+\end{tabular}
+\caption{Nenhuma dessas linhas suprime um alerta -- todas continuam
+aparecendo no dashboard, só mudam a ordem/urgência de atenção do
+operador.}
+\end{table}
+
 \end{document}
