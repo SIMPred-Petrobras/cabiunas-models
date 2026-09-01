@@ -1618,3 +1618,32 @@ os dois igualmente. **Não implementar** `POST_GATE_DURATION_FILTER`
 ad-hoc de checagem). Os 222 pontos residuais (46% no catálogo completo,
 resto majoritariamente artefato de borda estrutural) ficam como estão
 por ora; não há gate adicional pendente de implementação neste momento.
+
+## EXP28/29: trazendo pro produção 2 aprendizados da investigação com o Francisco (2026-09-01)
+
+Depois de validar no dataset do Francisco (`docs/analise_pca_monitoramento_sistema.md`,
+EXP25a-27) que nossa pipeline especializada (mancal + óleo separados)
+acerta 8/8 dos eventos curados dele — melhor que o detector de produção
+dele (6/8) e melhor que unificar tudo num modelo só (7/9, EXP27) —
+traz 2 aprendizados de volta pra config de produção, **no nosso próprio
+dataset** (`a97ba56ba14840fbb1125c2a82f883c9`, nunca testado antes
+contra o ground-truth curado dele):
+
+1. **Veto de sensor congelado (30min)** — já existe no código
+   (`ENABLE_FROZEN_SENSOR_VETO`), validado sem custo no dataset do
+   Francisco (EXP26a: resultado idêntico). Ligado agora nas configs de
+   produção também, como proteção extra de graça.
+2. **Avaliar contra o ground-truth curado do Francisco** (não só o
+   catálogo bruto de 40 linhas) — reaproveita
+   `dataset_francisco_lara/alarmes_francisco_falhas.csv` (local, sem
+   precisar publicar em lugar nenhum) pra checar, via
+   `point_anomalies_all.csv` já gerado, se **nosso próprio dado bruto de
+   30s** (não a grade de 2min do Francisco) também pega os 9 eventos
+   curados.
+
+**Configs**: `test_grupo_exp28_mancal_veto_congelado.json` (idêntica ao
+EXP22 + veto 30min), `test_grupo_exp29_oleo_veto_congelado.json`
+(idêntica ao EXP24 + veto 30min). Mesmo dataset ClearML de sempre —
+nenhum dataset novo precisou ser publicado.
+
+**Status: rodando** — resultado ainda não coletado nesta seção.
