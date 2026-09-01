@@ -1148,3 +1148,95 @@ bruto). **Esses 6 FPs específicos que o Francisco não conseguiu
 eliminar já estão resolvidos do nosso lado** — evidência concreta a
 favor da pilha de portões EXP20-22 nessas datas exatas, além dos
 36/40+2/2 já validados.
+
+## Documentação oficial do detector do Francisco (`DOCUMENTACAO_DETECTOR_TC33003A.pdf`, 26/08/2026) — 11 páginas, lidas na íntegra (2026-09-01)
+
+Detector de produção: **PCA** (95% variância), 4 sinais independentes
+(`temperatura` 14 termopares, `pressao_oleo` 12 sensores,
+`mancal_spread` = `TI_0305` menos mediana dos 3 mancais irmãos,
+`selagem_z` = `PDIT_0305` isolado — **vibração em quarentena, desligada
+por padrão**), grade 2min (mediana de blocos de 30s), retreino mensal
+com baseline de 3.000h elegíveis (~2.400h efetivo, série começa
+jan/2025), EWMA meia-vida 2h no score, limiar percentil 99,9 do
+próprio baseline suavizado, persistência (sustain) 30min, confirmação
+por 2 de 4 sinais, veto de sensor congelado (30min, dispensa quem
+trava >5% do tempo), faixa física fixa de clipping (temp -15/900°C,
+pressão -1,5/120).
+
+**Resultado oficial ("vale hoje")**: 6 de 8 falhas antecipadas, 18,3h
+de antecedência média, 0,94 FP/mês, 22,0h/mês em alarme falso, 20
+episódios em 16 meses (350,5 dias avaliados).
+
+**Tabela evento a evento** (a peça que faltava — agora sabemos
+exatamente quais 2 de 8 ele perde e por quê):
+
+| falha | mecanismo | antecipada? | antecedência | h operando nas 48h antes |
+|---|---|---|---|---|
+| 27/02/2025 | selagem | sim | 33,2h | 48,0 |
+| 17/03/2025 | mancal | sim | 30,7h | 48,0 |
+| 07/04/2025 | mancal | sim | 19,5h | 47,6 |
+| 11/04/2025 | mancal | sim | 3,8h | 48,0 |
+| 29/04/2025 | mancal | sim | 2,5h | 47,8 |
+| **04/11/2025** | óleo | **não** | — | só 15,3h (limitação de observabilidade) |
+| **09/12/2025** | mancal | **não** | — | 47,8h — varredura de 36 sensores/3 horizontes não achou nada |
+| 26/02/2026 | óleo | sim | 19,9h | 48,0 |
+
+**Achado central: os 2 eventos que o detector de produção dele perde
+são exatamente os 2 que NÓS já acertamos** nesta investigação:
+
+| evento | Francisco (produção, PCA+4 sinais) | Nós |
+|---|---|---|
+| 09/12/2025 (mancal) | não detectou | **EXP22/EXP25a: HIT, 5,7h de antecedência** |
+| 04/11/2025 (óleo) | não detectou | **EXP24: HIT, 13,4h de antecedência** |
+
+Hipótese: nosso modelo usa vibração ativamente (10 canais, ele deixa
+desligada) e é um único modelo multivariado (não precisa de
+concordância entre 2 de 4 sinais independentes) — isso é uma
+contribuição concreta e complementar à detecção dele, não uma
+substituição.
+
+**Alternativa em rede neural testada por ele**: autoencoder no lugar
+do PCA, mesmo protocolo — empata em 6/8, mas com antecedência pior
+(12,6h vs 18,3h) e exige grade de 30s + limiar mais estreito (frágil,
+cai pra 1/8 fora desse ponto exato). PCA continua a recomendação dele.
+
+## EXP26: alinhando parâmetros com o Francisco, mantendo o que funciona bem no nosso lado (2026-09-01)
+
+Pedido do usuário: aproximar nossa config da dele, preservando os
+pontos fortes da nossa pipeline (validados nesta sessão). Antes de
+copiar às cegas, checagem cruzada com o que já foi testado neste
+projeto:
+
+- **EWMA no score antes do limiar** (a técnica central dele) — **já
+  testada e rejeitada** (`docs/analise_automl_exp18_ewma_score.md`,
+  EXP18): no mesmo percentil 99,9, EWMA de só 30min (bem mais curta
+  que os 2h dele) já derruba hit_rate de 92,5% para 45,0%. Motivo: no
+  sinal de vibração, o pico real e o ruído têm a mesma escala de tempo
+  (minutos); no caso dele (temperatura/pressão) o sinal evolui mais
+  devagar que o ruído, por isso ajuda lá e atrapalha aqui. **Não
+  portado** — mesma lógica sugere que o "sustain 30min" dele sofreria
+  do mesmo problema (nosso próprio corte ótimo, já validado por grade
+  fina, é 4,5min).
+- **Modelo (PCA) e estrutura (4 sinais com votação)** — não trocado:
+  OCSVM + modelo único multivariado já superam os números dele, e são
+  parte do motivo de pegarmos os 2 eventos que ele perde.
+- **Veto de sensor congelado (30min)** — **já existe no código**
+  (`ENABLE_FROZEN_SENSOR_VETO`/`FROZEN_SENSOR_VETO_WINDOW_MINUTES`),
+  só estava desligado nas configs do grupo mancal. Portado com a
+  janela dele (30min) — `test_grupo_exp26a_mancal_veto_congelado.json`.
+- **Retreino mensal com janela móvel** — já validado independentemente
+  neste projeto como EXP19 (`ENABLE_WALKFORWARD_RETRAIN`, mesmo
+  hit_rate, FP -26% no grupo original). **Incompatível com o filtro de
+  duração** (guard explícito em `automl_pipeline.py` — `ValueError` se
+  os dois ligados ao mesmo tempo), então testado em config separada,
+  sem o filtro de duração — `test_grupo_exp26b_mancal_walkforward.json`.
+
+Ambas herdam o EXP25a (dataset do Francisco, `FALHA_MANCAL`, OCSVM,
+features multiescala corretamente escaladas pra grade de 2min,
+portões de rampa/volatilidade/mudança de nível) como base — mudança
+aditiva de uma variável por vez, disciplina do projeto.
+
+**EXP23 e EXP25a preservados intactos** (nenhum dos dois foi
+sobrescrito) — ficam como referências de configuração pra uso futuro.
+
+**Status: rodando** — resultado ainda não coletado nesta seção.
