@@ -1688,3 +1688,42 @@ curado) se confirmam integralmente no nosso próprio dado de produção.
 `test_grupo_exp29_oleo_veto_congelado.json` ficam como as novas
 configs de referência (substituem EXP22/EXP24 com uma proteção extra
 sem custo nenhum).
+
+## Duração dos episódios "amarelos" (FP contra os 9 TRIPs) e cruzamento com o catálogo completo (2026-09-01)
+
+Agrupando `is_anom_point` do EXP28 em episódios (gap>30min) e
+classificando contra os 9 TRIPs curados do Francisco (±24h): **12
+episódios verdes (acerto, 3,9h total) e 202 episódios amarelos (FP,
+40,7h total, ~1,86h/mês)**. Script:
+`dataset_francisco_lara/duracao_episodios_verde_amarelo.py`.
+
+**Antes de aceitar 1,86h/mês como FP genuíno**, cruzamos os 202
+episódios amarelos contra o **catálogo completo de 47 tags** (mesma
+disciplina já aplicada ao EXP22 residual) — script
+`dataset_francisco_lara/cruzamento_amarelo_vs_catalogo.py`:
+
+| categoria | episódios | horas | achado |
+|---|---|---|---|
+| Explicado pelo catálogo completo (±24h) | **178 (88,1%)** | 39,7h | evento real de outro sensor (majoritariamente `PI_6240319_AL`, `PAL_6240315`, `PDAL_6240302` — pressão) |
+| Genuinamente isolado | 24 (11,9%) | **1,0h** | mesmo conjunto já mapeado no residual do EXP22 (bordas de portão + padrão recorrente mancal 354) |
+
+**FP genuíno cai de 1,86h/mês para 0,05h/mês (-97%)** só por
+reconhecer sinal real já existente — sem tocar em nenhum parâmetro do
+modelo. O caso que disparou essa investigação (episódio de 22,98h,
+24/07/2025) é o melhor exemplo: é a mesma janela de detecção do nosso
+alarme oficial `TC382_03_A`/`T5_AVG_A` das 16:14:37 (10 tags disparando
+juntos, incluindo `PI_6240319_AL`) — um acerto real, só que fora do
+escopo da lista de 9 eventos do Francisco (que só cobre
+mancal/selagem/óleo, não esse tipo de evento térmico em cascata).
+
+**Lição estratégica**: a resposta certa pro "FP residual" não é caçar
+mais um portão de supressão (já testamos vários e todos ou pioram ou
+não ajudam) — é **classificar por confiança contra o catálogo
+completo antes de rotular como FP**. Um sistema operacional deveria
+fazer esse cruzamento em tempo de alerta (correlacionar com outros
+alarmes do processo na hora), não tentar prever/suprimir no treino.
+
+Figura com essa classificação de 3 cores + 2 cores de linha vertical
+(roxo=TRIP curado, vermelho=outro alarme do catálogo):
+`dataset_francisco_lara/gen_figura_ti0305_tc382_t5.py` →
+`serie_ti0305_tc382_t5_exp28_v2.png`.
