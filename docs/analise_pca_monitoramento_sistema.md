@@ -1239,4 +1239,27 @@ aditiva de uma variável por vez, disciplina do projeto.
 **EXP23 e EXP25a preservados intactos** (nenhum dos dois foi
 sobrescrito) — ficam como referências de configuração pra uso futuro.
 
-**Status: rodando** — resultado ainda não coletado nesta seção.
+**Tasks**: EXP26a `d44b36a9d8c94a65a05c03a2fdf3994f`, EXP26b `cd78afcf0a6c4d57bda34d3dff39ff4c`.
+
+**Resultado: nenhuma das duas supera o EXP25a — ele continua a referência.**
+
+| | EXP25a (referência) | EXP26a (+ veto congelado 30min) | EXP26b (+ walk-forward mensal, 10 retreinos) |
+|---|---|---|---|
+| hit_rate (1 alarme OOS) | 100% (1/1) | **100% (1/1)** | **100% (1/1)** |
+| `normal_alert_rate` | 0,0475% | **0,0475% (idêntico)** | **0,0727% (+53%)** |
+
+- **EXP26a**: resultado idêntico — o veto de sensor congelado nunca
+  disparou nesse período (nenhum sensor ficou travado ≥30min). Neutro:
+  sem custo, sem ganho. Fica ligado por segurança/paridade com o
+  Francisco, já que não piora nada.
+- **EXP26b**: manteve 100% de detecção, mas FP piorou ~53%. Diferente
+  do EXP19 original (onde walk-forward reduzia FP em 26% no dataset
+  antigo) — no dataset do Francisco, com histórico mais curto e grade
+  de 2min, o retreino incremental mensal não trouxe benefício líquido.
+  Ambos os números continuam abaixo de 0,1%, então não é uma piora
+  grave, só não é uma melhoria.
+
+**Conclusão prática**: `test_grupo_exp25a_mancal_dataset_francisco.json`
+continua sendo a melhor config pro dataset do Francisco (100%/0,0475%).
+EXP26a/b ficam documentados como tentativas de alinhamento adicionais
+que não superaram a referência — negativo instrutivo, não promovido.
