@@ -1727,3 +1727,39 @@ Figura com essa classificação de 3 cores + 2 cores de linha vertical
 (roxo=TRIP curado, vermelho=outro alarme do catálogo):
 `dataset_francisco_lara/gen_figura_ti0305_tc382_t5.py` →
 `serie_ti0305_tc382_t5_exp28_v2.png`.
+
+## Fechando os 24 isolados: 4 episódios novos investigados, sobra só 1 (2026-09-01)
+
+Dos 24 episódios genuinamente isolados, 2 nunca tinham sido checados
+(fora do período coberto pela investigação anterior do EXP22): 2
+episódios de 30/09/2024 e 2 de 12/12/2024. Script (z-score contra
+baseline de 2h, leitura chunked):
+`dataset_francisco_lara/investiga_2024_e_17min.py`.
+
+| episódio | achado | veredito |
+|---|---|---|
+| 30/09/2024 18:04 | `T5_AVG_A` z=44,1, `TC382_03_A` z=26,0, `TI_0305` z=17,0, 7 canais de vibração com z>4 | **Evento real grande** |
+| 30/09/2024 19:08 (~1h depois) | z fraco em tudo (<1,1) | Cauda do evento acima |
+| 12/12/2024 12:09 | `TV_355X_A` z=4,1, `TC382_03_A` z=4,0, `T5_AVG_A` z=3,8 | **Evento real moderado** |
+| 12/12/2024 14:34 (~2,5h depois) | `T5_AVG_A` z=-39,3, `TC382_03_A` z=-32,1, `TV_353X_A` z=-17,9 | **Evento real grande** (queda brusca) |
+| 2025-08-27 00:37 (17min, reconfirmado) | z fraco em tudo (máx \|z\|=1,45), nenhum portão ativo por perto | **Segue sem explicação** |
+
+Os 4 episódios de 2024 não apareceram no cruzamento com o catálogo
+(±24h) porque os alarmes de pressão mais próximos (`PI_6240319_AL`,
+`PAL_6240315`, `PAL_6240339`, `PALL_6240340`) ficam a 26h-3,6 dias de
+distância — fora da janela usada, mas fisicamente correlacionáveis
+dado o z-score extremo (até 44σ) cruzando carga+temperatura+vibração
+simultaneamente.
+
+**Conclusão: dos 222 pontos residuais originais do EXP22/24 isolados
+(24 episódios, 126 pontos), sobra apenas 1 episódio genuinamente sem
+explicação** (`2025-08-27 00:37`, 17min) depois de toda a investigação
+desta sessão. Não vale mais esforço de investigação isolada nele — se
+algo mais aparecer, será via a mesma disciplina (cruzar com catálogo
+mais amplo, checar portões, checar vibração) que já resolveu os
+outros 23.
+
+**Próximo passo, se o usuário quiser prosseguir com a estratégia
+"sênior" já delineada**: implementar a supressão cirúrgica baseada em
+mecanismo pros episódios de borda de portão (não um filtro de duração
+genérico) — ver seção anterior "como nos livramos desses amarelos".
