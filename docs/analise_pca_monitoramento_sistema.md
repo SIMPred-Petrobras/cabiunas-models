@@ -1263,3 +1263,52 @@ sobrescrito) — ficam como referências de configuração pra uso futuro.
 continua sendo a melhor config pro dataset do Francisco (100%/0,0475%).
 EXP26a/b ficam documentados como tentativas de alinhamento adicionais
 que não superaram a referência — negativo instrutivo, não promovido.
+
+## EXP27: modelo único (mancal+óleo) contra todos os 8-9 eventos de uma vez — piorou (2026-09-01)
+
+Pedido do usuário: em vez de combinar manualmente 2 modelos
+especializados (bearing pra mancal/selagem, óleo pra óleo lub.), testar
+**um único modelo multivariado** com os 14 sensores dos dois grupos
+juntos (`TC382_03_A`, `T5_AVG_A`, 10 vibração, `954005_624_PI_0308`,
+`954005_624_PDIT_0305`), avaliado contra a tag `FALHA_CURADA` (todos os
+eventos curados de uma vez). Novo dataset unificado publicado
+(`5791e9065afe4908b0b8946b8e244de1`, `sensores_francisco_unificado.csv`
+com as 14 colunas). Mesma pilha de portões do EXP25a (OCSVM, features
+multiescala `[3,30,120,720]`, filtro de duração 4,5min, portões de
+rampa/volatilidade/mudança de nível com `T5_AVG_A`, veto de congelado
+30min). Config: `test_grupo_exp27_unificado_8trips.json`. Task:
+`649dd804112741fab4f076ba61d5a170`.
+
+**Resultado: 7 de 9 — pior que os 8/8 com modelos especializados.**
+
+| evento | causa | domínio | unificado (EXP27) | especializado (EXP22/24/25a) |
+|---|---|---|---|---|
+| 2024-01-16 | mancal | in-sample | **HIT** (evento novo, nunca testado antes) | não testado |
+| 27/02/2025 | selagem | in-sample | HIT | HIT (provável coincidência) |
+| 17/03/2025 | mancal | in-sample | HIT | HIT |
+| 07/04/2025 | mancal | in-sample | HIT | HIT |
+| **11/04/2025** | mancal | in-sample | **MISS** | HIT (102,9h) |
+| 29/04/2025 | mancal | in-sample | HIT | HIT |
+| **04/11/2025** | óleo | **OOS** | **MISS** | HIT (13,4h) |
+| 09/12/2025 | mancal | **OOS** | HIT | HIT (5,7h) |
+| 26/02/2026 | óleo | **OOS** | HIT | HIT (51,3h) |
+
+`hit_rate` OOS = 2/3 (66,7%), `normal_alert_rate` = 0,24% — pior que os
+0,0475% do EXP25a especializado.
+
+**Por que piorou**: juntar sensores de mecanismos físicos diferentes
+num único modelo dilui a sensibilidade do OCSVM — exatamente o motivo
+pelo qual o Francisco usa 4 sinais **independentes** em vez de 1 modelo
+global sobre todos os 39 sensores. Os 2 eventos perdidos (11/04 mancal,
+04/11 óleo) são justamente os mais sutis/de menor antecedência de cada
+mecanismo — onde a diluição por sensores irrelevantes do outro
+subsistema pesa mais.
+
+**Achado colateral**: o 9º evento (2024-01-16, fora do alcance de
+qualquer teste anterior nesta sessão) foi checado pela primeira vez —
+**detectado**.
+
+**Conclusão prática: manter os 2 modelos especializados separados
+(EXP25a pro mancal, EXP24 pro óleo) continua sendo a melhor
+estratégia — não compensa unificar.** EXP27 fica documentado como
+negativo instrutivo, não promovido.
