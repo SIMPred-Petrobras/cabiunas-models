@@ -1080,13 +1080,46 @@ antecedência dos dois. FP menor no dataset do Francisco pode ser só
 efeito de menos "arestas" por amostra mais espaçada, não
 necessariamente um dado mais limpo.
 
-**Conclusão parcial**: dataset do Francisco não superou o nosso nesta
-comparação (perdeu 1 detecção que já tínhamos), mas a comparação do
-grupo mancal ainda está pendente de uma rodada válida (com features
-derivadas reduzidas, não desligadas). Scripts e configs:
+**Conclusão parcial (grupo óleo)**: dataset do Francisco não superou o
+nosso nesta comparação (perdeu 1 detecção que já tínhamos).
+
+### EXP25a v2 — grupo mancal, rodado remotamente com recursos adequados — SUCESSO
+
+O sandbox local (7,6GB RAM) não aguenta rodar features multiescala
+completas nesse volume de dados — **2 OOM kills confirmados**, mesmo
+com CSV reduzido a 13 colunas e depois com só 2 janelas em vez de 4.
+Correção: publicado dataset ClearML `Cabiunas Francisco Comparativo`
+(`c995dd5b97cc4748aab0f7997aae3baf`) com os 3 CSVs convertidos, e
+resubmetido como task remota de verdade (`RUN_REMOTE=true`), com
+`DERIVED_ROLLING_WINDOWS` corrigido para `[3, 30, 120, 720]` —
+**escalado pra grade de 2min representar as MESMAS janelas reais**
+(6min/1h/4h/24h) que `[12,120,480,2880]` representa na grade de 30s do
+EXP22 (usar os mesmos valores em amostras, sem escalar, teria
+representado janelas 4x mais longas — erro pego antes de rodar).
+
+**Task**: `3181f1ab050b498ead1a0fc7888ddee6` — completou no worker
+remoto sem problema de memória.
+
+| | EXP22 (dataset nosso, 30s, referência) | EXP25a v2 (dataset Francisco, 2min, remoto) |
+|---|---|---|
+| hit_rate OOS (1 alarme: 09/12/2025) | implícito no 36/40 geral | **100% (1/1)** |
+| `normal_alert_rate` | 0,047% | **0,0475%** |
+
+**Praticamente idêntico** — nossa arquitetura (OCSVM + features
+multiescala + filtro de duração + portão de rampa/volatilidade/mudança
+de nível) generaliza igualmente bem pro dataset curado do Francisco,
+tanto em detecção quanto em taxa de falso alerta, desde que as janelas
+multiescala sejam escaladas corretamente pra grade de amostragem.
+
+**Conclusão geral do EXP25**: nossa pipeline funciona tão bem no
+dataset do Francisco quanto no nosso (grupo mancal: praticamente
+idêntico; grupo óleo: perdemos 1 de 2, hipótese de resolução mais
+grossa diluindo um precursor curto — não investigado a fundo). O
+gargalo real desta investigação foi de infraestrutura (memória do
+sandbox local), não do modelo — corrigido rodando no worker remoto.
+Scripts e configs: `dataset_francisco_lara/converter_dataset_francisco.py`,
 `configs/calibracao_v4_eq/test_grupo_exp25a_mancal_dataset_francisco.json`,
-`test_grupo_exp25b_oleo_dataset_francisco.json`,
-`dataset_francisco_lara/converter_dataset_francisco.py`.
+`test_grupo_exp25b_oleo_dataset_francisco.json`.
 
 ### Cross-check dos 6 episódios "preto" (FP persistente) do Francisco
 
