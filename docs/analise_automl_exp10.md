@@ -1763,3 +1763,65 @@ outros 23.
 "sênior" já delineada**: implementar a supressão cirúrgica baseada em
 mecanismo pros episódios de borda de portão (não um filtro de duração
 genérico) — ver seção anterior "como nos livramos desses amarelos".
+
+## Supressão cirúrgica baseada em mecanismo: testada offline e REJEITADA
+
+A ideia (Categoria 2 da seção anterior): um episódio residual curto e
+isolado é "artefato de borda de portão", não ruído nem precursor real,
+se — logo em seguida — algum portão (`load_gate_blocked`,
+`volatility_gate_blocked`, `step_change_gate_blocked`) liga e
+permanece ligado por um tempo sustentado. Diferente do 2º filtro de
+duração genérico (já rejeitado — Seção "EXP20"), essa regra exige
+evidência positiva do mecanismo causal específico, não duração
+isolada — em tese, mais seletiva e de menor risco.
+
+**Antes de tocar em `scoring.py`/`automl_pipeline.py`, a regra foi
+validada OFFLINE contra o `point_anomalies_all.csv` já calculado do
+EXP28** (254 episódios residuais finais, pós-todos-os-portões) —
+script `dataset_francisco_lara/valida_supressao_cirurgica.py`.
+Resultado com o parâmetro mais permissivo (lookahead 10min, sustain
+3min): **153 de 254 episódios flagados — incluindo 3 dos 12
+episódios verdes (acertos reais)**. Testando 8 combinações mais
+restritas (duração máxima do episódio 1–2min, transição imediata
+0–1 amostra, sustain 3–10min) o total de flagados cai (110–121), mas
+**os mesmos 3 episódios verdes continuam flagados em TODAS as
+combinações**:
+
+| ep\_id | Início | Evento real associado |
+|---|---|---|
+| 89 | 2025-04-07 10:09:00 | TRIP mancal 07/04/2025 (19,5h de antecedência) |
+| 181 | 2026-02-25 19:59:00 | TRIP óleo 26/02/2026 (19,9h de antecedência) |
+| 182 | 2026-02-26 07:44:30 | TRIP óleo 26/02/2026 (mesmo evento) |
+
+Esses três são precursores genuínos — os únicos pontos residuais que
+antecipam dois dos 8 TRIPs curados do Francisco — e cada um deles é,
+por construção física, imediatamente seguido por um portão real
+engatando (a mesma manobra/degrau que caracteriza o início do evento
+real também dispara o portão de rampa/degrau). **É exatamente o risco
+teórico já registrado na Seção "por que o 2º filtro de duração
+genérico falhou": um fragmento curto de precursor real truncado por
+um portão e um fragmento curto de ruído genuíno são indistinguíveis
+usando só o sinal "portão engatou logo depois"**, porque ambos
+compartilham a mesma assinatura causal — não é possível afinar o
+parâmetro para escapar disso, é uma limitação estrutural do critério.
+
+**Decisão: supressão cirúrgica baseada em mecanismo REJEITADA sem
+alterar código de produção.** Suprimir esses 3 episódios derrubaria o
+resultado de 8/8 (Seção "EXP28/29") para 6/8, exatamente a mesma
+performance do detector de produção do Francisco que estamos
+superando hoje — trocaria uma redução de FP de 0,05h/mês por perder
+2 dos 8 eventos reais, o pior trade-off possível para um sistema de
+detecção precoce. Nenhuma mudança foi feita em `scoring.py`,
+`config.py` ou `automl_pipeline.py`; a config de produção continua
+sendo EXP28 (mancal) / EXP29 (óleo), inalteradas.
+
+**Lição confirmada pela terceira vez nesta investigação** (após o 2º
+filtro de duração e o EWMA): qualquer supressão pós-hoc que dependa
+só de propriedades do próprio sinal residual (duração, ou agora
+proximidade de portão) tende a atingir precursores reais truncados
+tanto quanto ruído, porque o truncamento e o precursor são causados
+pelo mesmo evento físico. A estratégia que continua de pé é a da
+Seção "de que forma eficiente e inteligente podemos eliminar esses
+FP?": cruzamento contra o catálogo completo **em tempo de alerta**
+(pós-detecção, fora do modelo), não mais um portão dentro da
+pipeline de treino/score.

@@ -245,3 +245,39 @@ def load_data(cfg: PipelineConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataF
     print("[TIME-INTEGRITY]", json.dumps(report, ensure_ascii=False))
 
     return df_alarm, df_feat, df_raw, report
+
+
+def load_alert_context_catalog(cfg: PipelineConfig) -> pd.DataFrame:
+    """Carrega o catalogo AMPLO de alarmes usado so pra anotacao de
+    contexto (ENABLE_ALERT_CATALOG_CONTEXT) -- arquivo independente do
+    ALARM_CSV de avaliacao (ex: alarmes_selecionados_turbina_a.csv, 47
+    tags, vs a lista curada usada no hit_rate oficial). Resolvido do
+    mesmo jeito que os outros CSVs do dataset (local ou ClearML
+    Dataset). Retorna vazio (sem lancar erro) se ALERT_CONTEXT_CATALOG_CSV
+    nao estiver configurado."""
+    if not cfg.ALERT_CONTEXT_CATALOG_CSV:
+        return pd.DataFrame(columns=["Tag", "Data da Ocorrencia"])
+
+    if cfg.USE_CLEARML_DATASET:
+        from clearml import Dataset
+
+        dataset_id = (cfg.CLEARML_DATASET_ID or os.getenv("CLEARML_DATASET_ID", "")).strip()
+        if dataset_id:
+            dataset = Dataset.get(dataset_id=dataset_id)
+        else:
+            dataset = Dataset.get(dataset_name=cfg.CLEARML_DATASET_NAME, dataset_project=cfg.CLEARML_PROJECT_NAME)
+        dataset_root = Path(dataset.get_local_copy())
+        catalog_path = _resolve_dataset_file(dataset_root, cfg.ALERT_CONTEXT_CATALOG_CSV)
+    else:
+        catalog_path = cfg.ALERT_CONTEXT_CATALOG_CSV
+
+    df_catalog = pd.read_csv(catalog_path)
+    if "Data da Ocorrência" in df_catalog.columns and "Data da Ocorrencia" not in df_catalog.columns:
+        df_catalog["Data da Ocorrencia"] = df_catalog["Data da Ocorrência"]
+    if "Tag Alarme" in df_catalog.columns and "Tag" not in df_catalog.columns:
+        df_catalog["Tag"] = df_catalog["Tag Alarme"]
+    if "Status" in df_catalog.columns:
+        df_catalog = df_catalog[df_catalog["Status"].astype(str).str.startswith("ACT")].copy()
+
+    df_catalog = _process_time_column(df_catalog, "Data da Ocorrencia", cfg, "alert_context_catalog")
+    return df_catalog

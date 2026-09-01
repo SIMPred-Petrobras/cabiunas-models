@@ -306,6 +306,26 @@ class PipelineConfig:
     ENABLE_FROZEN_SENSOR_VETO: bool = False
     FROZEN_SENSOR_VETO_WINDOW_MINUTES: float = 5.0
 
+    # Anotacao de contexto de alerta contra um catalogo MAIS AMPLO de
+    # alarmes (ex: 47 tags de alarmes_selecionados_turbina_a.csv -- nao
+    # o ALARM_CSV usado na avaliacao oficial, que costuma ser um
+    # subconjunto curado). PURAMENTE INFORMATIVO: adiciona as colunas
+    # alert_catalog_tag/alert_catalog_time/alert_catalog_distance_h/
+    # alert_confidence ao point_anomalies_all.csv SEM alterar
+    # is_anom_point, hit_rate ou normal_alert_rate. Implementa a
+    # estrategia "classificar por confianca, corroborar em tempo de
+    # alerta" (nao suprimir dentro do treino/score) -- ver
+    # docs/analise_automl_exp10.md, secoes "Cruzamento com catalogo
+    # completo" (88,1% do residuo "amarelo" era sinal real de outro
+    # alarme) e "Supressao cirurgica baseada em mecanismo: testada
+    # offline e REJEITADA" (suprimir dentro da pipeline custaria 2 dos
+    # 8 TRIPs reais -- anotar em vez de suprimir tem risco zero porque
+    # nao decide nada, so da contexto pro operador). False (default) =
+    # comportamento anterior inalterado (nenhuma coluna nova).
+    ENABLE_ALERT_CATALOG_CONTEXT: bool = False
+    ALERT_CONTEXT_CATALOG_CSV: Optional[str] = None
+    ALERT_CONTEXT_WINDOW_HOURS: float = 24.0
+
     # Retreino walk-forward mensal: em vez de um unico ajuste (modelo +
     # normalizacao + limiar de percentil) sobre todo o normal anterior a
     # AUTOML_OOS_SPLIT_DATE, re-treina do zero a cada

@@ -415,6 +415,94 @@ def compute_step_change_index(load_series: pd.Series, short_window_minutes: floa
     return ((short_mean - long_mean).abs() / (long_std + 1e-6)).fillna(0.0)
 
 
+def _nearest_within_window(t_arr: np.ndarray, ref_sorted: np.ndarray, win: pd.Timedelta) -> np.ndarray:
+    """Para cada instante em t_arr, indice em ref_sorted (ja ordenado)
+    do mais proximo dentro de `win`, ou -1 se nao houver nenhum.
+    Mesma logica do `nearest_alarm` usado nas investigacoes ad-hoc de
+    cruzamento com catalogo (dataset_francisco_lara/gen_figura_*.py)."""
+    out = np.full(len(t_arr), -1, dtype=np.int64)
+    if len(ref_sorted) == 0 or len(t_arr) == 0:
+        return out
+    pos = np.searchsorted(ref_sorted, t_arr)
+    for i in range(len(t_arr)):
+        p = pos[i]
+        cands = [c for c in (p - 1, p) if 0 <= c < len(ref_sorted)]
+        if not cands:
+            continue
+        best = min(cands, key=lambda c: abs(t_arr[i] - ref_sorted[c]))
+        if abs(t_arr[i] - ref_sorted[best]) <= win:
+            out[i] = best
+    return out
+
+
+def annotate_alert_catalog_context(
+    df_point: pd.DataFrame,
+    catalog_df: pd.DataFrame,
+    window_hours: float,
+    time_col: str = "Data da Ocorrencia",
+    tag_col: str = "Tag",
+) -> pd.DataFrame:
+    """Anota cada is_anom_point==1 com o alarme mais proximo de um
+    catalogo AMPLO (ex: 47 tags) dentro de +-window_hours -- PURAMENTE
+    INFORMATIVO, nunca altera is_anom_point/hit_rate/normal_alert_rate.
+
+    Implementa a estrategia "classificar por confianca e corroborar em
+    tempo de alerta" (docs/analise_automl_exp10.md, secao "Cruzamento
+    com catalogo completo"): 88,1% dos episodios residuais "amarelos"
+    contra os TRIPs curados eram, na verdade, sinal real de outro
+    alarme do processo dentro de 24h. Em vez de suprimir esses pontos
+    dentro da pipeline (a tentativa mais direcionada disso -- supressao
+    cirurgica baseada em mecanismo -- foi testada offline e REJEITADA
+    por custar 2 dos 8 TRIPs reais, mesma secao do doc), essa funcao so
+    adiciona contexto para o consumidor do alerta (dashboard/operador)
+    decidir a prioridade.
+
+    Colunas adicionadas: alert_catalog_tag, alert_catalog_time,
+    alert_catalog_distance_h, alert_confidence (
+    "explicado_catalogo" | "isolado" | None se nao for anomalia).
+    """
+    df_point = df_point.copy()
+    df_point["alert_catalog_tag"] = pd.array([None] * len(df_point), dtype=object)
+    df_point["alert_catalog_time"] = pd.NaT
+    df_point["alert_catalog_distance_h"] = np.nan
+
+    is_anom = df_point["is_anom_point"].values == 1
+    confidence = np.where(is_anom, "isolado", None).astype(object)
+    df_point["alert_confidence"] = confidence
+
+    anom_idx = np.where(is_anom)[0]
+    if len(anom_idx) == 0 or catalog_df.empty or time_col not in catalog_df.columns:
+        return df_point
+
+    ref = catalog_df[[c for c in (time_col, tag_col) if c in catalog_df.columns]].dropna(subset=[time_col])
+    ref = ref.sort_values(time_col)
+    ref_arr = ref[time_col].values.astype("datetime64[ns]")
+    ref_tags = ref[tag_col].values if tag_col in ref.columns else None
+
+    t_arr = df_point.index.values[anom_idx].astype("datetime64[ns]")
+    win = pd.Timedelta(hours=float(window_hours))
+    match = _nearest_within_window(t_arr, ref_arr, win)
+
+    hit = match >= 0
+    rows = anom_idx[hit]
+    matched_ref = match[hit]
+    if len(rows) == 0:
+        return df_point
+
+    dist_h = np.abs(t_arr[hit] - ref_arr[matched_ref]).astype("timedelta64[s]").astype(np.float64) / 3600.0
+    col_time = df_point.columns.get_loc("alert_catalog_time")
+    col_dist = df_point.columns.get_loc("alert_catalog_distance_h")
+    col_conf = df_point.columns.get_loc("alert_confidence")
+    df_point.iloc[rows, col_time] = ref_arr[matched_ref]
+    df_point.iloc[rows, col_dist] = dist_h
+    df_point.iloc[rows, col_conf] = "explicado_catalogo"
+    if ref_tags is not None:
+        col_tag = df_point.columns.get_loc("alert_catalog_tag")
+        df_point.iloc[rows, col_tag] = ref_tags[matched_ref]
+
+    return df_point
+
+
 def apply_step_change_gate(df_point: pd.DataFrame, step_index: pd.Series, threshold: float) -> pd.DataFrame:
     """Suprime is_anom_point quando `compute_step_change_index` ultrapassa
     `threshold` -- causal por construcao (a serie de entrada ja e uma

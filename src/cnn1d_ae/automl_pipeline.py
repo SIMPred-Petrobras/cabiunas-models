@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from .config import PipelineConfig
-from .io import ensure_sensor_dirs, save_run_config
+from .io import ensure_sensor_dirs, save_run_config, load_alert_context_catalog
 from .model import build_callbacks
 from .preprocess import (
     build_sensor_dataframe,
@@ -35,6 +35,7 @@ from .scoring import (
     apply_min_duration_filter,
     compute_step_change_index,
     apply_step_change_gate,
+    annotate_alert_catalog_context,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -701,6 +702,22 @@ def run_automl_group(
         )
 
     assert best_point_df is not None
+
+    # Anotacao de contexto de alerta (puramente informativa, nao mexe em
+    # is_anom_point/hit_rate/normal_alert_rate) -- ver ENABLE_ALERT_CATALOG_CONTEXT
+    # em config.py e docs/analise_automl_exp10.md, secao "Cruzamento com
+    # catalogo completo". Roda por ultimo, depois de todos os portoes,
+    # sobre o df_point ja finalizado do melhor trial.
+    if cfg.ENABLE_ALERT_CATALOG_CONTEXT:
+        alert_catalog = load_alert_context_catalog(cfg)
+        best_point_df = annotate_alert_catalog_context(
+            best_point_df, alert_catalog, cfg.ALERT_CONTEXT_WINDOW_HOURS,
+        )
+        n_anom = int((best_point_df["is_anom_point"] == 1).sum())
+        n_explicado = int((best_point_df["alert_confidence"] == "explicado_catalogo").sum())
+        print(f"[ALERT-CONTEXT] group={group_name}: {n_explicado}/{n_anom} pontos anomalos "
+              f"explicados por catalogo amplo dentro de +-{cfg.ALERT_CONTEXT_WINDOW_HOURS}h")
+
     best_point_df.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
     anomalous_times = best_point_df.index[best_point_df["is_anom_point"] == 1]
