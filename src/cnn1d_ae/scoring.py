@@ -147,6 +147,150 @@ def compute_normal_alert_rate(df_point: pd.DataFrame, near_alarm_mask: pd.Series
     return float(normal["is_anom_point"].mean())
 
 
+def group_alerts_into_episodes(is_anom: pd.Series, merge_gap_minutes: float) -> pd.DataFrame:
+    """Agrupa is_anom_point em episodios, FUNDINDO runs separados por
+    menos de `merge_gap_minutes` -- diferente de contar cada run
+    contiguo como um episodio (o que trata um alarme que "pisca"
+    liga-desliga-liga em poucos minutos como varios eventos). Regua
+    proposta pelo usuario: gap < 2h conta como o mesmo episodio.
+
+    Retorna DataFrame com colunas start/end (ambas inclusive,
+    timestamps do index de `is_anom`).
+    """
+    idx = is_anom.index
+    flags = is_anom.values.astype(bool)
+    if not flags.any():
+        return pd.DataFrame(columns=["start", "end"])
+
+    m = flags.astype(np.int8)
+    d = np.diff(np.concatenate(([0], m, [0])))
+    starts = np.where(d == 1)[0]
+    ends = np.where(d == -1)[0] - 1  # inclusive
+
+    gap = pd.Timedelta(minutes=float(merge_gap_minutes))
+    merged_starts = [idx[starts[0]]]
+    merged_ends = [idx[ends[0]]]
+    for s, e in zip(starts[1:], ends[1:]):
+        run_start = idx[s]
+        if run_start - merged_ends[-1] < gap:
+            merged_ends[-1] = idx[e]
+        else:
+            merged_starts.append(run_start)
+            merged_ends.append(idx[e])
+
+    return pd.DataFrame({"start": merged_starts, "end": merged_ends})
+
+
+def classify_episodes_regua(
+    episodes: pd.DataFrame,
+    failure_times: pd.Series,
+    operational_state: pd.Series,
+    pre_window_hours: float = 48.0,
+    post_window_hours: float = 48.0,
+    min_stoppage_hours: float = 2.0,
+) -> pd.DataFrame:
+    """Classifica cada episodio (de `group_alerts_into_episodes`) em 3
+    categorias -- regua proposta pelo usuario, equivalente ao protocolo
+    oficial do Francisco (falha = parada real, janela de 48h):
+
+      - "deteccao": o episodio COMECA dentro de ate `pre_window_hours`
+        ANTES de alguma falha catalogada (`failure_times`).
+      - "inconclusivo": nao e deteccao, mas a maquina teve uma PARADA
+        REAL (operational_state != "on" por >= `min_stoppage_hours`
+        continuas) comecando ate `post_window_hours` DEPOIS do fim do
+        episodio -- pode ser um evento fisico real nao catalogado (ver
+        docs/analise_automl_exp10.md, secao "Cruzamento com catalogo
+        completo"); nao conta a favor nem contra o modelo.
+      - "falso_positivo": nenhum dos dois -- nem antecede uma falha
+        catalogada, nem antecede uma parada real qualquer.
+
+    Retorna `episodes` com colunas extras `classe` e `falha_associada`
+    (timestamp da falha detectada, quando `classe == "deteccao"`).
+    """
+    episodes = episodes.copy()
+    fail_arr = np.sort(pd.DatetimeIndex(failure_times).values.astype("datetime64[ns]"))
+    pre = pd.Timedelta(hours=float(pre_window_hours))
+    post = pd.Timedelta(hours=float(post_window_hours))
+    min_stop = pd.Timedelta(hours=float(min_stoppage_hours))
+
+    def matching_failure(start: pd.Timestamp):
+        start64 = np.datetime64(start)
+        pos = np.searchsorted(fail_arr, start64)
+        if pos < len(fail_arr):
+            dt = fail_arr[pos] - start64
+            if np.timedelta64(0) <= dt <= np.timedelta64(pre):
+                return fail_arr[pos]
+        return None
+
+    off = operational_state != "on"
+    off_diff = off.astype(int).diff().fillna(int(off.iloc[0]) if len(off) else 0)
+    off_starts = off.index[off_diff == 1]
+    off_ends = off.index[off_diff == -1]
+    if len(off) and off.iloc[0]:
+        off_starts = off_starts.insert(0, off.index[0])
+    if len(off_starts) > len(off_ends):
+        off_ends = off_ends.append(pd.DatetimeIndex([off.index[-1]]))
+    stoppage_starts = np.array(
+        [s for s, e in zip(off_starts, off_ends) if (e - s) >= min_stop],
+        dtype="datetime64[ns]",
+    )
+    stoppage_starts.sort()
+
+    def has_real_stoppage_after(end: pd.Timestamp) -> bool:
+        end64 = np.datetime64(end)
+        pos = np.searchsorted(stoppage_starts, end64)
+        if pos < len(stoppage_starts):
+            dt = stoppage_starts[pos] - end64
+            return np.timedelta64(0) <= dt <= np.timedelta64(post)
+        return False
+
+    classes, falha_assoc = [], []
+    for _, row in episodes.iterrows():
+        matched = matching_failure(row["start"])
+        if matched is not None:
+            classes.append("deteccao")
+            falha_assoc.append(pd.Timestamp(matched))
+        elif has_real_stoppage_after(row["end"]):
+            classes.append("inconclusivo")
+            falha_assoc.append(pd.NaT)
+        else:
+            classes.append("falso_positivo")
+            falha_assoc.append(pd.NaT)
+
+    episodes["classe"] = classes
+    episodes["falha_associada"] = falha_assoc
+    return episodes
+
+
+def compute_regua_metrics(
+    classified_episodes: pd.DataFrame,
+    failure_times: pd.Series,
+    period_days: float,
+) -> dict:
+    """Resume `classify_episodes_regua` em metricas agregadas: hit_rate
+    (fracao de falhas catalogadas com >=1 episodio de deteccao) e taxa
+    de falso positivo (episodios/mes), separando explicitamente os
+    "inconclusivo" (nao contam nem a favor nem contra)."""
+    n_falhas = len(pd.DatetimeIndex(failure_times).unique())
+    falhas_detectadas = classified_episodes.loc[
+        classified_episodes["classe"] == "deteccao", "falha_associada"
+    ].nunique()
+    n_deteccao = int((classified_episodes["classe"] == "deteccao").sum())
+    n_inconclusivo = int((classified_episodes["classe"] == "inconclusivo").sum())
+    n_fp = int((classified_episodes["classe"] == "falso_positivo").sum())
+    months = max(1e-9, float(period_days) / 30.4375)
+
+    return {
+        "n_falhas_catalogadas": int(n_falhas),
+        "falhas_detectadas": int(falhas_detectadas),
+        "hit_rate": float(falhas_detectadas / n_falhas) if n_falhas > 0 else None,
+        "n_episodios_deteccao": n_deteccao,
+        "n_episodios_inconclusivo": n_inconclusivo,
+        "n_episodios_falso_positivo": n_fp,
+        "falso_positivo_por_mes": float(n_fp / months),
+    }
+
+
 def compute_composite_score(
     detection_rate: float,
     normal_alert_rate: float,

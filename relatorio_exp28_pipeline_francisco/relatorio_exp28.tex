@@ -16,6 +16,7 @@
 \usepackage{float}
 \usepackage{fancyhdr}
 \usepackage{amsmath}
+\usepackage{pifont}
 
 % ---------- Cores ----------
 \definecolor{corAzul}{HTML}{2A78D6}
@@ -184,12 +185,15 @@ Como teste de robustez do princípio de especialização, um modelo único
 foi treinado juntando os 14 sensores dos dois grupos, avaliado contra
 todos os eventos curados de uma vez (\texttt{FALHA\_CURADA}). Resultado:
 \textbf{7 de 9} -- pior que os \textbf{8 de 8} obtidos combinando os
-dois modelos especializados. Os dois eventos perdidos (11/04/2025
-mancal e 04/11/2025 óleo) são justamente os mais sutis de cada
-mecanismo -- exatamente onde a diluição de sensibilidade por sensores
-irrelevantes do outro subsistema pesa mais. Confirma, de forma
-independente, a mesma lição que motivou o Francisco a usar 4 sinais
-separados em vez de 1 modelo global sobre os 39 sensores.
+dois modelos especializados (ambos os números usam a mesma janela
+$\pm$24h simétrica; sob a régua rigorosa da Seção~\ref{sec:regua-rigorosa}
+os dois cairiam proporcionalmente, mas a comparação relativa
+especializado-vs-unificado se mantém válida). Os dois eventos
+perdidos (11/04/2025 mancal e 04/11/2025 óleo) são justamente os mais
+sutis de cada mecanismo -- exatamente onde a diluição de sensibilidade
+por sensores irrelevantes do outro subsistema pesa mais. Confirma, de
+forma independente, a mesma lição que motivou o Francisco a usar 4
+sinais separados em vez de 1 modelo global sobre os 39 sensores.
 
 % ======================================================================
 \section{Resultado oficial e cruzamento com o ground-truth curado}
@@ -248,6 +252,17 @@ os 9 eventos curados do Francisco (janela $\pm$24h):
 \footnotetext{Antes de \texttt{DATA\_START\_DATE=2024-07-01}.}
 \footnotetext[2]{O modelo de mancal corretamente não reage a um evento
 de óleo -- não é seu escopo.}
+
+\begin{quote}
+\small\textit{\textbf{Correção (ver Seção~\ref{sec:regua-rigorosa}):}
+esse ``8 de 8'' usa uma janela $\pm$24h simétrica -- conta como acerto
+tanto uma reação antes quanto depois da falha. Sob a régua rigorosa
+(episódio precisa começar ANTES da falha, ou anteceder uma parada
+real), o resultado correto é \textbf{6 de 8}, empatado -- não
+superior -- ao detector oficial do Francisco. A Seção~\ref{sec:regua-rigorosa}
+mostra o resultado correto e um achado de complementaridade mais
+interessante que o número inflado.}
+\end{quote}
 
 % ======================================================================
 \section{Quantificando os episódios: verde (acerto) vs amarelo (FP)}
@@ -548,13 +563,105 @@ um resultado que deve ser comunicado com essa nuance, não simplesmente
 como "8/8 antecipados".
 
 % ======================================================================
+\section{Régua rigorosa de avaliação: episódios e antecedência real}
+\label{sec:regua-rigorosa}
+
+A tabela de antecedência acima já apontava o problema: a avaliação
+usada até aqui (janela $\pm$24h simétrica, Seção~\ref{sec:resultado-oficial})
+dá crédito de "acerto" tanto pra uma reação antes quanto depois da
+falha. Uma régua mais rigorosa, equivalente ao protocolo oficial do
+Francisco (falha = parada real, janela de 48h), corrige essa
+distorção:
+
+\begin{enumerate}
+  \item \textbf{Agrupar alertas em episódios}: um alerta que
+    liga/desliga com menos de 2h de intervalo conta como o mesmo
+    episódio (funde runs separados por gap $<$2h).
+  \item \textbf{Classificar cada episódio em 3 categorias}:
+  \begin{itemize}
+    \item \textbf{detecção}: o episódio começa até 48h ANTES de uma
+      falha catalogada.
+    \item \textbf{inconclusivo}: não antecede uma falha catalogada,
+      mas a máquina teve uma parada real ($\geq$2h contínuas) até 48h
+      DEPOIS do fim do episódio -- pode ser evento físico real não
+      catalogado; não conta a favor nem contra.
+    \item \textbf{falso\_positivo}: nenhum dos dois.
+  \end{itemize}
+\end{enumerate}
+
+Implementado em \texttt{scoring.py}
+(\texttt{group\_alerts\_into\_episodes}, \texttt{classify\_episodes\_regua},
+\texttt{compute\_regua\_metrics}), validado com caso sintético
+controlado antes de aplicar aos dados reais, sem regressão na suíte de
+testes (\texttt{15 passed}). Aplicado sobre os
+\texttt{point\_anomalies\_all.csv} já calculados do EXP30/31 -- sem
+re-treinar nada, só reavalia o mesmo \texttt{is\_anom\_point} com a
+régua nova.
+
+\subsection{Resultado: 6 de 8, não 8/8}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+& \textbf{EXP30 mancal} & \textbf{EXP31 óleo} & \textbf{Combinado} \\
+\midrule
+Episódios (gap$<$2h fundido) & 193 & 38 & -- \\
+Detecção (falhas únicas) & 5 & 2 & \textbf{6 de 8} \\
+Inconclusivo & 56 & 3 & -- \\
+Falso positivo & 127 (5,87/mês) & 33 (1,20/mês) & -- \\
+\bottomrule
+\end{tabular}
+\caption{Sob a régua rigorosa, perdemos 2 falhas: 27/02/2025 (selagem,
+reagimos 13,0h depois) e 17/03/2025 (mancal, reagimos 7,5h depois) --
+exatamente os 2 casos já identificados como "detectado só depois" na
+tabela de antecedência.}
+\end{table}
+
+\subsection{Achado de complementaridade com o detector do Francisco}
+
+Comparando nossas 2 falhas perdidas com a tabela oficial dele:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Falha} & \textbf{Nós (régua rigorosa)} & \textbf{Francisco (oficial)} \\
+\midrule
+27/02/2025 selagem & \textcolor{corVermelho}{\ding{55}} (reagiu depois) & \textcolor{corVerde}{\ding{51}} 33,2h \\
+17/03/2025 mancal & \textcolor{corVermelho}{\ding{55}} (reagiu depois) & \textcolor{corVerde}{\ding{51}} 30,7h \\
+07/04, 11/04, 29/04/2025 mancal & \textcolor{corVerde}{\ding{51}} & \textcolor{corVerde}{\ding{51}} \\
+04/11/2025 óleo & \textcolor{corVerde}{\ding{51}} 13,4h & \textcolor{corVermelho}{\ding{55}} (limitação de observabilidade) \\
+09/12/2025 mancal & \textcolor{corVerde}{\ding{51}} 5,7h & \textcolor{corVermelho}{\ding{55}} (varreu 36 sensores, nada achou) \\
+26/02/2026 óleo & \textcolor{corVerde}{\ding{51}} (bônus, via mancal) & \textcolor{corVerde}{\ding{51}} 19,9h \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Somos 6/8, ele é 6/8 -- empatados, não superiores.} Mas em
+conjuntos diferentes: nossos 2 misses são exatamente os 2 acertos
+dele, e nossos 2 acertos exclusivos (04/11 óleo, 09/12 mancal) são
+exatamente os 2 casos que ele documenta como falha do próprio sistema.
+\textbf{Combinando as duas abordagens, dá 8/8} -- evidência de
+complementaridade real entre as duas arquiteturas de detecção (a
+nossa multiescala/AutoML e a PCA de 4 sinais dele), não de que uma
+supera a outra. Argumento a favor de operar os dois sistemas em
+paralelo, não de substituir um pelo outro.
+
+% ======================================================================
 \section{Conclusão e próximos passos}
 \label{sec:conclusao}
 
 A pipeline de produção (EXP28/29) mantém 100\% da detecção já validada
-(90\% no catálogo de 40 alarmes, 100\% nos 2 TRIPs de óleo, 8/8 no
-ground-truth curado do Francisco), com uma proteção extra sem custo
-(veto de sensor congelado). O que parecia FP residual, quando
+(90\% no catálogo de 40 alarmes, 100\% nos 2 TRIPs de óleo), com uma
+proteção extra sem custo (veto de sensor congelado). Contra o
+ground-truth curado do Francisco, sob a régua rigorosa
+(Seção~\ref{sec:regua-rigorosa}) o resultado correto é \textbf{6 de 8}
+com antecedência real -- empatado com o detector oficial dele, com um
+achado de complementaridade (nossos 2 misses são exatamente os 2
+acertos dele, e vice-versa) mais valioso que um número inflado de
+8/8. O que parecia FP residual, quando
 investigado com a mesma disciplina de reconstrução literal usada em
 toda a sessão, revelou-se \textbf{88,1\% sinal real não reconhecido} --
 e dos 11,9\% restantes, mais de 90\% também se explicam por padrão

@@ -1623,8 +1623,11 @@ por ora; não há gate adicional pendente de implementação neste momento.
 
 Depois de validar no dataset do Francisco (`docs/analise_pca_monitoramento_sistema.md`,
 EXP25a-27) que nossa pipeline especializada (mancal + óleo separados)
-acerta 8/8 dos eventos curados dele — melhor que o detector de produção
-dele (6/8) e melhor que unificar tudo num modelo só (7/9, EXP27) —
+acerta 8/8 dos eventos curados dele sob uma janela ±24h simétrica
+(nota: sob a régua rigorosa depois validada, ver seção "Régua rigorosa
+de avaliação" mais abaixo, esse número cai pra 6/8, empatado -- não
+superior -- ao 6/8 do detector de produção dele) e melhor que unificar
+tudo num modelo só (7/9, EXP27) —
 traz 2 aprendizados de volta pra config de produção, **no nosso próprio
 dataset** (`a97ba56ba14840fbb1125c2a82f883c9`, nunca testado antes
 contra o ground-truth curado dele):
@@ -1680,6 +1683,15 @@ nunca testado antes no nosso dado bruto — só na grade de 2min dele):
 miss). Cada modelo especializado se comporta exatamente como
 esperado — mancal pega mancal/selagem e ignora óleo, óleo pega óleo e
 ignora mancal.
+
+> **CORREÇÃO (2026-09-01, ver seção "Régua rigorosa" mais abaixo):**
+> esse "8/8" usa uma janela ±24h simétrica (conta como acerto uma
+> reação tanto antes quanto depois da falha). Sob a régua correta
+> (episódio precisa começar ANTES da falha, ou anteceder uma parada
+> real) o resultado cai para **6 de 8** -- ainda assim empatado com o
+> detector oficial do Francisco, não superior a ele. Ver detalhes e a
+> descoberta de complementaridade (nossos 2 misses são os 2 acertos
+> dele, e vice-versa) na seção "Régua rigorosa de avaliação".
 
 **Conclusão prática**: os 2 aprendizados trazidos do dataset do
 Francisco (veto de sensor congelado + avaliação contra ground-truth
@@ -1806,14 +1818,16 @@ compartilham a mesma assinatura causal — não é possível afinar o
 parâmetro para escapar disso, é uma limitação estrutural do critério.
 
 **Decisão: supressão cirúrgica baseada em mecanismo REJEITADA sem
-alterar código de produção.** Suprimir esses 3 episódios derrubaria o
-resultado de 8/8 (Seção "EXP28/29") para 6/8, exatamente a mesma
-performance do detector de produção do Francisco que estamos
-superando hoje — trocaria uma redução de FP de 0,05h/mês por perder
-2 dos 8 eventos reais, o pior trade-off possível para um sistema de
-detecção precoce. Nenhuma mudança foi feita em `scoring.py`,
-`config.py` ou `automl_pipeline.py`; a config de produção continua
-sendo EXP28 (mancal) / EXP29 (óleo), inalteradas.
+alterar código de produção.** Sob a régua rigorosa validada depois
+(seção "Régua rigorosa de avaliação"), o episódio 89 (07/04/2025) e os
+episódios 181/182 (26/02/2026) são exatamente 2 dos nossos **6
+acertos genuínos com antecedência real** -- suprimi-los derrubaria o
+resultado de 6/8 para **4/8**, pior que os 6/8 do próprio detector de
+produção do Francisco. Trocaria uma redução de FP de 0,05h/mês por
+perder 2 dos 6 avisos antecipados reais, o pior trade-off possível
+para um sistema de detecção precoce. Nenhuma mudança foi feita em
+`scoring.py`, `config.py` ou `automl_pipeline.py`; a config de
+produção continua sendo EXP28 (mancal) / EXP29 (óleo), inalteradas.
 
 **Lição confirmada pela terceira vez nesta investigação** (após o 2º
 filtro de duração e o EWMA): qualquer supressão pós-hoc que dependa
@@ -1825,3 +1839,122 @@ Seção "de que forma eficiente e inteligente podemos eliminar esses
 FP?": cruzamento contra o catálogo completo **em tempo de alerta**
 (pós-detecção, fora do modelo), não mais um portão dentro da
 pipeline de treino/score.
+
+## EXP30/31: anotação de contexto de alerta contra catálogo amplo (2026-09-01)
+
+Formaliza em código a estratégia "classificar por confiança,
+corroborar em tempo de alerta" (Seção "Cruzamento com catálogo
+completo"). Nova função `annotate_alert_catalog_context` (`scoring.py`)
+cruza cada `is_anom_point==1` contra um catálogo AMPLO (não o `ALARM_CSV`
+de avaliação oficial) dentro de ±`ALERT_CONTEXT_WINDOW_HOURS` (default
+24h), adicionando colunas `alert_catalog_tag`/`alert_catalog_time`/
+`alert_catalog_distance_h`/`alert_confidence` -- **puramente
+informativo, nunca altera `is_anom_point`/hit_rate/normal_alert_rate**.
+Controlado por `ENABLE_ALERT_CATALOG_CONTEXT` (default `false`).
+
+**Configs**: `test_grupo_exp30_mancal_alerta_catalogo.json` (cópia do
+EXP28 + anotação ligada), `test_grupo_exp31_oleo_alerta_catalogo.json`
+(cópia do EXP29 + anotação ligada). **Tasks**: EXP30
+`aa87ae49ae314f02bbc011d2b843de41`, EXP31
+`5707fcb08773452386dceef0b61d64ea` -- ambas `completed`, hit_rate e
+normal_alert_rate idênticos ao EXP28/29 (confirma zero impacto na
+decisão do modelo).
+
+| | EXP30 (mancal) | EXP31 (óleo) |
+|---|---|---|
+| pontos anômalos | 5.176 | 35.260 |
+| explicados pelo catálogo (±24h) | 5.050 (97,6%) | 24.409 (69,2%) |
+| tag mais frequente | `PI_6240319_AL` (4.010) | `TC382_03_A` (8.964) |
+
+**Achado importante, checado antes de sugerir qualquer regra de
+priorização**: os 358 pontos verdes (perto de TRIP curado) são **100%**
+também marcados `explicado_catalogo` -- todo TRIP real do período
+também disparou algum alarme do catálogo amplo dentro de ±24h. Logo
+`alert_confidence == "explicado_catalogo"` sozinho **não pode** virar
+regra automática de "ignorar" -- é preciso checar primeiro a
+proximidade de um TRIP/falha conhecida, só depois usar a tag
+específica (rotineira vs. crítica) como critério secundário.
+
+Documentação operacional completa (diagrama de fluxo, 3 exemplos
+reais, tabela de priorização sugerida) em
+`relatorio_exp28_pipeline_francisco/relatorio_exp28.pdf`, seção "Como
+isso funciona operacionalmente".
+
+## Régua rigorosa de avaliação: episódios + antecedência real (2026-09-01)
+
+O usuário propôs uma régua de avaliação mais rigorosa, equivalente ao
+protocolo oficial do Francisco (falha = parada real, janela de 48h),
+em vez do critério "±24h simétrico" usado até aqui:
+
+1. **Agrupar alertas em episódios**: um alerta que liga/desliga com
+   menos de 2h de intervalo conta como o mesmo episódio (funde runs
+   contíguos separados por gap < 2h) -- não como vários eventos.
+2. **Classificar cada episódio em 3 categorias**:
+   - **detecção**: o episódio começa até 48h ANTES de uma falha
+     catalogada.
+   - **inconclusivo**: não antecede uma falha catalogada, mas a
+     máquina teve uma parada real (`operational_state != "on"` por
+     ≥2h contínuas) começando até 48h DEPOIS do fim do episódio --
+     pode ser evento físico real não catalogado (não conta a favor
+     nem contra).
+   - **falso_positivo**: nenhum dos dois.
+
+Implementado em `scoring.py`: `group_alerts_into_episodes`,
+`classify_episodes_regua`, `compute_regua_metrics` -- testado com caso
+sintético controlado antes de aplicar aos dados reais (`15 passed` na
+suíte completa, sem regressão). Script de aplicação:
+`dataset_francisco_lara/aplica_regua_episodios.py`, rodado sobre os
+`point_anomalies_all.csv` já calculados do EXP30/31 (sem re-treinar
+nada -- só reavalia o mesmo `is_anom_point` com a régua nova).
+
+### Resultado: 6 de 8, não 8/8
+
+| | EXP30 mancal (sozinho) | EXP31 óleo (sozinho) | Combinado (qualquer um detecta) |
+|---|---|---|---|
+| episódios (gap<2h fundido) | 193 | 38 | -- |
+| detecção | 10 (5 falhas únicas) | 2 (2 falhas únicas) | **6 de 8 falhas** |
+| inconclusivo | 56 | 3 | -- |
+| falso_positivo | 127 (5,87/mês) | 33 (1,20/mês) | -- |
+
+**Este é o número correto e mais honesto que o "8/8" reportado antes**
+(Seção "EXP28/29") -- aquele usava uma janela ±24h simétrica, que dá
+crédito de "acerto" tanto pra uma reação antes quanto depois da falha.
+As 2 falhas perdidas sob a régua correta:
+
+| Falha perdida | O que realmente aconteceu |
+|---|---|
+| 27/02/2025 (selagem) | pipeline só reagiu 13,0h **depois** |
+| 17/03/2025 (mancal) | pipeline só reagiu 7,5h **depois** |
+
+### Achado de complementaridade com o detector do Francisco
+
+Comparando as 2 falhas perdidas por nós com a tabela oficial dele
+(Seção "Documentação oficial do detector do Francisco",
+`docs/analise_pca_monitoramento_sistema.md`):
+
+| Falha | Nós (régua rigorosa) | Francisco (oficial) |
+|---|---|---|
+| 27/02/2025 selagem | ❌ (reagiu depois) | ✅ 33,2h |
+| 17/03/2025 mancal | ❌ (reagiu depois) | ✅ 30,7h |
+| 07/04, 11/04, 29/04/2025 mancal | ✅ | ✅ |
+| **04/11/2025 óleo** | ✅ 13,4h | ❌ (limitação de observabilidade) |
+| **09/12/2025 mancal** | ✅ 5,7h | ❌ (varreu 36 sensores, nada achou) |
+| 26/02/2026 óleo | ✅ (via bônus do modelo de mancal) | ✅ 19,9h |
+
+**Somos 6/8, ele é 6/8 -- empatados, não superiores.** Mas em
+**conjuntos diferentes**: nossos 2 misses são exatamente os 2 acertos
+dele, e nossos 2 acertos exclusivos (04/11 óleo, 09/12 mancal) são
+exatamente os 2 casos que ele documenta como falha do próprio sistema.
+Combinando as duas abordagens, dá **8/8** -- isso é evidência de
+**complementaridade real** entre as duas arquiteturas de detecção
+(a nossa multiescala/AutoML e a PCA de 4 sinais dele), não de que uma
+supera a outra. Vale considerar isso como argumento para operar os
+dois sistemas em paralelo, não como substituição um do outro.
+
+**Correção retroativa**: todas as afirmações "8/8" nas seções
+anteriores ("EXP28/29", "Duração dos episódios amarelos...",
+"Fechando os 24 episódios...", "Supressão cirúrgica...") foram
+anotadas com nota apontando para esta seção -- o texto histórico foi
+mantido (mostra a evolução do raciocínio), mas o número vigente e
+recomendado para qualquer comunicação externa é **6/8**, com a
+ressalva de complementaridade acima.
