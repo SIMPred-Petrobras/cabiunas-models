@@ -30,9 +30,10 @@ FIGS = {
     "FIG_RESULTADO": ("fig_nosso_estilo_francisco.png",
                       "Série de temperatura de exaustão com os episódios do detector "
                       "classificados em antecipou falha, antes de parada e falso positivo"),
-    "FIG_FRONTEIRA": ("fig_fronteira.png",
-                      "Fronteira custo por detecção do detector de 4 sinais comparada aos "
-                      "pontos publicados por Francisco e Lara"),
+    "FIG_FRONTEIRA": ("fig_fronteira_nosso.png",
+                      "Fronteira custo por detecção do detector de 4 sinais: o menor falso "
+                      "positivo e as menores horas de alarme alcançados em cada nível, de 4 a 8 "
+                      "falhas antecipadas"),
 }
 
 # no papel o slide vira pagina; a barra de navegacao e a sombra do palco somem
