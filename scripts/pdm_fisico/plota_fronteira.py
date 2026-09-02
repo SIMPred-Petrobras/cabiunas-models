@@ -18,8 +18,15 @@ RESSALVA QUE VAI NA FIGURA. Os dois lados sao MINIMOS SELECIONADOS sobre 8
 eventos: o minimo de uma varredura e otimista por construcao, e nenhuma
 diferenca aqui e estatisticamente significativa (nosso 5/8 contra o ponto da
 Lara: p = 0,119 no teste exato de duas taxas de Poisson).
+
+Com `--so-nosso` gera a variante do deck: sem os pontos deles. Na apresentacao o
+slide da fronteira responde "onde operar", nao "quem ganhou" -- por os outros times
+ali convida uma discussao que ja foi fechada no slide anterior. E ainda melhora a
+leitura: sem os pontos deles o eixo aperta de 1,0 para 0,6 em FP/mes e de 14 para 8
+em h/mes, e a fronteira deixa de viver espremida no terco esquerdo do painel.
 """
 from __future__ import annotations
+import sys
 import numpy as np, pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -78,34 +85,47 @@ def eixo(ax, x_nosso, deles_x, rotulo, xmax):
 
 
 if __name__ == "__main__":
+    SO_NOSSO = "--so-nosso" in sys.argv
     fp, hm = nossa_fronteira()
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14.2, 5.6), facecolor="white")
     for a in (ax1, ax2):
         a.set_facecolor("white")
 
-    eixo(ax1, fp, [(n, niv, x, c) for n, niv, x, _, c in DELES],
-         "falsos positivos por mês", 1.02)
-    eixo(ax2, hm, [(n, niv, x, c) for n, niv, _, x, c in DELES],
-         "horas por mês em alarme falso", 15.2)
+    # sem os pontos deles o eixo pode fechar no nosso proprio maximo, com folga
+    d_fp = [] if SO_NOSSO else [(n, niv, x, c) for n, niv, x, _, c in DELES]
+    d_h = [] if SO_NOSSO else [(n, niv, x, c) for n, niv, _, x, c in DELES]
+    eixo(ax1, fp, d_fp, "falsos positivos por mês", 0.62 if SO_NOSSO else 1.02)
+    eixo(ax2, hm, d_h, "horas por mês em alarme falso", 8.4 if SO_NOSSO else 15.2)
 
-    # rotulos diretos, seletivos -- e a regra de relevo para o aqua (contraste < 3:1)
+    # rotulos diretos. Sem os pontos deles ha espaco para rotular os cinco niveis
+    # nos dois paineis; com eles, so os tres nossos que importam mais o da Lara,
+    # que precisa de rotulo pela regra de relevo (aqua abaixo de 3:1 de contraste).
     ax1.annotate("produção\n8/8 · 0,52", (fp[4], 8), textcoords="offset points",
                  xytext=(12, -4), fontsize=8.5, color=INK, fontweight="bold", va="center")
     ax1.annotate("mínimo FP\n5/8 · 0,09", (fp[1], 5), textcoords="offset points",
                  xytext=(14, -18), fontsize=8.5, color=INK, va="center")
     ax1.annotate("zero FP\n4/8", (fp[0], 4), textcoords="offset points",
                  xytext=(10, 4), fontsize=8.5, color=INK, va="center")
-    ax1.annotate("Lara\n0,43", (0.43, 5), textcoords="offset points",
-                 xytext=(-6, -24), fontsize=8.5, color=INK, ha="center")
-    ax2.annotate("Lara\n10,2", (10.2, 5), textcoords="offset points",
-                 xytext=(0, -26), fontsize=8.5, color=INK, ha="center")
+    if SO_NOSSO:
+        ax1.annotate("equilíbrio\n6/8 · 0,34", (fp[2], 6), textcoords="offset points",
+                     xytext=(13, -16), fontsize=8.5, color=INK, va="center")
+        for i, n in enumerate(NIVEIS):
+            ax2.annotate(f"{hm[i]:.2f}".replace(".", ","), (hm[i], n),
+                         textcoords="offset points", xytext=(12, 0),
+                         fontsize=8.5, color=INK, va="center",
+                         fontweight="bold" if n == 8 else "normal")
+    else:
+        ax1.annotate("Lara\n0,43", (0.43, 5), textcoords="offset points",
+                     xytext=(-6, -24), fontsize=8.5, color=INK, ha="center")
+        ax2.annotate("Lara\n10,2", (10.2, 5), textcoords="offset points",
+                     xytext=(0, -26), fontsize=8.5, color=INK, ha="center")
 
-    # a regiao que a abordagem sem vibracao nao alcanca
-    for a in (ax1, ax2):
-        a.axhspan(7.5, 8.5, color=MUTED, alpha=0.10, lw=0, zorder=1)
-    ax1.text(1.00, 8.34, "nenhuma das 51.840 configurações sem vibração chega aqui",
-             fontsize=8, color=MUTED, ha="right", style="italic", zorder=3)
+        # a regiao que a abordagem sem vibracao nao alcanca
+        for a in (ax1, ax2):
+            a.axhspan(7.5, 8.5, color=MUTED, alpha=0.10, lw=0, zorder=1)
+        ax1.text(1.00, 8.34, "nenhuma das 51.840 configurações sem vibração chega aqui",
+                 fontsize=8, color=MUTED, ha="right", style="italic", zorder=3)
 
     leg = [
         plt.Line2D([0], [0], color=NOSSO, lw=2.0, marker="o", ms=9, mfc=NOSSO,
@@ -115,27 +135,39 @@ if __name__ == "__main__":
         plt.Line2D([0], [0], lw=0, marker="s", ms=9, mfc=LARA, mec="white", mew=2.0,
                    label="Lara — fp_first"),
     ]
-    fig.legend(handles=leg, loc="upper left", bbox_to_anchor=(0.055, 0.925),
-               fontsize=9, ncol=3, frameon=False)
+    # serie unica dispensa caixa de legenda -- o titulo ja a nomeia
+    if not SO_NOSSO:
+        fig.legend(handles=leg, loc="upper left", bbox_to_anchor=(0.055, 0.925),
+                   fontsize=9, ncol=3, frameon=False)
 
-    fig.suptitle("A fronteira custo × detecção — canto superior esquerdo é o melhor lugar",
-                 fontsize=13.5, fontweight="bold", color=INK, x=0.055, ha="left", y=0.995)
+    titulo = ("A fronteira do detector — canto superior esquerdo é o melhor lugar" if SO_NOSSO
+              else "A fronteira custo × detecção — canto superior esquerdo é o melhor lugar")
+    fig.suptitle(titulo, fontsize=13.5, fontweight="bold", color=INK,
+                 x=0.055, ha="left", y=0.995)
     fig.text(0.055, 0.945,
-             "Mesma régua nos dois lados: 8 eventos-alvo, janela de 48 h antes do trip, "
-             "episódios agrupados a 2 h, regra C, denominador em tempo de operação.",
+             ("Cada ponto é o menor custo que o detector alcança naquele nível de detecção, "
+              "sobre 756 configurações de limiar, silêncio, refratário e duração mínima."
+              if SO_NOSSO else
+              "Mesma régua nos dois lados: 8 eventos-alvo, janela de 48 h antes do trip, "
+              "episódios agrupados a 2 h, regra C, denominador em tempo de operação."),
              fontsize=9, color=MUTED, ha="left")
     fig.text(0.055, 0.022,
-             "Os dois lados são mínimos selecionados sobre 8 eventos — otimistas por construção. "
-             "Nenhuma diferença aqui é estatisticamente significativa "
-             "(nosso 5/8 contra o ponto da Lara: p = 0,119, teste exato de duas taxas de Poisson). "
-             "O detector do Diego não entra: a régua dele é ±24 h simétrica e não converte para esta.",
+             ("Régua: 8 eventos-alvo, janela de 48 h antes do trip, episódios agrupados a 2 h, "
+              "regra C, denominador em tempo de operação. O mínimo de uma varredura sobre oito "
+              "eventos é otimista por construção — ver os limites conhecidos."
+              if SO_NOSSO else
+              "Os dois lados são mínimos selecionados sobre 8 eventos — otimistas por construção. "
+              "Nenhuma diferença aqui é estatisticamente significativa "
+              "(nosso 5/8 contra o ponto da Lara: p = 0,119, teste exato de duas taxas de Poisson). "
+              "O detector do Diego não entra: a régua dele é ±24 h simétrica e não converte para esta."),
              fontsize=7.8, color=MUTED, ha="left")
 
-    fig.tight_layout(rect=(0.045, 0.055, 0.995, 0.90))
-    fig.savefig("fig_fronteira.png", dpi=200, facecolor="white", bbox_inches="tight")
+    saida = "fig_fronteira_nosso.png" if SO_NOSSO else "fig_fronteira.png"
+    fig.tight_layout(rect=(0.045, 0.055, 0.995, 0.94 if SO_NOSSO else 0.90))
+    fig.savefig(saida, dpi=200, facecolor="white", bbox_inches="tight")
     plt.close(fig)
 
     print("nossa fronteira (regra C):")
     for n, a, b in zip(NIVEIS, fp, hm):
         print(f"  {n}/8   menor FP/mes = {a:.3f}   menor h/mes = {b:.2f}")
-    print("-> fig_fronteira.png")
+    print(f"-> {saida}")
