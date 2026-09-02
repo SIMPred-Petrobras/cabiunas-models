@@ -499,28 +499,73 @@ Eventos reais de 2024 (fora da janela ±24h) & $\sim$5 \\
 \end{table}
 
 % ======================================================================
-\section{Figura: série completa classificada e antecedência de detecção}
+\section{Figura: antes e depois do mascaramento, e antecedência de detecção}
 \label{sec:figura}
 
-A versão final do gráfico elimina visualmente os pontos já explicados
-pelo catálogo completo (4.692 pontos laranja da Seção~\ref{sec:cruzamento})
--- não agregam mais informação, já sabemos que são sinal real de outro
-alarme. Sobra apenas o essencial: acerto de TRIP (verde) e o resíduo
-genuinamente isolado (agora em \textbf{preto}, 126 pontos). O fundo
-"ligado" passa a ser branco e o "desligado" cinza bem claro, para não
-competir visualmente com os pontos.
+\subsection{Antes: classificação completa contra os dois critérios}
+\label{sec:figura-antes}
+
+A primeira versão do gráfico (Figura~\ref{fig:antes}) mostra a
+classificação \textbf{completa} de cada ponto anômalo, cruzando contra
+os dois critérios em paralelo -- os 9 TRIPs curados do Francisco
+\emph{e} o catálogo completo de 47 tags (Seção~\ref{sec:cruzamento}):
+
+\begin{itemize}
+  \item \textcolor{corVerde}{\textbf{verde}}: perto de um TRIP curado
+    -- acerto (358 pontos);
+  \item \textcolor{corLaranja}{\textbf{laranja}}: não é TRIP, mas está
+    perto de \emph{outro} alarme do catálogo -- explicado, mas não é o
+    evento que estamos avaliando (4.692 pontos);
+  \item \textbf{amarelo}: nenhum dos dois -- isolado (126 pontos);
+  \item linha vertical \textcolor{corRoxo}{roxa}: ocorrência de TRIP
+    curado (8 no período);
+  \item linha vertical \textcolor{corVermelho}{vermelha}: ocorrência
+    de outro alarme do catálogo que efetivamente explica algum ponto
+    laranja próximo (142 ocorrências).
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{serie_ti0305_tc382_t5_exp28_v2.png}
+\caption{\label{fig:antes}Classificação completa (``antes''): os
+pontos laranja mostram exatamente ONDE e COM QUE alarme cada resíduo
+se correlaciona -- é o que sustenta os 88,1\% da Seção~\ref{sec:cruzamento}.}
+\end{figure}
+
+\subsection{Depois: mascarando para focar só na avaliação de TRIP}
+\label{sec:figura-depois}
+
+O objetivo final, porém, é avaliar especificamente a capacidade de
+detectar \textbf{TRIPs} (falhas reais de mancal/óleo) -- não todo e
+qualquer alarme de processo do catálogo amplo. Os pontos laranja, uma
+vez que já sabemos que são consequência de \emph{outros} alarmes (não
+TRIP), deixam de agregar informação para essa pergunta específica --
+\textbf{mascaramos eles} (removemos da vista, não dos dados -- eles
+continuam em \texttt{point\_anomalies\_all.csv}, ver
+Seção~\ref{sec:tratamento-fp-final} sobre o que de fato foi removido
+versus só ocultado) para que o gráfico responda diretamente "detectamos
+os TRIPs, e o que sobra sem explicação nenhuma é isso aqui":
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{serie_ti0305_tc382_t5_exp28_v3.png}
-\caption{TI\_0305 / TC382\_03\_A / T5\_AVG\_A -- fundo branco = ligado,
-cinza claro = desligado; linha vertical \textcolor{corRoxo}{roxa} =
-ocorrência de TRIP curado (8 no período); pontos
-\textcolor{corVerde}{verdes} = acerto de TRIP (358); pontos pretos =
-residual isolado, sem explicação (126) -- os 4.692 pontos explicados
-por outro alarme foram removidos da vista. O painel inferior traz a
+\caption{\label{fig:depois}Classificação mascarada (``depois''): fundo
+branco = ligado, cinza claro = desligado; linha vertical
+\textcolor{corRoxo}{roxa} = ocorrência de TRIP curado (8 no período);
+pontos \textcolor{corVerde}{verdes} = acerto de TRIP (358); pontos
+pretos = residual isolado, sem explicação (126) -- os 4.692 pontos
+laranja e as 142 linhas vermelhas da Figura~\ref{fig:antes} foram
+retirados da vista (não dos dados). O painel inferior traz a
 antecedência de detecção de cada um dos 8 TRIPs.}
 \end{figure}
+
+\textbf{A diferença entre as duas figuras é só de foco visual, não de
+dado}: a Figura~\ref{fig:antes} responde "o que explica cada ponto
+residual?" (útil para auditar o modelo); a Figura~\ref{fig:depois}
+responde "estamos pegando os TRIPs, e o que ainda não sabemos
+explicar?" (útil para avaliar a métrica-alvo). As duas convivem -- a
+primeira embasa os números da Seção~\ref{sec:cruzamento}, a segunda
+embasa a antecedência abaixo.
 
 \subsection{Em quanto tempo conseguimos prever os 8 TRIPs}
 
@@ -751,6 +796,34 @@ passo} da pipeline, depois de todos os portões já terem decidido
 contexto (\texttt{alert\_catalog\_tag}, \texttt{alert\_catalog\_time},
 \texttt{alert\_catalog\_distance\_h}, \texttt{alert\_confidence}) para
 quem consome o alerta.
+
+\subsection{O que é removido de verdade, e o que só é ocultado/anotado}
+\label{sec:tratamento-fp-final}
+
+Vale deixar explícita a distinção entre 3 coisas que podem parecer
+iguais mas não são:
+
+\begin{enumerate}
+  \item \textbf{Removido de verdade, dentro da modelagem}: os portões
+    (rampa de carga, volatilidade, mudança de nível, veto de sensor
+    congelado, filtro de duração mínima) suprimem \texttt{is\_anom\_point}
+    de fato, como parte da pipeline de produção (EXP28/29/30/31). É
+    seguro e validado -- remove ruído estrutural sem custar detecção
+    real.
+  \item \textbf{Não removido dos dados -- só ocultado da Figura~\ref{fig:depois}}:
+    os pontos laranja (explicados por outro alarme do catálogo, não
+    TRIP). Eles continuam em \texttt{point\_anomalies\_all.csv} como
+    \texttt{is\_anom\_point=1}; só saem do desenho porque, para a
+    pergunta "detectamos os TRIPs?", eles não agregam mais informação
+    (Seção~\ref{sec:figura-depois}).
+  \item \textbf{Proposto para remover de verdade e REJEITADO}: a
+    supressão cirúrgica baseada em mecanismo (Seção~\ref{sec:fechamento24})
+    -- suprimiria pontos isolados seguidos de um portão engatando, mas
+    isso também mataria 3 precursores reais de TRIP (07/04/2025 e
+    26/02/2026), porque um precursor real truncado por um portão e
+    ruído genuíno têm a mesma assinatura. Nenhum código de produção
+    foi alterado para implementar essa remoção.
+\end{enumerate}
 
 \begin{figure}[H]
 \centering
