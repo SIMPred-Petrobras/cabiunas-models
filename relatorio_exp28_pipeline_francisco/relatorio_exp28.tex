@@ -463,7 +463,7 @@ $\pm$24h usada, mas fisicamente correlacionáveis dado o z-score
 extremo (até 44$\sigma$) cruzando carga, temperatura e vibração
 simultaneamente.
 
-\subsection{O único caso que resiste a qualquer explicação}
+\subsection{O caso mais resistente a explicação (mas não mais o único)}
 
 \begin{table}[H]
 \centering
@@ -476,26 +476,35 @@ Portões ativos por perto & Nenhum \\
 Alarme mais próximo (catálogo completo) & 36--42h de distância \\
 \bottomrule
 \end{tabular}
-\caption{Único episódio, em toda a investigação desta sessão, sem
-nenhuma correlação em qualquer sensor ou alarme próximo.}
+\caption{O episódio mais isolado de toda a investigação -- mas, como
+o checkup completo do Apêndice~\ref{sec:apendiceA} mostra, não é mais
+o único sem explicação: outros 3 têm o mesmo perfil fraco.}
 \end{table}
 
-\subsection{Síntese: dos 222 pontos residuais originais, sobra 1 caso genuíno}
+\subsection{Síntese (atualizada -- ver Apêndice~\ref{sec:apendiceA})}
 
 \begin{table}[H]
 \centering
 \begin{tabular}{lc}
 \toprule
-\textbf{Categoria} & \textbf{Pontos} \\
+\textbf{Categoria} & \textbf{Pontos/episódios} \\
 \midrule
-Explicado pelo catálogo completo (±24h) & 4.692 \\
-Acerto (perto de TRIP curado) & 358 \\
-Padrão físico recorrente (mancal 354) & 52 \\
-Borda estrutural de portão causal & $\sim$60 \\
-Eventos reais de 2024 (fora da janela ±24h) & $\sim$5 \\
-\textbf{Genuinamente sem explicação} & \textbf{35 (1 episódio)} \\
+Explicado pelo catálogo completo (±24h) & 4.692 pontos \\
+Acerto (perto de TRIP curado) & 358 pontos \\
+\midrule
+\multicolumn{2}{l}{\textit{Dos 24 episódios isolados restantes (126 pontos), checkup completo:}} \\
+Confirmado real, forte (z$\geq$10$\sigma$, $\geq$2 sensores) & 17 episódios \\
+Confirmado real, moderado (z$\geq$3$\sigma$, $\geq$2 sensores) & 2 episódios \\
+Borderline (1 sensor só) & 1 episódio \\
+\textbf{Genuinamente fraco/sem explicação} & \textbf{4 episódios} \\
 \bottomrule
 \end{tabular}
+\caption{\textbf{Correção em relação à versão anterior deste relatório}
+(que afirmava "sobra 1 caso genuíno"): aquela conclusão foi baseada em
+checar só uma amostra dos 24 episódios, não todos. O checkup completo
+e fresco (Apêndice~\ref{sec:apendiceA}) mostra que \textbf{79\% (19 de
+24) são sinal físico real confirmado}, e restam \textbf{4}, não 1,
+episódios genuinamente sem explicação.}
 \end{table}
 
 % ======================================================================
@@ -709,8 +718,12 @@ acertos dele, e vice-versa) mais valioso que um número inflado de
 8/8. O que parecia FP residual, quando
 investigado com a mesma disciplina de reconstrução literal usada em
 toda a sessão, revelou-se \textbf{88,1\% sinal real não reconhecido} --
-e dos 11,9\% restantes, mais de 90\% também se explicam por padrão
-físico recorrente ou artefato estrutural inevitável de portões causais.
+e dos 11,9\% restantes (24 episódios isolados, 126 pontos), o checkup
+completo do Apêndice~\ref{sec:apendiceA} mostra que \textbf{79\% (19
+de 24)} também são sinal físico real confirmado (z-score forte ou
+moderado, multi-sensor), não ruído. Restam apenas \textbf{4 episódios
+(42 pontos)} genuinamente sem explicação -- 0,8\% do total de 5.176
+pontos anômalos do modelo de mancal.
 
 \textbf{Próximo passo}: implementar uma \textbf{supressão cirúrgica
 baseada em mecanismo} para a Categoria~2 (borda de portão causal) --
@@ -892,12 +905,193 @@ média, mesmo status do caso descrito na Seção~\ref{sec:fechamento24}.}
 Perto de um TRIP/falha curada conhecida & Máxima & Escalar imediatamente, independente de qualquer outra tag \\
 Explicado por tag do catálogo pouco frequente/crítica & Alta & Investigar -- pode ser o mesmo evento real disparando dois alarmes \\
 Explicado por tag do catálogo rotineira/muito frequente (ex: \texttt{PI\_6240319\_AL}) & Baixa & Registrar, não escalar automaticamente \\
-Isolado (nenhum alarme do catálogo em $\pm$24h) & Média & Checagem manual (mesma disciplina de z-score da Seção~\ref{sec:fechamento24}) -- historicamente metade desses casos eram sinal físico real \\
+Isolado (nenhum alarme do catálogo em $\pm$24h) & Média-Alta & Checagem manual (mesma disciplina de z-score do Apêndice~\ref{sec:apendiceA}) -- checkup mais recente mostra que \textbf{79\% (19 de 24)} desses episódios são sinal físico real confirmado, não ruído \\
 \bottomrule
 \end{tabular}
 \caption{Nenhuma dessas linhas suprime um alerta -- todas continuam
 aparecendo no dashboard, só mudam a ordem/urgência de atenção do
 operador.}
+\end{table}
+
+\appendix
+\section{Checkup geral: TRIPs, alarmes e isolados (reconstrução literal)}
+\label{sec:apendiceA}
+
+Este apêndice consolida, numa única reconstrução literal e fresca
+(sem reaproveitar números de memória de seções anteriores), o estado
+final de \textbf{três perguntas}: quantos dos 8 TRIPs pegamos de
+verdade, quantos pontos residuais são explicados por outro alarme, e o
+que exatamente resta nos episódios isolados -- com o método completo,
+não só o resultado.
+
+\subsection{A.1 -- Objetivo e por que este apêndice existe}
+
+Ao longo da investigação, a afirmação "só resta 1 episódio isolado sem
+explicação" (Seção~\ref{sec:fechamento24}) foi feita depois de checar
+manualmente uma \textbf{amostra} dos episódios isolados (os que
+pareciam mais salientes -- o de 22,98h, os 2 de 2024, o de 17min), não
+os 24 de uma vez. Ao aplicar a mesma checagem de forma sistemática a
+\textbf{todos} os 24, o quadro mudou -- por isso este apêndice existe:
+documentar o método usado, para que qualquer pessoa possa reproduzir o
+resultado e auditar cada linha.
+
+\subsection{A.2 -- Metodologia}
+
+\paragraph{Onde.} Todos os cálculos usam o
+\texttt{point\_anomalies\_all.csv} já gerado pela task EXP30
+(\texttt{aa87ae49ae314f02bbc011d2b843de41}, mancal) e EXP31
+(\texttt{5707fcb08773452386dceef0b61d64ea}, óleo) -- nenhum modelo foi
+re-treinado para este apêndice, só reavaliação dos mesmos
+\texttt{is\_anom\_point} já calculados. Scripts:
+\texttt{dataset\_francisco\_lara/checkup\_geral\_isolados.py} (item
+A.4) e a função \texttt{classify\_episodes\_regua} de
+\texttt{scoring.py} (item A.3, mesma da Seção~\ref{sec:regua-rigorosa}).
+
+\paragraph{Como (TRIPs -- régua rigorosa).} Um TRIP conta como
+detectado se existir um episódio de \texttt{is\_anom\_point} (mancal
+\emph{ou} óleo) começando até 48h \textbf{antes} da falha catalogada
+-- não uma janela simétrica. Ver Seção~\ref{sec:regua-rigorosa} para a
+justificativa completa.
+
+\paragraph{Como (isolados -- z-score).} Para cada episódio isolado,
+calcula-se a média de cada sensor numa janela de \textbf{baseline}
+(2h antes do episódio, terminando 3min antes para não vazar o próprio
+evento) e na janela do \textbf{episódio}; o z-score é
+$z = (\bar{x}_{\text{episódio}} - \bar{x}_{\text{baseline}}) /
+\sigma_{\text{baseline}}$, calculado para 13 sensores (TC382\_03\_A,
+T5\_AVG\_A, TI\_0305 e os 10 canais de vibração \texttt{TV\_*}).
+\textbf{Por que esse critério}: um pico real de vibração/temperatura
+se propaga fisicamente para vários sensores correlacionados ao mesmo
+tempo; ruído de medição de um único sensor não. Por isso a
+classificação exige não só um z-score alto, mas \textbf{quantos
+sensores} passam de $|z|=3$ simultaneamente:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{4cm}p{9.5cm}}
+\toprule
+\textbf{Classificação} & \textbf{Critério} \\
+\midrule
+Confirmado real (forte) & $|z|_{\max} \geq 10$ \textbf{e} $\geq$2 sensores com $|z|>3$ \\
+Confirmado real (moderado) & $|z|_{\max} \geq 3$ \textbf{e} $\geq$2 sensores com $|z|>3$ \\
+Borderline & $|z|_{\max} \geq 3$ mas só 1 sensor \\
+Fraco / sem explicação & $|z|_{\max} < 3$ em todos os sensores \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{A.3 -- Status dos 8 TRIPs}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{TRIP} & \textbf{Causa} & \textbf{Status (régua rigorosa)} \\
+\midrule
+2024-01-16 & mancal & fora de alcance (antes dos dados carregados) \\
+2025-02-27 & selagem & \textcolor{corVermelho}{\ding{55}} não detectado a tempo \\
+2025-03-17 & mancal & \textcolor{corVermelho}{\ding{55}} não detectado a tempo \\
+2025-04-07 & mancal & \textcolor{corVerde}{\ding{51}} detectado \\
+2025-04-11 & mancal & \textcolor{corVerde}{\ding{51}} detectado \\
+2025-04-29 & mancal & \textcolor{corVerde}{\ding{51}} detectado \\
+2025-11-04 & óleo & \textcolor{corVerde}{\ding{51}} detectado \\
+2025-12-09 & mancal & \textcolor{corVerde}{\ding{51}} detectado \\
+2026-02-26 & óleo & \textcolor{corVerde}{\ding{51}} detectado \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{6 de 8} -- idêntico ao resultado da Seção~\ref{sec:regua-rigorosa}, aqui reconstruído de forma independente como checagem cruzada.}
+\end{table}
+
+\subsection{A.4 -- Breakdown de pontos anômalos (mancal, EXP30)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Categoria} & \textbf{Pontos} & \textbf{\% do total} \\
+\midrule
+\textcolor{corVerde}{Verde} -- perto de TRIP curado & 358 & 6,9\% \\
+\textcolor{corLaranja}{Laranja} -- perto de outro alarme (não TRIP) & 4.692 & 90,7\% \\
+Isolado -- nenhum dos dois & 126 & 2,4\% \\
+\midrule
+\textbf{Total de pontos anômalos} & \textbf{5.176} & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{A.5 -- Checkup completo dos 24 episódios isolados}
+
+Tabela completa, ordenada por $|z|_{\max}$ decrescente -- todas as 24
+linhas, sem amostragem:
+
+{\small
+\begin{longtable}{lccccl}
+\toprule
+\textbf{Episódio (início)} & \textbf{$|z|_{\max}$} & \textbf{Sensor} & \textbf{Nº sensores $|z|{>}3$} & \textbf{Classificação} \\
+\midrule
+\endhead
+2024-09-30 18:04 & 44,11 & T5\_AVG\_A & 10 & Confirmado real (forte) \\
+2025-10-17 13:49 & 42,80 & TV\_354Y\_A & 2 & Confirmado real (forte) \\
+2024-12-12 14:34 & 39,27 & T5\_AVG\_A & 7 & Confirmado real (forte) \\
+2026-03-18 08:15 & 35,13 & T5\_AVG\_A & 9 & Confirmado real (forte) \\
+2026-04-10 23:03 & 35,01 & T5\_AVG\_A & 5 & Confirmado real (forte) \\
+2026-03-17 18:50 & 34,35 & T5\_AVG\_A & 8 & Confirmado real (forte) \\
+2025-08-27 01:51 & 28,44 & T5\_AVG\_A & 9 & Confirmado real (forte) \\
+2026-03-27 21:23 & 27,07 & T5\_AVG\_A & 5 & Confirmado real (forte) \\
+2026-04-12 17:33 & 25,14 & T5\_AVG\_A & 6 & Confirmado real (forte) \\
+2025-12-15 07:17 & 25,14 & TV\_354Y\_A & 2 & Confirmado real (forte) \\
+2025-12-24 10:54 & 23,78 & TV\_354Y\_A & 2 & Confirmado real (forte) \\
+2026-03-23 21:39 & 18,63 & T5\_AVG\_A & 5 & Confirmado real (forte) \\
+2026-03-10 10:23 & 18,25 & TV\_354Y\_A & 2 & Confirmado real (forte) \\
+2026-03-20 14:08 & 18,16 & TV\_353Y\_A & 11 & Confirmado real (forte) \\
+2026-04-11 08:57 & 16,57 & T5\_AVG\_A & 6 & Confirmado real (forte) \\
+2026-03-11 09:32 & 15,85 & TC382\_03\_A & 3 & Confirmado real (forte) \\
+2026-01-21 11:59 & 15,14 & TV\_355X\_A & 11 & Confirmado real (forte) \\
+2026-04-11 10:20 & 5,60 & TV\_352X\_A & 2 & Confirmado real (moderado) \\
+2024-12-12 12:09 & 4,05 & TV\_355X\_A & 4 & Confirmado real (moderado) \\
+2025-10-22 18:18 & 3,71 & TI\_0305 & 1 & Borderline \\
+2025-08-27 00:37 (17min) & 1,45 & TV\_352Y\_A & 0 & \textbf{Fraco / sem explicação} \\
+2024-09-30 19:08 & 1,08 & TV\_355X\_A & 0 & \textbf{Fraco / sem explicação} \\
+2025-08-26 22:18 & 0,95 & TV\_351X\_A & 0 & \textbf{Fraco / sem explicação} \\
+2025-12-16 05:22 & 0,72 & TV\_354Y\_A & 0 & \textbf{Fraco / sem explicação} \\
+\bottomrule
+\caption{Checkup completo dos 24 episódios isolados. 17 fortes + 2 moderados = 19 de 24 (79\%) confirmados como sinal físico real; 1 borderline; 4 (17\%) genuinamente fracos.}
+\end{longtable}
+}
+
+\textbf{Nota sobre os "fracos"}: 2024-09-30 19:08 é a cauda do evento
+imediatamente anterior (2024-09-30 18:04, confirmado forte) -- faz
+sentido que a média já tenha relaxado; não é um evento independente.
+Sobram, portanto, \textbf{3 episódios verdadeiramente independentes e
+sem explicação}: 2025-08-26 22:18, 2025-08-27 00:37 (o mais estudado,
+17min) e 2025-12-16 05:22.
+
+\subsection{A.6 -- Achado adicional: cluster recorrente em mar/abr-2026}
+
+Nove dos 17 episódios "confirmado real (forte)" caem entre
+11/03/2026 e 12/04/2026 (11, 17, 18, 20, 23, 27/03 e 10, 11, 12/04) --
+um evento a cada poucos dias, sempre com a mesma assinatura
+(T5\_AVG\_A e/ou TC382\_03\_A movendo junto com TV\_353Y\_A/TV\_354Y\_A).
+Isso não tem cara de ruído aleatório: é consistente com um
+\textbf{padrão de degradação emergente}, sem alarme catalogado
+correspondente. Recomendação: escalar como achado de monitoramento
+para a equipe de manutenção, não tratar como falso positivo.
+
+\subsection{A.7 -- Síntese final}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Pergunta} & \textbf{Resposta (reconstrução literal)} \\
+\midrule
+Quantos dos 8 TRIPs detectamos com antecedência real? & 6 de 8 \\
+Quantos pontos residuais são outro alarme (não TRIP)? & 4.692 de 5.176 (90,7\%) \\
+Dos 24 episódios isolados, quantos são sinal real confirmado? & 19 de 24 (79\%) \\
+Quantos episódios seguem genuinamente sem explicação? & \textbf{3} (mais 1 cauda de evento vizinho) \\
+\bottomrule
+\end{tabular}
 \end{table}
 
 \end{document}

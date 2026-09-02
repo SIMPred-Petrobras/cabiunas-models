@@ -1763,13 +1763,15 @@ distância — fora da janela usada, mas fisicamente correlacionáveis
 dado o z-score extremo (até 44σ) cruzando carga+temperatura+vibração
 simultaneamente.
 
-**Conclusão: dos 222 pontos residuais originais do EXP22/24 isolados
-(24 episódios, 126 pontos), sobra apenas 1 episódio genuinamente sem
-explicação** (`2025-08-27 00:37`, 17min) depois de toda a investigação
-desta sessão. Não vale mais esforço de investigação isolada nele — se
-algo mais aparecer, será via a mesma disciplina (cruzar com catálogo
-mais amplo, checar portões, checar vibração) que já resolveu os
-outros 23.
+**Conclusão (na época): dos 222 pontos residuais originais do EXP22/24
+isolados (24 episódios, 126 pontos), sobra apenas 1 episódio
+genuinamente sem explicação** (`2025-08-27 00:37`, 17min). **Essa
+conclusão estava incompleta** -- foi baseada em checar manualmente
+só uma amostra dos 24 episódios (os mais salientes: o de 22,98h, os 2
+de 2024, o de 17min), não todos de uma vez. Ver a seção "Checkup geral
+dos 24 isolados" logo abaixo para o resultado completo, obtido
+checando sistematicamente todos os 24 com a mesma metodologia de
+z-score.
 
 **Próximo passo, se o usuário quiser prosseguir com a estratégia
 "sênior" já delineada**: implementar a supressão cirúrgica baseada em
@@ -1958,3 +1960,46 @@ anotadas com nota apontando para esta seção -- o texto histórico foi
 mantido (mostra a evolução do raciocínio), mas o número vigente e
 recomendado para qualquer comunicação externa é **6/8**, com a
 ressalva de complementaridade acima.
+
+## Checkup geral dos 24 isolados: reconstrução completa, não amostrada (2026-09-01)
+
+A conclusão anterior ("sobra 1 episódio sem explicação") foi checada
+de novo — dessa vez cobrindo **todos** os 24 episódios isolados numa
+única passada, não uma amostra. Script:
+`dataset_francisco_lara/checkup_geral_isolados.py`. Metodologia:
+z-score (baseline 2h antes vs. janela do episódio) em 13 sensores
+(TC382_03_A, T5_AVG_A, TI_0305, 10 canais `TV_*`); classificação por
+**magnitude E número de sensores correlacionados** (um evento físico
+real se propaga por vários sensores ao mesmo tempo; ruído de um
+sensor isolado, não):
+
+| Classificação | Critério | Episódios |
+|---|---|---|
+| Confirmado real (forte) | \|z\|≥10 e ≥2 sensores com \|z\|>3 | 17 |
+| Confirmado real (moderado) | \|z\|≥3 e ≥2 sensores com \|z\|>3 | 2 |
+| Borderline | \|z\|≥3, só 1 sensor | 1 |
+| Fraco/sem explicação | \|z\|<3 em tudo | 4 |
+
+**79% (19 de 24) são sinal físico real confirmado** — bem mais que a
+estimativa anterior. Dos 4 "fracos", um (`2024-09-30 19:08`) é a
+cauda de um evento forte imediatamente anterior (`2024-09-30 18:04`,
+z=44,1), não um caso independente. **Sobram 3 episódios
+verdadeiramente isolados e sem explicação**: `2025-08-26 22:18`,
+`2025-08-27 00:37` (o mais estudado, 17min) e `2025-12-16 05:22`.
+
+**Achado novo**: 9 dos 17 "confirmado real (forte)" caem entre
+11/03/2026 e 12/04/2026 (evento a cada poucos dias, sempre mesma
+assinatura T5_AVG_A/TC382_03_A + TV_353Y_A/TV_354Y_A) — consistente
+com um padrão de degradação emergente, sem alarme catalogado
+correspondente. Recomendação: escalar para a equipe de manutenção
+como achado de monitoramento, não tratar como falso positivo.
+
+Tabela completa das 24 linhas (z-score, sensor, classificação) em
+`dataset_francisco_lara/checkup_geral_isolados.csv` e no relatório
+`relatorio_exp28_pipeline_francisco/relatorio_exp28.pdf`, Apêndice A.
+
+**Lição**: mesmo dentro desta sessão, uma conclusão baseada em
+amostragem ("os mais salientes parecem cobrir o caso geral") pode
+subestimar quanto sinal real existe escondido no que parece FP.
+Reforça a prática já padrão aqui — verificar via reconstrução
+literal de TODOS os itens, não extrapolar de uma amostra.
