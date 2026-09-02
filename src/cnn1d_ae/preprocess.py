@@ -161,6 +161,101 @@ def _build_thermal_array_spread(
     return out
 
 
+BEARING_SPREAD_COL = "bearing_spread_z"
+VIBRATION_ENVELOPE_COL = "vibration_envelope_z"
+
+
+def _rolling_robust_z(series: pd.Series, window_minutes: float) -> pd.Series:
+    """Z-score robusto (mediana/IQR) causal contra referencia rolante --
+    aproximacao computacionalmente barata do z-robusto (mediana/MAD) do
+    detector de 4 sinais do Thallys (DOC_EQUIPE/ROTEIRO_APRESENTACAO_TC33003A.pdf,
+    secao "Metodo"): usa quartis (`.rolling().quantile()`, vetorizado no
+    pandas) em vez de MAD via rolling.apply (custaria uma passada Python
+    por janela sobre milhoes de linhas). IQR/1.349 aproxima o desvio
+    padrao de forma robusta a outliers, mesmo espirito do MAD."""
+    dt_seconds = series.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    window_samples = max(2, int(round((float(window_minutes) * 60.0) / dt_seconds)))
+    min_periods = max(2, window_samples // 4)
+    med = series.rolling(window_samples, min_periods=min_periods).median()
+    q75 = series.rolling(window_samples, min_periods=min_periods).quantile(0.75)
+    q25 = series.rolling(window_samples, min_periods=min_periods).quantile(0.25)
+    scale = (q75 - q25) / 1.349
+    z = (series - med) / scale.replace(0.0, np.nan)
+    return z.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
+def _build_bearing_spread(
+    cfg: PipelineConfig, df_use: pd.DataFrame, source_df: pd.DataFrame,
+    target_sensor: str, sibling_sensors: List[str], window_minutes: float,
+) -> pd.DataFrame:
+    """Sinal "spread de mancal" no estilo do detector de 4 sinais
+    (DOC_EQUIPE/ROTEIRO_APRESENTACAO_TC33003A.pdf): `target_sensor` MENOS
+    a mediana cross-secional dos `sibling_sensors` a cada instante (mede
+    DIVERGENCIA de um mancal especifico contra os irmaos, nao
+    temperatura absoluta -- se todos sobem juntos e carga, se um sobe
+    sozinho e problema local), depois padronizado por z-robusto rolante
+    (`_rolling_robust_z`). Assimetrico por design: diferente de
+    `_build_thermal_array_spread` (desvio-padrao SIMETRICO entre um
+    array, sem um alvo definido), aqui ha um sensor-alvo conhecido
+    (ex: TI_0305) com irmaos conhecidos (outros termopares de mancal)."""
+    needed = [target_sensor] + list(sibling_sensors)
+    missing = [s for s in needed if s not in source_df.columns]
+    if missing:
+        raise ValueError(f"Sensores do spread de mancal nao encontrados na fonte: {missing}")
+
+    arr = source_df[[cfg.TIME_COL] + needed].copy()
+    for s in needed:
+        arr[s] = pd.to_numeric(arr[s], errors="coerce")
+    arr = arr.set_index(cfg.TIME_COL).sort_index()
+    for s in needed:
+        arr[s] = arr[s].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
+        arr[s] = arr[s].ffill().bfill()
+    arr = arr.reindex(df_use.index)
+
+    spread_raw = arr[target_sensor] - arr[sibling_sensors].median(axis=1, skipna=True)
+    out = df_use.copy()
+    out[BEARING_SPREAD_COL] = _rolling_robust_z(spread_raw, window_minutes)
+    if cfg.ENABLE_DERIVED_FEATURES:
+        out = _build_derived_features(out, sensor=BEARING_SPREAD_COL, windows=_derived_windows(cfg))
+    return out
+
+
+def _build_vibration_envelope(
+    cfg: PipelineConfig, df_use: pd.DataFrame, source_df: pd.DataFrame,
+    vibration_sensors: List[str], window_minutes: float,
+) -> pd.DataFrame:
+    """Sinal "envelope de vibracao" no estilo do detector de 4 sinais:
+    MAXIMO, a cada instante, do z-robusto rolante (`_rolling_robust_z`)
+    entre os canais de vibracao -- pensado especificamente para expor um
+    precursor fraco (achado do Thallys: sinal real em p80 da
+    distribuicao saudavel, invisivel se diluido dentro de um score
+    multivariado unico com limiar em p99,9). Diferente do
+    `compute_volatility_index` (scoring.py, usado como PORTAO pos-score,
+    media de desvio-padrao movel), este e uma FEATURE de entrada do
+    modelo (z-robusto, MAXIMO entre canais, nao media de desvio)."""
+    missing = [s for s in vibration_sensors if s not in source_df.columns]
+    if missing:
+        raise ValueError(f"Sensores de vibracao nao encontrados na fonte: {missing}")
+
+    arr = source_df[[cfg.TIME_COL] + list(vibration_sensors)].copy()
+    for s in vibration_sensors:
+        arr[s] = pd.to_numeric(arr[s], errors="coerce")
+    arr = arr.set_index(cfg.TIME_COL).sort_index()
+    for s in vibration_sensors:
+        arr[s] = arr[s].interpolate(limit=int(cfg.INTERPOLATE_LIMIT), limit_direction="both")
+        arr[s] = arr[s].ffill().bfill()
+    arr = arr.reindex(df_use.index)
+
+    z_per_channel = pd.DataFrame({s: _rolling_robust_z(arr[s], window_minutes) for s in vibration_sensors})
+    out = df_use.copy()
+    out[VIBRATION_ENVELOPE_COL] = z_per_channel.max(axis=1, skipna=True).fillna(0.0)
+    if cfg.ENABLE_DERIVED_FEATURES:
+        out = _build_derived_features(out, sensor=VIBRATION_ENVELOPE_COL, windows=_derived_windows(cfg))
+    return out
+
+
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     missing = series.isna()
     grp = missing.ne(missing.shift(fill_value=False)).cumsum()
@@ -255,6 +350,15 @@ def build_group_dataframe(
             )
     if cfg.ENABLE_THERMAL_ARRAY_SPREAD and cfg.THERMAL_ARRAY_SENSORS:
         df_use = _build_thermal_array_spread(cfg, df_use, source_df, cfg.THERMAL_ARRAY_SENSORS)
+    if cfg.ENABLE_BEARING_SPREAD and cfg.BEARING_SPREAD_TARGET_SENSOR and cfg.BEARING_SPREAD_SIBLING_SENSORS:
+        df_use = _build_bearing_spread(
+            cfg, df_use, source_df, cfg.BEARING_SPREAD_TARGET_SENSOR,
+            cfg.BEARING_SPREAD_SIBLING_SENSORS, cfg.BEARING_SPREAD_WINDOW_MINUTES,
+        )
+    if cfg.ENABLE_VIBRATION_ENVELOPE and cfg.VIBRATION_ENVELOPE_SENSORS:
+        df_use = _build_vibration_envelope(
+            cfg, df_use, source_df, cfg.VIBRATION_ENVELOPE_SENSORS, cfg.VIBRATION_ENVELOPE_WINDOW_MINUTES,
+        )
 
     df_use = _downcast_float32(df_use)
     return df_use, long_gap_union

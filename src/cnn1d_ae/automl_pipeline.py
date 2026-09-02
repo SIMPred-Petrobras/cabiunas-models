@@ -19,6 +19,8 @@ from .preprocess import (
     normalize_train_only,
     select_feature_columns,
     THERMAL_ARRAY_SPREAD_COL,
+    BEARING_SPREAD_COL,
+    VIBRATION_ENVELOPE_COL,
 )
 from .scoring import (
     map_seq_to_point_anomalies,
@@ -324,6 +326,10 @@ def run_automl_group(
     feature_cols = select_feature_columns(cfg, df_use, sensors)
     if cfg.ENABLE_THERMAL_ARRAY_SPREAD and THERMAL_ARRAY_SPREAD_COL in df_use.columns:
         feature_cols += select_feature_columns(cfg, df_use, [THERMAL_ARRAY_SPREAD_COL])
+    if cfg.ENABLE_BEARING_SPREAD and BEARING_SPREAD_COL in df_use.columns:
+        feature_cols += select_feature_columns(cfg, df_use, [BEARING_SPREAD_COL])
+    if cfg.ENABLE_VIBRATION_ENVELOPE and VIBRATION_ENVELOPE_COL in df_use.columns:
+        feature_cols += select_feature_columns(cfg, df_use, [VIBRATION_ENVELOPE_COL])
     df_use = df_use[feature_cols]
 
     # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do

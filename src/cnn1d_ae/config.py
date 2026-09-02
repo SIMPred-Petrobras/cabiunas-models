@@ -83,6 +83,33 @@ class PipelineConfig:
     ENABLE_THERMAL_ARRAY_SPREAD: bool = False
     THERMAL_ARRAY_SENSORS: Optional[List[str]] = None
 
+    # Features no estilo do detector de 4 sinais de mecanismo conhecido
+    # (DOC_EQUIPE/ROTEIRO_APRESENTACAO_TC33003A.pdf) -- adicionadas como
+    # colunas extras ao MESMO modelo unico (nao substituem a arquitetura,
+    # so enriquecem a representacao): "e se alimentarmos o modelo com os
+    # dados brutos MAIS essa leva de informacao afinada?" em vez de trocar
+    # o modelo por 4 sinais votando. Ver preprocess.py:_build_bearing_spread
+    # e :_build_vibration_envelope.
+    #
+    # Spread de mancal: sensor-alvo (ex: TI_0305) MENOS a mediana dos
+    # irmaos (outros termopares de mancal), depois z-robusto rolante --
+    # mede DIVERGENCIA de um mancal especifico, nao temperatura absoluta.
+    # Assimetrico (tem um alvo definido) e diferente de
+    # ENABLE_THERMAL_ARRAY_SPREAD (desvio-padrao SIMETRICO de um array,
+    # sem alvo).
+    ENABLE_BEARING_SPREAD: bool = False
+    BEARING_SPREAD_TARGET_SENSOR: Optional[str] = None
+    BEARING_SPREAD_SIBLING_SENSORS: Optional[List[str]] = None
+    BEARING_SPREAD_WINDOW_MINUTES: float = 24000.0  # 400h, mesma referencia rolante do detector de 4 sinais
+
+    # Envelope de vibracao: MAXIMO do z-robusto rolante entre os canais de
+    # vibracao -- pensado para expor um precursor fraco (achado do
+    # Thallys: sinal real em p80 da distribuicao saudavel, some se diluido
+    # dentro de um score multivariado com limiar unico em p99,9).
+    ENABLE_VIBRATION_ENVELOPE: bool = False
+    VIBRATION_ENVELOPE_SENSORS: Optional[List[str]] = None
+    VIBRATION_ENVELOPE_WINDOW_MINUTES: float = 24000.0  # 400h
+
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995
