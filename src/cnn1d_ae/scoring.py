@@ -647,6 +647,66 @@ def annotate_alert_catalog_context(
     return df_point
 
 
+def compute_catalog_enrichment_control(
+    df_point: pd.DataFrame,
+    catalog_df: pd.DataFrame,
+    window_hours: float,
+    n_samples: int = 5000,
+    random_seed: int = 42,
+    time_col: str = "Data da Ocorrencia",
+) -> dict:
+    """Controle negativo obrigatorio para `annotate_alert_catalog_context`:
+    mede que fracao de instantes ALEATORIOS (nao anomalos, so
+    operational_state=="on") cai perto de algum alarme do catalogo
+    dentro de +-window_hours, e compara com a fracao medida entre os
+    pontos anomalos. Sem isso, uma taxa alta de "explicado" pode ser
+    so reflexo de um catalogo denso (muitos alarmes, janela larga),
+    nao evidencia real de corroboracao.
+
+    Motivado por revisao externa da equipe (docs/analise_automl_exp10.md,
+    secao "Controle negativo do enriquecimento por catalogo"): a janela
+    de +-24h usada originalmente (EXP30/31) dava 71,7% de "explicado" ja
+    em instantes aleatorios, contra 97,6% nos pontos anomalos --
+    enriquecimento de so 1,36x, bem mais fraco do que o "88,1%/97,6%"
+    sozinho fazia parecer. Retorna as duas taxas e o fator de
+    enriquecimento (`anomaly_rate / baseline_rate`); um enriquecimento
+    proximo de 1,0 significa que a janela esta larga demais pra ter
+    poder discriminativo.
+    """
+    on_idx = df_point.index[df_point["operational_state"] == "on"]
+    rng = np.random.default_rng(random_seed)
+    n = min(int(n_samples), len(on_idx))
+    if n == 0 or catalog_df.empty or time_col not in catalog_df.columns:
+        return {
+            "window_hours": float(window_hours), "n_random_samples": 0,
+            "baseline_explained_rate": float("nan"), "anomaly_explained_rate": float("nan"),
+            "enrichment_factor": float("nan"),
+        }
+    sample_pos = rng.choice(len(on_idx), size=n, replace=False)
+    random_times = on_idx[sample_pos].values.astype("datetime64[ns]")
+
+    ref = catalog_df[[time_col]].dropna(subset=[time_col]).sort_values(time_col)
+    ref_arr = ref[time_col].values.astype("datetime64[ns]")
+    win = pd.Timedelta(hours=float(window_hours))
+    baseline_match = _nearest_within_window(random_times, ref_arr, win)
+    baseline_rate = float((baseline_match >= 0).mean())
+
+    anom_mask = df_point["is_anom_point"] == 1
+    if anom_mask.any() and "alert_confidence" in df_point.columns:
+        anomaly_rate = float((df_point.loc[anom_mask, "alert_confidence"] == "explicado_catalogo").mean())
+    else:
+        anomaly_rate = float("nan")
+
+    enrichment = (anomaly_rate / baseline_rate) if baseline_rate > 0 else float("nan")
+    return {
+        "window_hours": float(window_hours),
+        "n_random_samples": int(n),
+        "baseline_explained_rate": baseline_rate,
+        "anomaly_explained_rate": anomaly_rate,
+        "enrichment_factor": enrichment,
+    }
+
+
 def apply_step_change_gate(df_point: pd.DataFrame, step_index: pd.Series, threshold: float) -> pd.DataFrame:
     """Suprime is_anom_point quando `compute_step_change_index` ultrapassa
     `threshold` -- causal por construcao (a serie de entrada ja e uma

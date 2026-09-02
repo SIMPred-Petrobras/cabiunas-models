@@ -322,9 +322,20 @@ class PipelineConfig:
     # 8 TRIPs reais -- anotar em vez de suprimir tem risco zero porque
     # nao decide nada, so da contexto pro operador). False (default) =
     # comportamento anterior inalterado (nenhuma coluna nova).
+    #
+    # ALERT_CONTEXT_WINDOW_HOURS default = 2.0 (nao mais 24.0): revisao
+    # externa da equipe (relatorio DOC_EQUIPE/RELATORIO_DECISAO_DETECTOR.pdf)
+    # apontou, e validamos com controle negativo (compute_catalog_enrichment_control),
+    # que em +-24h ate 71,7% de instantes ALEATORIOS ja caem perto de algum
+    # alarme do catalogo (catalogo denso) -- o "88,1%/97,6% explicado" medido
+    # naquela janela e so 1,36x de enriquecimento sobre o acaso, nao a
+    # descoberta forte que parecia. +-2h tem denominador muito mais estreito
+    # e enriquecimento genuino. Ver docs/analise_automl_exp10.md, secao
+    # "Controle negativo do enriquecimento por catalogo".
     ENABLE_ALERT_CATALOG_CONTEXT: bool = False
     ALERT_CONTEXT_CATALOG_CSV: Optional[str] = None
-    ALERT_CONTEXT_WINDOW_HOURS: float = 24.0
+    ALERT_CONTEXT_WINDOW_HOURS: float = 2.0
+    ALERT_CONTEXT_CONTROL_N_SAMPLES: int = 5000
 
     # Retreino walk-forward mensal: em vez de um unico ajuste (modelo +
     # normalizacao + limiar de percentil) sobre todo o normal anterior a

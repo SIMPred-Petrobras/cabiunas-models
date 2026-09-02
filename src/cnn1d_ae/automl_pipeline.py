@@ -36,6 +36,7 @@ from .scoring import (
     compute_step_change_index,
     apply_step_change_gate,
     annotate_alert_catalog_context,
+    compute_catalog_enrichment_control,
 )
 from .automl_models import (
     build_dense_autoencoder,
@@ -717,6 +718,22 @@ def run_automl_group(
         n_explicado = int((best_point_df["alert_confidence"] == "explicado_catalogo").sum())
         print(f"[ALERT-CONTEXT] group={group_name}: {n_explicado}/{n_anom} pontos anomalos "
               f"explicados por catalogo amplo dentro de +-{cfg.ALERT_CONTEXT_WINDOW_HOURS}h")
+
+        # Controle negativo OBRIGATORIO (nao opcional): sem ele, a taxa de
+        # "explicado" acima nao tem como ser lida -- pode ser so reflexo de
+        # um catalogo denso, nao evidencia real de corroboracao. Ver
+        # compute_catalog_enrichment_control em scoring.py e
+        # docs/analise_automl_exp10.md, secao "Controle negativo do
+        # enriquecimento por catalogo".
+        enrichment = compute_catalog_enrichment_control(
+            best_point_df, alert_catalog, cfg.ALERT_CONTEXT_WINDOW_HOURS,
+            n_samples=cfg.ALERT_CONTEXT_CONTROL_N_SAMPLES,
+        )
+        with open(os.path.join(out_dirs["csv"], "alert_context_enrichment.json"), "w", encoding="utf-8") as f:
+            json.dump(enrichment, f, indent=2, ensure_ascii=False)
+        print(f"[ALERT-CONTEXT-CONTROL] group={group_name}: baseline={enrichment['baseline_explained_rate']*100:.1f}% "
+              f"anomalo={enrichment['anomaly_explained_rate']*100:.1f}% "
+              f"enriquecimento={enrichment['enrichment_factor']:.2f}x")
 
     best_point_df.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
 
