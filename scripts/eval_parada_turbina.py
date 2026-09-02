@@ -80,6 +80,12 @@ def parse_args():
     p.add_argument("--min_bloco", type=float, default=6.0,
                    help="operação mínima antes da parada, em horas")
     p.add_argument("--janela", type=float, default=96.0, help="busca do alerta, em horas")
+    p.add_argument("--desde", default=None,
+                   help="corta score, incidentes e indice a partir desta data. Necessario\n"
+                        "quando o modelo foi treinado depois de uma reconfiguracao do\n"
+                        "instrumento: pontuar o periodo antigo satura o indice e, como ele\n"
+                        "e rank percentual GLOBAL, empurra o corte e apaga o alerta no\n"
+                        "periodo bom. No TC382 o array mudou em 2023.")
     p.add_argument("--perm", type=int, default=N_PERM)
     p.add_argument("--out", default="eval_predictive_out/parada_turbina.csv")
     return p.parse_args()
@@ -148,6 +154,8 @@ def main() -> None:
                 print(f"[skip] {lab}: status={t.status}")
                 continue
             score = sw.read_mae(t.artifacts[art].get_local_copy())
+        if a.desde:
+            score = score[score.index >= pd.Timestamp(a.desde, tz="UTC")]
         hl = HL_PADRAO.get(lab, a.hl)
         h = sw.health_global(score, hl, running, t5s)
         if h.empty:
