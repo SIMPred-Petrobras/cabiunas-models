@@ -262,6 +262,30 @@ def classify_episodes_regua(
     return episodes
 
 
+def compute_operational_period_days(df_point: pd.DataFrame) -> float:
+    """Dias de OPERACAO VIGIADA (denominador correto da regua) --
+    conta so `operational_state == "on"` (maquina rodando, quente,
+    fora do blackout pos-partida), NAO o span de calendario min-max do
+    indice. Usar o span de calendario infla o denominador (maquina
+    tambem fica parada/em transiente boa parte do tempo) e SUBESTIMA
+    falso_positivo_por_mes.
+
+    Confirmado por revisao externa da equipe
+    (DOC_EQUIPE/ROTEIRO_APRESENTACAO_TC33003A.pdf, secao "Validacao -- a
+    regua"): a regua do time reduz 485 dias de calendario para 353 dias
+    julgaveis (73%); no nosso EXP30 a fracao julgavel medida foi 67,3%
+    (443,2 de 658,0 dias) -- o uso indevido do span de calendario nos
+    fez SUBESTIMAR falso_positivo_por_mes em ~48% em resultados
+    anteriores desta sessao. Ver docs/analise_automl_exp10.md, secao
+    "Denominador correto da regua".
+    """
+    dt_seconds = df_point.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    n_on = int((df_point["operational_state"] == "on").sum())
+    return float(n_on) * dt_seconds / 86400.0
+
+
 def compute_regua_metrics(
     classified_episodes: pd.DataFrame,
     failure_times: pd.Series,
@@ -270,7 +294,13 @@ def compute_regua_metrics(
     """Resume `classify_episodes_regua` em metricas agregadas: hit_rate
     (fracao de falhas catalogadas com >=1 episodio de deteccao) e taxa
     de falso positivo (episodios/mes), separando explicitamente os
-    "inconclusivo" (nao contam nem a favor nem contra)."""
+    "inconclusivo" (nao contam nem a favor nem contra).
+
+    IMPORTANTE: `period_days` deve ser dias de OPERACAO VIGIADA
+    (`compute_operational_period_days`), NAO o span de calendario
+    (`index.max() - index.min()`) -- ver docstring de
+    `compute_operational_period_days` para o motivo e o erro ja
+    cometido nesta sessao com o denominador errado."""
     n_falhas = len(pd.DatetimeIndex(failure_times).unique())
     falhas_detectadas = classified_episodes.loc[
         classified_episodes["classe"] == "deteccao", "falha_associada"

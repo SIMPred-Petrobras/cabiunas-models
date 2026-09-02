@@ -663,13 +663,18 @@ régua nova.
 Episódios (gap$<$2h fundido) & 193 & 38 & -- \\
 Detecção (falhas únicas) & 5 & 2 & \textbf{6 de 8} \\
 Inconclusivo & 56 & 3 & -- \\
-Falso positivo & 127 (5,87/mês) & 33 (1,20/mês) & -- \\
+Falso positivo & 127 (\textbf{8,72}/mês) & 33 (\textbf{1,81}/mês) & -- \\
 \bottomrule
 \end{tabular}
 \caption{Sob a régua rigorosa, perdemos 2 falhas: 27/02/2025 (selagem,
 reagimos 13,0h depois) e 17/03/2025 (mancal, reagimos 7,5h depois) --
 exatamente os 2 casos já identificados como "detectado só depois" na
-tabela de antecedência.}
+tabela de antecedência. \textbf{Correção (2026-09-02)}: FP/mês
+recalculado com o denominador correto -- dias de operação vigiada
+(\texttt{operational\_state=="on"}, 443,2 de 658,0 dias no mancal,
+67,3\%), não o span de calendário usado na versão original desta
+tabela (que dava 5,87 e 1,20/mês, subestimados em $\sim$48-52\%). Ver
+Apêndice~\ref{sec:apendiceA} para a metodologia completa.}
 \end{table}
 
 \subsection{Achado de complementaridade com o detector do Francisco}

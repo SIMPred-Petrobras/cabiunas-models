@@ -1916,7 +1916,21 @@ nada -- só reavalia o mesmo `is_anom_point` com a régua nova).
 | episódios (gap<2h fundido) | 193 | 38 | -- |
 | detecção | 10 (5 falhas únicas) | 2 (2 falhas únicas) | **6 de 8 falhas** |
 | inconclusivo | 56 | 3 | -- |
-| falso_positivo | 127 (5,87/mês) | 33 (1,20/mês) | -- |
+| falso_positivo | 127 (**8,72/mês**) | 33 (**1,81/mês**) | -- |
+
+> **CORREÇÃO (2026-09-02):** o FP/mês acima foi recalculado. A versão
+> original desta seção reportava 5,87/mês (mancal) e 1,20/mês (óleo),
+> usando o span de calendário (min-max do índice, 658 e 839,9 dias)
+> como denominador. Revisão externa da equipe
+> (`DOC_EQUIPE/ROTEIRO_APRESENTACAO_TC33003A.pdf`, seção "Validação -- a
+> régua") deixou explícito que o denominador correto é **dias de
+> operação vigiada** (`operational_state=="on"`), não dias de
+> calendário -- no nosso caso 443,2 de 658,0 dias (67,3%) pro mancal e
+> 555,7 de 839,9 (66,2%) pro óleo. Usar o span de calendário infla o
+> denominador e **subestima** o FP/mês em ~48-52%. Corrigido em
+> `compute_operational_period_days` (`scoring.py`). O número de falhas
+> detectadas (6/8) não muda -- só depende de contagem de episódios, não
+> do denominador de tempo.
 
 **Este é o número correto e mais honesto que o "8/8" reportado antes**
 (Seção "EXP28/29") -- aquele usava uma janela ±24h simétrica, que dá
