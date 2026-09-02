@@ -256,6 +256,47 @@ def _build_vibration_envelope(
     return out
 
 
+ALARM_RECENCY_COL = "alarm_recency"
+
+
+def compute_alarm_recency_feature(
+    index: pd.DatetimeIndex, alarm_times: pd.Series, halflife_minutes: float,
+) -> pd.Series:
+    """Feature causal: decaimento exponencial do tempo desde a ULTIMA
+    ativacao de um alarme de PROCESSO (nao-TRIP) em `alarm_times`.
+
+    Motivado por observacao de um representante de operacao da
+    Cabiunas: alarmes normais (cruzamento de limiar operacional -- subida
+    ou descida dependendo do sensor) podem ser precursores reais de
+    TRIP, nao so ruido a descartar (consistente com o que ja
+    encontramos por conta propria -- Secao "Cruzamento com catalogo
+    completo" de docs/analise_automl_exp10.md: 88,1% do residuo
+    "amarelo" contra TRIP era sinal real de outro alarme).
+
+    Diferente de `annotate_alert_catalog_context` (scoring.py, so
+    informativo/pos-hoc, roda DEPOIS de is_anom_point ja decidido), esta
+    funcao entra como FEATURE DE ENTRADA do modelo -- estritamente
+    causal (busca so alarmes ANTES de cada instante `t`, nunca no
+    futuro, via `searchsorted(..., side="right") - 1`).
+
+    Valor = exp(-ln2 * horas_desde_ultimo_alarme / halflife_minutes) se
+    algum alarme de `alarm_times` ja ocorreu antes de `t` (1,0 logo
+    apos o alarme, decaindo pela metade a cada `halflife_minutes`);
+    0,0 se nao houve alarme algum antes de `t`."""
+    alarm_arr = np.sort(pd.DatetimeIndex(pd.Series(alarm_times).dropna()).values.astype("datetime64[ns]"))
+    t_arr = index.values.astype("datetime64[ns]")
+    out = np.zeros(len(t_arr), dtype=np.float64)
+    if len(alarm_arr) == 0:
+        return pd.Series(out, index=index)
+
+    pos = np.searchsorted(alarm_arr, t_arr, side="right") - 1
+    valid = pos >= 0
+    dt_hours = (t_arr[valid] - alarm_arr[pos[valid]]).astype("timedelta64[s]").astype(np.float64) / 3600.0
+    halflife_hours = max(1e-6, float(halflife_minutes) / 60.0)
+    out[valid] = np.exp(-np.log(2.0) * dt_hours / halflife_hours)
+    return pd.Series(out, index=index)
+
+
 def _long_gap_mask(series: pd.Series, interpolate_limit: int) -> pd.Series:
     missing = series.isna()
     grp = missing.ne(missing.shift(fill_value=False)).cumsum()

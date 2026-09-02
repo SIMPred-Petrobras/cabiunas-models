@@ -21,6 +21,8 @@ from .preprocess import (
     THERMAL_ARRAY_SPREAD_COL,
     BEARING_SPREAD_COL,
     VIBRATION_ENVELOPE_COL,
+    ALARM_RECENCY_COL,
+    compute_alarm_recency_feature,
 )
 from .scoring import (
     map_seq_to_point_anomalies,
@@ -323,6 +325,18 @@ def run_automl_group(
     # e disso que o veto de sensor congelado precisa (nao das derivadas).
     raw_sensor_values = df_use[sensors].copy()
 
+    # Feature de recencia de alarme de processo (ideia trazida por
+    # representante de operacao da Cabiunas -- ver docstring de
+    # compute_alarm_recency_feature): precisa de df_alarm, que
+    # build_group_dataframe nao recebe, por isso e computada aqui.
+    if cfg.ENABLE_ALARM_RECENCY_FEATURE and cfg.ALARM_RECENCY_TAGS:
+        if "Tag" not in df_alarm.columns:
+            raise ValueError("ENABLE_ALARM_RECENCY_FEATURE=true exige a coluna 'Tag' no alarme.")
+        recency_alarm_times = df_alarm.loc[df_alarm["Tag"].isin(cfg.ALARM_RECENCY_TAGS), "Data da Ocorrencia"]
+        df_use[ALARM_RECENCY_COL] = compute_alarm_recency_feature(
+            df_use.index, recency_alarm_times, cfg.ALARM_RECENCY_HALFLIFE_MINUTES,
+        )
+
     feature_cols = select_feature_columns(cfg, df_use, sensors)
     if cfg.ENABLE_THERMAL_ARRAY_SPREAD and THERMAL_ARRAY_SPREAD_COL in df_use.columns:
         feature_cols += select_feature_columns(cfg, df_use, [THERMAL_ARRAY_SPREAD_COL])
@@ -330,6 +344,8 @@ def run_automl_group(
         feature_cols += select_feature_columns(cfg, df_use, [BEARING_SPREAD_COL])
     if cfg.ENABLE_VIBRATION_ENVELOPE and VIBRATION_ENVELOPE_COL in df_use.columns:
         feature_cols += select_feature_columns(cfg, df_use, [VIBRATION_ENVELOPE_COL])
+    if cfg.ENABLE_ALARM_RECENCY_FEATURE and ALARM_RECENCY_COL in df_use.columns:
+        feature_cols += [ALARM_RECENCY_COL]
     df_use = df_use[feature_cols]
 
     # Estado operacional via OPERATIONAL_REF_SENSOR (mesmo mecanismo do

@@ -110,6 +110,18 @@ class PipelineConfig:
     VIBRATION_ENVELOPE_SENSORS: Optional[List[str]] = None
     VIBRATION_ENVELOPE_WINDOW_MINUTES: float = 24000.0  # 400h
 
+    # Feature de recencia de alarme de PROCESSO (nao-TRIP): decaimento
+    # exponencial do tempo desde a ultima ativacao de uma tag em
+    # ALARM_RECENCY_TAGS -- ideia trazida por um representante de
+    # operacao da Cabiunas ("alarmes normais podem ser um grande
+    # indicativo e ajudar a prever TRIP, pela subida ou descida do
+    # sensor conforme o limiar de funcionamento"). Estritamente causal
+    # (so usa alarmes ja ocorridos) -- ver
+    # preprocess.py:compute_alarm_recency_feature.
+    ENABLE_ALARM_RECENCY_FEATURE: bool = False
+    ALARM_RECENCY_TAGS: Optional[List[str]] = None
+    ALARM_RECENCY_HALFLIFE_MINUTES: float = 120.0
+
     OUTLIER_MODE: str = "none"  # "none" | "quantile" | "mad"
     OUTLIER_Q_LOW: float = 0.005
     OUTLIER_Q_HIGH: float = 0.995
