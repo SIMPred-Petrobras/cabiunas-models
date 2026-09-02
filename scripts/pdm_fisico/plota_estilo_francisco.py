@@ -8,6 +8,7 @@ depois do fim conta como "antes de parada (nao contado)", nao como falso positiv
 Ver [[fp-bruto-contra-fp-liquido]] e a conversa que fechou nisso.
 """
 from __future__ import annotations
+import sys
 import numpy as np, pandas as pd
 import matplotlib
 matplotlib.use("Agg")
@@ -149,9 +150,13 @@ if __name__ == "__main__":
     titulo = (f"Nosso resultado — 4 sinais físicos, 16 meses — {n_tp}/8 falhas · "
              f"lead {m['lead_med']:.1f} h · {n_fp/meses:.2f} FP/mês · {h_fp/meses:.1f} h/mês "
              f"em alarme falso  (regra C)")
-    fig.suptitle(titulo, fontsize=12.5, fontweight="bold", color=INK, y=1.06, x=0.02, ha="left")
+    # `--sem-titulo` para o deck: la o slide ja carrega titulo e placar, e repetir
+    # os dois gasta altura util da figura e le como descuido.
+    SEM = "--sem-titulo" in sys.argv
+    if not SEM:
+        fig.suptitle(titulo, fontsize=12.5, fontweight="bold", color=INK, y=1.06, x=0.02, ha="left")
 
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.tight_layout(rect=(0, 0, 1, 1.0 if SEM else 0.93))
     fig.savefig("fig_nosso_estilo_francisco.png", dpi=150, facecolor="white", bbox_inches="tight")
     plt.close(fig)
     print("-> fig_nosso_estilo_francisco.png")

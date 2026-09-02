@@ -1,0 +1,623 @@
+<title>Antecipar o Trip do TC-330.03A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  color-scheme: light;
+  --stage:   #d9dee1;
+  --slide:   #ffffff;
+  --sunk:    #f1f4f5;
+  --ink:     #131a20;
+  --ink-2:   #3d4a55;
+  --muted:   #6b7885;
+  --rule:    #dde2e6;
+  --firm:    #b9c3cb;
+  --amp:     #b8792a;
+  --amp-bg:  #f6ecdb;
+  --blue:    #2a78d6;
+  --orange:  #eb6834;
+  --aqua:    #1baf7a;
+  --blue-bg: #e2ecfa;
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --stage:  #0d1114; --slide: #1b2126; --sunk: #232b31;
+    --ink:    #eef1f3; --ink-2: #b8c2cb; --muted: #8a97a3;
+    --rule:   #2c353d; --firm: #465359;
+    --amp:    #d69a4e; --amp-bg: #33291a;
+    --blue:   #3987e5; --orange: #d95926; --aqua: #199e70; --blue-bg: #1c3149;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --stage:  #0d1114; --slide: #1b2126; --sunk: #232b31;
+  --ink:    #eef1f3; --ink-2: #b8c2cb; --muted: #8a97a3;
+  --rule:   #2c353d; --firm: #465359;
+  --amp:    #d69a4e; --amp-bg: #33291a;
+  --blue:   #3987e5; --orange: #d95926; --aqua: #199e70; --blue-bg: #1c3149;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--stage); color: var(--ink); font-family: var(--sans);
+  margin: 0; padding: 0; -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- palco e slide ---------- */
+#deck { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 26px 18px 90px; }
+.slide {
+  width: min(1180px, 100%); aspect-ratio: 16 / 9; background: var(--slide);
+  border: 1px solid var(--rule); border-radius: 4px; padding: 46px 56px 40px;
+  display: flex; flex-direction: column; position: relative; overflow: hidden;
+  container-type: inline-size;
+}
+.slide > .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 14px;
+  display: flex; gap: 16px; align-items: baseline;
+}
+.kicker b { color: var(--amp); font-weight: 600; }
+h2 {
+  font-family: var(--cond); font-weight: 700; font-size: 34px; line-height: 1.1;
+  margin: 0 0 6px; letter-spacing: -0.015em; color: var(--ink); text-wrap: balance;
+}
+.sub { font-size: 15.5px; color: var(--ink-2); margin: 0 0 20px; max-width: 76ch; line-height: 1.5; }
+.num {
+  position: absolute; right: 22px; bottom: 16px; font-family: var(--mono);
+  font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+p { margin: 0 0 12px; line-height: 1.55; }
+strong { font-weight: 600; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--sunk); padding: 1px 5px; border-radius: 3px; }
+
+/* ---------- capa ---------- */
+.cover { justify-content: center; }
+.cover h1 {
+  font-family: var(--cond); font-weight: 700; font-size: 62px; line-height: 1.02;
+  margin: 0 0 20px; letter-spacing: -0.022em; text-wrap: balance;
+}
+.cover .lede { font-size: 19px; color: var(--ink-2); max-width: 60ch; line-height: 1.5; }
+.cover .meta {
+  margin-top: 40px; padding-top: 20px; border-top: 2px solid var(--ink);
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  display: flex; gap: 26px; flex-wrap: wrap; letter-spacing: 0.06em;
+}
+
+/* ---------- figuras ---------- */
+.fig { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.fig img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 2px; }
+.fignote { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.45; }
+
+/* ---------- placar ---------- */
+.score { display: flex; gap: 0; margin: 4px 0 18px; }
+.score .cell { flex: 1; border-right: 1px solid var(--rule); padding-right: 18px; }
+.score .cell:last-child { border-right: 0; }
+.score .k {
+  font-family: var(--cond); font-weight: 700; font-size: 38px; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.015em;
+}
+.score .l {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted); margin-top: 7px; line-height: 1.4;
+}
+
+/* ---------- pipeline ---------- */
+.pipe { display: flex; gap: 0; align-items: stretch; flex: 1; min-height: 0; }
+.stage { flex: 1; display: flex; flex-direction: column; }
+.stage .hd {
+  font-family: var(--cond); font-weight: 700; font-size: 17px; letter-spacing: 0.02em;
+  padding: 9px 14px; background: var(--sunk); border: 1px solid var(--rule);
+  border-radius: 3px 3px 0 0; color: var(--ink);
+}
+.stage.on .hd { background: var(--blue-bg); border-color: var(--blue); color: var(--ink); }
+.stage .bd {
+  flex: 1; border: 1px solid var(--rule); border-top: 0; border-radius: 0 0 3px 3px;
+  padding: 14px; display: flex; flex-direction: column; gap: 11px;
+}
+.stage.on .bd { border-color: var(--blue); }
+.step { font-size: 13px; line-height: 1.45; color: var(--ink-2); }
+.step b { display: block; color: var(--ink); font-weight: 600; font-size: 13.5px; margin-bottom: 1px; }
+.step .m { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.arrow { display: flex; align-items: center; padding: 0 9px; color: var(--firm); font-size: 22px; }
+
+/* ---------- tabelas ---------- */
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--rule); }
+thead th {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--firm);
+}
+td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+tbody tr:last-child td { border-bottom: 0; }
+tr.hi td { background: var(--blue-bg); font-weight: 500; }
+
+/* ---------- cartoes ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 14px; }
+.card { border: 1px solid var(--rule); border-radius: 3px; padding: 16px 18px; }
+.card.pick { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.card .tag {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); display: block; margin-bottom: 8px;
+}
+.card.pick .tag { color: var(--blue); font-weight: 600; }
+.card .big { font-family: var(--cond); font-weight: 700; font-size: 30px; font-variant-numeric: tabular-nums; }
+.card ul { margin: 8px 0 0; padding-left: 16px; font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; flex: 1; min-height: 0; }
+.two.wide-l { grid-template-columns: 1.25fr 1fr; }
+.flag {
+  background: var(--amp-bg); border-left: 3px solid var(--amp); border-radius: 0 3px 3px 0;
+  padding: 13px 16px; font-size: 13.5px; line-height: 1.5;
+}
+.flag b { color: var(--amp); font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 5px; }
+ul.tight { margin: 0; padding-left: 18px; line-height: 1.6; }
+ul.tight li { margin-bottom: 7px; }
+
+/* ---------- navegacao ---------- */
+#bar {
+  position: fixed; left: 0; right: 0; bottom: 0; background: var(--slide);
+  border-top: 1px solid var(--rule); padding: 9px 18px; display: flex;
+  align-items: center; justify-content: center; gap: 14px; z-index: 40;
+}
+#bar button {
+  font-family: var(--mono); font-size: 12px; background: var(--sunk); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 3px; padding: 5px 12px; cursor: pointer;
+}
+#bar button:hover { border-color: var(--firm); }
+#bar button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+#dots { display: flex; gap: 6px; }
+#dots i {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--firm);
+  cursor: pointer; display: block; opacity: 0.45;
+}
+#dots i.at { background: var(--blue); opacity: 1; }
+#pos { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 54px; text-align: center; }
+
+@container (max-width: 820px) {
+  .slide { padding: 30px 32px 28px; }
+  h2 { font-size: 26px; }
+  .cover h1 { font-size: 42px; }
+  .score .k { font-size: 28px; }
+  .pipe { flex-direction: column; }
+  .arrow { transform: rotate(90deg); padding: 4px 0; justify-content: center; }
+  .two { grid-template-columns: 1fr; gap: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div id="deck">
+
+<!-- 01 ---------------------------------------------------------------- -->
+<section class="slide cover">
+  <div class="body" style="justify-content:center">
+    <div class="kicker"><span>Petrobras · Cabiúnas · UTGCA</span></div>
+    <h1>Antecipar o trip do TC-330.03A</h1>
+    <p class="lede">Um detector de quatro sinais físicos que avisa, em média 29 horas antes,
+    as oito paradas por falha do turbocompressor — e por que a vibração era a peça que faltava.</p>
+    <div class="meta">
+      <span>Detector físico de 4 sinais</span>
+      <span>16 meses · 2025–2026</span>
+      <span>2 de setembro de 2026</span>
+    </div>
+  </div>
+  <div class="num">01</div>
+</section>
+
+<!-- 02 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>O problema</b><span>o que é um trip</span></div>
+    <h2>Oito trips, 792 horas de máquina parada</h2>
+    <p class="sub">Um <em>trip</em> é o desligamento automático da máquina pela sua própria proteção.
+    Quando ele acontece, o compressor já parou — o dano está feito e a produção também.</p>
+    <div class="two wide-l">
+      <div>
+        <table>
+          <thead><tr><th>#</th><th>Data</th><th>Modo físico</th><th class="n">Parada</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>27/02/2025</td><td>selagem</td><td class="n">4,4 h</td></tr>
+            <tr><td>2</td><td>17/03/2025</td><td>mancal</td><td class="n">6,2 h</td></tr>
+            <tr><td>3</td><td>07/04/2025</td><td>mancal</td><td class="n">18,2 h</td></tr>
+            <tr><td>4</td><td>11/04/2025</td><td>mancal</td><td class="n">41,4 h</td></tr>
+            <tr class="hi"><td>5</td><td>29/04/2025</td><td>mancal</td><td class="n">564,2 h</td></tr>
+            <tr class="hi"><td>6</td><td>04/11/2025</td><td>óleo lubrificante</td><td class="n">144,1 h</td></tr>
+            <tr><td>7</td><td>09/12/2025</td><td>mancal</td><td class="n">7,8 h</td></tr>
+            <tr><td>8</td><td>26/02/2026</td><td>óleo lubrificante</td><td class="n">5,7 h</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;justify-content:center">
+        <div class="score" style="margin:0">
+          <div class="cell"><div class="k">792 h</div><div class="l">de indisponibilidade<br>nos 8 eventos</div></div>
+          <div class="cell"><div class="k">3</div><div class="l">modos físicos<br>distintos</div></div>
+        </div>
+        <div class="flag">
+          <b>Como o alvo foi derivado</b>
+          Queda de <code>RUNNING_A</code> com parada ≥ 2 h, coincidindo com alarme de nível
+          de proteção na janela de −1 h a +30 min. Eventos a menos de 24 h contam como um só.
+          Não é lista escolhida a mão — sai dos dados por regra.
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin:0;line-height:1.5">
+          Dois eventos dominam: 29/04 e 04/11 somam <strong>708 h</strong>, 89% de toda a
+          indisponibilidade do período.</p>
+      </div>
+    </div>
+  </div>
+  <div class="num">02</div>
+</section>
+
+<!-- 03 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>O problema</b><span>a série completa</span></div>
+    <h2>O que o detector tem que enxergar</h2>
+    <div class="fig">{{FIG_ALVO}}</div>
+    <p class="fignote">Três famílias físicas ao longo de 16 meses. As linhas laranja são os oito trips.
+    O metal do mancal sobe visivelmente antes do evento 6; a vibração sobe antes do 7 e do 8 —
+    mas nem sempre, e nem sempre no mesmo canal. É por isso que o detector vota entre sinais em vez
+    de confiar em um só.</p>
+  </div>
+  <div class="num">03</div>
+</section>
+
+<!-- 04 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Método</b><span>faixa de treinamento</span></div>
+    <h2>O modelo nunca vê o futuro</h2>
+    <p class="sub">Cada mês é pontuado por um modelo ajustado <em>só</em> com o que veio antes dele —
+    walk-forward mensal. Nenhum instante é julgado por um baseline que o contém.</p>
+    <div class="two">
+      <div>
+        <ul class="tight" style="font-size:14px">
+          <li><strong>Ajuste:</strong> últimas <strong>20.000 amostras estáveis</strong> antes do
+          início do mês — cerca de <strong>667 h</strong> de operação quente.</li>
+          <li><strong>Reajuste:</strong> mensal, 27 ajustes na janela. Medimos as alternativas:
+          congelar o modelo custa 2 detecções e multiplica por 15 as horas de alarme falso.</li>
+          <li><strong>Limpeza do baseline:</strong> as janelas em torno das falhas conhecidas
+          saem do ajuste, para a anomalia não virar normalidade.</li>
+          <li><strong>Vibração:</strong> referência rolante de 400 h com banda de guarda de 24 h,
+          passo de 6 h — mecanismo separado do ajuste mensal.</li>
+        </ul>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="flag">
+          <b>A máscara — dado contra dado julgável</b>
+          Só conta o instante em que a máquina está <strong>rodando</strong> (<code>RUNNING_A</code>),
+          <strong>quente</strong> (T5 &gt; 300 °C) e <strong>fora das 6 h</strong> seguintes a um
+          religamento. O blackout existe porque toda partida produz um transiente mecânico real
+          que não é falha.
+        </div>
+        <div class="score" style="margin:0">
+          <div class="cell"><div class="k">353</div><div class="l">dias julgáveis</div></div>
+          <div class="cell"><div class="k">485</div><div class="l">dias de calendário</div></div>
+          <div class="cell"><div class="k">73 %</div><div class="l">sob vigilância</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="num">04</div>
+</section>
+
+<!-- 05 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Método</b><span>pipeline completa</span></div>
+    <h2>Do sensor ao alarme, em quatro estágios</h2>
+    <div class="pipe">
+      <div class="stage">
+        <div class="hd">1 · Dado</div>
+        <div class="bd">
+          <div class="step"><b>PI Web API</b><span class="m">36 sensores · 30 s · UTC</span></div>
+          <div class="step"><b>Grade de 2 min</b><span class="m">mediana da janela — robusta a spike isolado, dispensa Hampel</span></div>
+          <div class="step"><b>Faixa física</b><span class="m">sentinela de termopar (−40,5 °C) vira NaN</span></div>
+          <div class="step"><b>Máscara</b><span class="m">rodando · quente · fora do blackout de 6 h</span></div>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage on">
+        <div class="hd">2 · Sinal</div>
+        <div class="bd">
+          <div class="step"><b>t · temperatura</b><span class="m">erro de reconstrução de PCA, 14 tags</span></div>
+          <div class="step"><b>p · pressão</b><span class="m">erro de reconstrução de PCA, 12 tags</span></div>
+          <div class="step"><b>sp · mancal</b><span class="m">z robusto do spread contra os irmãos</span></div>
+          <div class="step"><b>vb · vibração</b><span class="m">z robusto, máximo das 10 sondas</span></div>
+          <div class="step"><b>EWMA</b><span class="m">meia-vida 1 h (t, p) · 30 min (sp, vb)</span></div>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage">
+        <div class="hd">3 · Decisão</div>
+        <div class="bd">
+          <div class="step"><b>Dois gatilhos por canal</b><span class="m">degrau: acima do limiar por 30 min seguidos</span></div>
+          <div class="step"><b>ou CUSUM</b><span class="m">soma acumulada &gt; 80 — pega desvio fraco e persistente</span></div>
+          <div class="step"><b>Voto ≥ 2 canais</b><span class="m">exigindo sp ou vb — protege de transiente</span></div>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="stage">
+        <div class="hd">4 · Alarme</div>
+        <div class="bd">
+          <div class="step"><b>Refratário 48 h</b><span class="m">repetir não é notícia — resolve a deriva de custo</span></div>
+          <div class="step"><b>Duração mínima</b><span class="m">120 min — episódio curto não vira alarme</span></div>
+          <div class="step"><b>Saída</b><span class="m">episódio com início, fim e sinais que votaram</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="fignote">O limiar de cada canal é <strong>adimensional</strong> — múltiplo do p99 por sensor
+    e de desvios do próprio baseline mensal. Nada em °C ou bar, então o detector porta para outro
+    compressor sem re-derivar unidade.</p>
+  </div>
+  <div class="num">05</div>
+</section>
+
+<!-- 06 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Método</b><span>a régua</span></div>
+    <h2>O critério, declarado antes dos números</h2>
+    <p class="sub">Sem isso, "8 de 8" e "6 de 8" não significam a mesma coisa. Esta régua é a mesma
+    que o time do Francisco usa — conferida no código dos dois lados.</p>
+    <div class="two">
+      <div>
+        <ul class="tight" style="font-size:14px">
+          <li><strong>Detecção</strong> — o alerta tem de estar de pé na janela de
+          <strong>48 h antes</strong> do trip. Estritamente antecipatório: reagir depois não conta.</li>
+          <li><strong>Episódio</strong> — alertas separados por menos de <strong>2 h</strong>
+          são o mesmo episódio.</li>
+          <li><strong>Falso positivo</strong> — episódio que não antecipa falha
+          <em>e</em> não é seguido de parada real da máquina.</li>
+          <li><strong>Denominador</strong> — mês de <strong>operação vigiada</strong> (730 h),
+          não mês de calendário.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="flag" style="margin-bottom:14px">
+          <b>A terceira caixa</b>
+          Se a máquina parou de verdade (≥ 2 h) durante o alerta ou até 48 h depois dele, o episódio
+          não é acerto nem erro: o detector viu alguma coisa que a operação também viu. Fica fora
+          da conta, dos dois lados.
+        </div>
+        <table>
+          <thead><tr><th>Classe</th><th class="n">Episódios</th><th class="n">Horas</th></tr></thead>
+          <tbody>
+            <tr class="hi"><td>antecipou falha</td><td class="n">8</td><td class="n">1.053</td></tr>
+            <tr><td>antes de parada real</td><td class="n">6</td><td class="n">366</td></tr>
+            <tr><td>falso positivo</td><td class="n">6</td><td class="n">83</td></tr>
+          </tbody>
+        </table>
+        <p class="fignote">94% do tempo em que o detector está alarmado é sinal legítimo.</p>
+      </div>
+    </div>
+  </div>
+  <div class="num">06</div>
+</section>
+
+<!-- 07 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Resultado</b><span>ponto de produção</span></div>
+    <h2>Oito de oito, com 29 horas de antecedência</h2>
+    <div class="score">
+      <div class="cell"><div class="k">8/8</div><div class="l">falhas antecipadas</div></div>
+      <div class="cell"><div class="k">29,0 h</div><div class="l">antecedência média<br>mínimo 2,8 h</div></div>
+      <div class="cell"><div class="k">0,52</div><div class="l">falsos positivos<br>por mês</div></div>
+      <div class="cell"><div class="k">7,15 h</div><div class="l">por mês em<br>alarme falso</div></div>
+      <div class="cell"><div class="k">0,98 %</div><div class="l">do tempo de operação<br>em alarme falso</div></div>
+    </div>
+    <div class="fig">{{FIG_RESULTADO}}</div>
+    <p class="fignote">Cada ponto é um dia com alerta confirmado. Vermelho antecipou falha, laranja
+    precedeu parada real, preto é falso positivo. Os seis pretos somam 83 h em 16 meses.</p>
+  </div>
+  <div class="num">07</div>
+</section>
+
+<!-- 08 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Resultado</b><span>o achado</span></div>
+    <h2>Não é o sensor — é onde fica o limiar</h2>
+    <p class="sub">Duas falhas separam este detector dos demais: 04/11/2025 e 09/12/2025.
+    Uma varredura de 51.840 configurações sem vibração não chega a nenhuma das duas.</p>
+    <div class="two wide-l">
+      <div>
+        <table>
+          <thead><tr><th>Limiar de vb</th><th class="n">Percentil</th><th class="n">Detecta</th><th class="n">FP/mês</th></tr></thead>
+          <tbody>
+            <tr class="hi"><td>6,60 — nosso</td><td class="n">p69</td><td class="n">8/8</td><td class="n">0,517</td></tr>
+            <tr><td>19,31</td><td class="n">p90</td><td class="n">4/8</td><td class="n">0,517</td></tr>
+            <tr><td>44,35</td><td class="n">p99</td><td class="n">3/8</td><td class="n">0,431</td></tr>
+            <tr><td>65,83</td><td class="n">p99,9</td><td class="n">2/8</td><td class="n">0,344</td></tr>
+          </tbody>
+        </table>
+        <p class="fignote">Só o limiar de <code>vb</code> muda. Os outros três canais, o voto,
+        o CUSUM e o refratário ficam idênticos.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <p style="font-size:14px;margin:0">O sinal de vibração nas 48 h antes de 09/12 fica em
+        <strong>p80</strong>. Um precursor em p80 é invisível para um limiar em p99,9 e visível
+        para um em p69.</p>
+        <div class="flag">
+          <b>Por que podemos operar tão baixo</b>
+          Subir o limiar de p69 a p99,9 derruba a detecção de 8/8 para 2/8 e o falso positivo cai
+          só de 0,517 para 0,344. <strong>O limiar não é a alavanca de custo.</strong> Quem segura
+          o falso positivo é o voto de dois canais, a persistência de 30 min, o CUSUM e o refratário.
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin:0;line-height:1.5">
+          Confirmação independente: o detector do Diego, com arquitetura completamente diferente,
+          também usa as dez sondas de vibração e também antecipa os dois eventos.</p>
+      </div>
+    </div>
+  </div>
+  <div class="num">08</div>
+</section>
+
+<!-- 09 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Resultado</b><span>a fronteira</span></div>
+    <h2>A operação escolhe o ponto, não o modelo</h2>
+    <p class="sub">Os três pontos abaixo saem do <em>mesmo</em> detector — muda só o silêncio
+    pós-partida e o limiar. Qual detector seguir e onde operá-lo são decisões separadas.</p>
+    <div class="fig" style="max-height:46%">{{FIG_FRONTEIRA}}</div>
+    <div class="cards" style="margin-top:16px;grid-template-columns:repeat(3,1fr)">
+      <div class="card pick">
+        <span class="tag">Recomendado · cobertura máxima</span>
+        <div class="big">8 de 8</div>
+        <ul><li>0,52 FP/mês · 7,15 h/mês</li><li>antecedência 29,0 h</li></ul>
+      </div>
+      <div class="card">
+        <span class="tag">Equilíbrio</span>
+        <div class="big">6 de 8</div>
+        <ul><li>0,34 FP/mês · 1,67 h/mês</li><li>4,3× menos horas de alarme</li></ul>
+      </div>
+      <div class="card">
+        <span class="tag">Mínimo incômodo</span>
+        <div class="big">5 de 8</div>
+        <ul><li>0,09 FP/mês · 0,66 h/mês</li><li>1 falso positivo em 11 meses</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="num">09</div>
+</section>
+
+<!-- 10 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Honestidade</b><span>o que pesa contra</span></div>
+    <h2>Três coisas que este número não prova</h2>
+    <div class="two" style="grid-template-columns:1fr 1fr;gap:22px">
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div class="flag">
+          <b>O número robusto é 7/8</b>
+          Sob leave-one-event-out, o 8/8 não se sustenta. O evento que cai é sempre
+          <strong>04/11/2025</strong>, detectado por apenas <strong>24%</strong> das configurações
+          dentro do orçamento de falso positivo — os outros sete ficam entre 59% e 76%.
+        </div>
+        <div class="flag">
+          <b>Nada aqui é estatisticamente significativo</b>
+          Com oito eventos, os intervalos de confiança se sobrepõem em tudo. A comparação
+          8/8 contra 6/8 dá <strong>p = 0,50</strong>. Provar superioridade a p &lt; 0,05
+          exigiria cerca de 24 eventos — uns quatro anos de operação.
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div class="flag">
+          <b>O ponto é um mínimo selecionado</b>
+          Escolher a melhor de 756 configurações sobre oito eventos é otimista por construção.
+          O mesmo vale para as varreduras dos outros times.
+        </div>
+        <div style="border:1px solid var(--rule);border-radius:3px;padding:14px 16px">
+          <p style="margin:0 0 8px;font-size:13.5px"><strong>Por que decidimos assim mesmo:</strong></p>
+          <p style="margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.55">
+            A decisão se apoia em <strong>mecanismo medido</strong> e em
+            <strong>assimetria de custo</strong>, não em teste de hipótese. Os dois eventos que só
+            este detector antecipa valem <strong>152 h</strong> de máquina parada; cobri-los custa
+            41 h a mais de alarme falso no período inteiro. Razão de <strong>3,7 para 1</strong>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="num">10</div>
+</section>
+
+<!-- 11 ---------------------------------------------------------------- -->
+<section class="slide">
+  <div class="body">
+    <div class="kicker"><b>Próximo passo</b><span>o resultado é conjunto</span></div>
+    <h2>A vibração entra na máquina de varredura</h2>
+    <p class="sub">Quatro times atacaram o mesmo problema por caminhos independentes. O que sai
+    da comparação não é um vencedor — é uma peça que faltava e uma infraestrutura que a mede.</p>
+    <div class="two" style="grid-template-columns:1fr 1fr;gap:26px">
+      <div>
+        <ul class="tight" style="font-size:14px">
+          <li><strong>O que este detector traz:</strong> o canal de vibração em p69 e os dois eventos
+          que ninguém mais alcança.</li>
+          <li><strong>O que a varredura do Francisco traz:</strong> 51.840 configurações auditadas,
+          critério declarado antes dos números, e o menor custo em horas de alarme.</li>
+          <li><strong>O que o Diego traz:</strong> a corroboração em tempo de alerta contra o
+          catálogo completo de alarmes da planta.</li>
+        </ul>
+        <div class="flag" style="margin-top:14px">
+          <b>O detalhe que decide o experimento</b>
+          A grade de limiar da varredura vai de p99 a p99,995. O canal de vibração vive em
+          <strong>p69</strong>. Sem estender a grade para baixo, o teste falha por um motivo que
+          não tem nada a ver com o sinal.
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:center;gap:16px">
+        <div style="border:1px solid var(--blue);border-radius:3px;padding:18px 20px;background:var(--blue-bg)">
+          <span class="tag" style="color:var(--blue);font-weight:600">Experimento · uma semana</span>
+          <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55">
+            Entrar com o canal <code>vb</code> como quinto sinal na varredura, com a grade de limiar
+            estendida até ~p60 e <code>confirm ≥ 2</code> obrigatório, e medir se dá para ter
+            <strong>os 8 eventos com o custo de alarme da fronteira do Francisco</strong>.
+          </p>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin:0;line-height:1.5">
+          Enquanto isso, o detector de 4 sinais é o que está pronto para operar: é o único em 8 de 8,
+          e o ponto de operação é reversível por uma constante.</p>
+      </div>
+    </div>
+  </div>
+  <div class="num">11</div>
+</section>
+
+</div>
+
+<div id="bar">
+  <button id="prev" aria-label="Slide anterior">◀ anterior</button>
+  <span id="pos">1 / 11</span>
+  <button id="next" aria-label="Próximo slide">próximo ▶</button>
+  <div id="dots" role="tablist" aria-label="Ir para slide"></div>
+</div>
+
+<script>
+const slides = Array.from(document.querySelectorAll(".slide"));
+const dots = document.getElementById("dots");
+const pos = document.getElementById("pos");
+let at = 0;
+
+slides.forEach((_, i) => {
+  const d = document.createElement("i");
+  d.tabIndex = 0; d.setAttribute("role", "tab");
+  d.setAttribute("aria-label", "Slide " + (i + 1));
+  d.addEventListener("click", () => go(i));
+  d.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(i); } });
+  dots.appendChild(d);
+});
+
+function marca() {
+  Array.from(dots.children).forEach((d, i) => d.classList.toggle("at", i === at));
+  pos.textContent = (at + 1) + " / " + slides.length;
+}
+function go(i) {
+  at = Math.max(0, Math.min(slides.length - 1, i));
+  slides[at].scrollIntoView({ behavior: "smooth", block: "center" });
+  marca();
+}
+document.getElementById("prev").addEventListener("click", () => go(at - 1));
+document.getElementById("next").addEventListener("click", () => go(at + 1));
+addEventListener("keydown", e => {
+  if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); go(at + 1); }
+  else if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); go(at - 1); }
+  else if (e.key === "Home") { e.preventDefault(); go(0); }
+  else if (e.key === "End") { e.preventDefault(); go(slides.length - 1); }
+});
+// acompanha a rolagem manual
+const obs = new IntersectionObserver(es => {
+  es.forEach(en => { if (en.isIntersecting) { at = slides.indexOf(en.target); marca(); } });
+}, { threshold: 0.55 });
+slides.forEach(s => obs.observe(s));
+marca();
+</script>
