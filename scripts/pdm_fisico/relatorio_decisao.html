@@ -1,0 +1,642 @@
+<title>Quatro Detectores, Uma Régua</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  color-scheme: light;
+  --ground:    #f4f6f7;
+  --surface:   #ffffff;
+  --sunk:      #eaeef0;
+  --ink:       #131a20;
+  --ink-2:     #3d4a55;
+  --muted:     #6b7885;
+  --rule:      #dde2e6;
+  --rule-firm: #c3ccd3;
+  --amp:       #b8792a;
+  --amp-soft:  #f3e7d4;
+  --s-nos:     #2a78d6;
+  --s-fran:    #eb6834;
+  --s-lara:    #1baf7a;
+  --s-nos-fill:#dbe8f8;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:    #14191d;
+    --surface:   #1b2126;
+    --sunk:      #222a30;
+    --ink:       #eef1f3;
+    --ink-2:     #b8c2cb;
+    --muted:     #8a97a3;
+    --rule:      #2c353d;
+    --rule-firm: #3d4952;
+    --amp:       #d69a4e;
+    --amp-soft:  #3a2f1e;
+    --s-nos:     #3987e5;
+    --s-fran:    #d95926;
+    --s-lara:    #199e70;
+    --s-nos-fill:#1e3550;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:    #14191d;
+  --surface:   #1b2126;
+  --sunk:      #222a30;
+  --ink:       #eef1f3;
+  --ink-2:     #b8c2cb;
+  --muted:     #8a97a3;
+  --rule:      #2c353d;
+  --rule-firm: #3d4952;
+  --amp:       #d69a4e;
+  --amp-soft:  #3a2f1e;
+  --s-nos:     #3987e5;
+  --s-fran:    #d95926;
+  --s-lara:    #199e70;
+  --s-nos-fill:#1e3550;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.62;
+  margin: 0;
+  padding: 0 20px 96px;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1080px; margin: 0 auto; }
+.prose { max-width: 68ch; }
+
+/* ---------- cabeçalho ---------- */
+header { padding: 56px 0 30px; border-bottom: 2px solid var(--ink); margin-bottom: 40px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted);
+  display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 20px;
+}
+h1 {
+  font-family: var(--cond); font-weight: 700; font-size: clamp(34px, 5.4vw, 54px);
+  line-height: 1.04; letter-spacing: -0.017em; margin: 0 0 18px;
+  text-wrap: balance; color: var(--ink);
+}
+.standfirst { font-size: 18.5px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; margin: 0; }
+
+/* ---------- veredito ---------- */
+.verdict {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-left: 4px solid var(--s-nos);
+  padding: 26px 30px; margin: 0 0 46px; border-radius: 3px;
+}
+.verdict h2 { margin-top: 0; }
+.verdict .cfg {
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+  background: var(--sunk); border: 1px solid var(--rule);
+  padding: 11px 14px; border-radius: 3px; margin-top: 16px;
+  overflow-x: auto; white-space: nowrap;
+}
+
+/* ---------- placar ---------- */
+.scoreboard { display: flex; flex-wrap: wrap; gap: 0; margin-top: 22px; }
+.stat { flex: 1 1 130px; padding: 2px 20px 2px 0; border-right: 1px solid var(--rule); }
+.stat:last-child { border-right: 0; }
+.stat .k {
+  font-family: var(--cond); font-weight: 700; font-size: 30px; line-height: 1.1;
+  color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.stat .l {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--muted); margin-top: 5px;
+}
+
+/* ---------- seções ---------- */
+section { margin: 0 0 54px; }
+.shead { display: flex; align-items: baseline; gap: 15px; margin-bottom: 6px; }
+.snum {
+  font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--muted);
+  padding-top: 4px; flex: 0 0 auto; font-variant-numeric: tabular-nums;
+}
+h2 {
+  font-family: var(--cond); font-weight: 600; font-size: 27px; line-height: 1.18;
+  letter-spacing: -0.011em; margin: 0; color: var(--ink); text-wrap: balance;
+}
+h3 {
+  font-family: var(--cond); font-weight: 600; font-size: 18.5px;
+  margin: 32px 0 8px; color: var(--ink); letter-spacing: -0.005em;
+}
+p { margin: 0 0 15px; }
+.prose p:last-child { margin-bottom: 0; }
+strong { font-weight: 600; color: var(--ink); }
+code {
+  font-family: var(--mono); font-size: 0.87em; background: var(--sunk);
+  padding: 1.5px 5px; border-radius: 3px; color: var(--ink-2);
+  border: 1px solid var(--rule);
+}
+a { color: var(--s-nos); }
+
+/* ---------- tabelas ---------- */
+.tw { overflow-x: auto; margin: 22px 0 8px; border: 1px solid var(--rule); border-radius: 3px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+th, td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--rule); }
+thead th {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.075em; text-transform: uppercase; color: var(--muted);
+  background: var(--sunk); border-bottom: 1px solid var(--rule-firm); white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13px; }
+tr.hi td { background: var(--s-nos-fill); font-weight: 500; }
+tr.hi td:first-child { box-shadow: inset 3px 0 0 var(--s-nos); }
+.cap { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 9px 0 0; max-width: 78ch; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: baseline; }
+
+/* ---------- nota / ressalva ---------- */
+.note {
+  background: var(--amp-soft); border: 1px solid var(--rule);
+  border-left: 3px solid var(--amp); padding: 17px 22px; border-radius: 3px; margin: 24px 0;
+}
+.note .lbl {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--amp); font-weight: 600;
+  display: block; margin-bottom: 7px;
+}
+.note p { margin-bottom: 10px; font-size: 15px; }
+.note p:last-child { margin-bottom: 0; }
+
+/* ---------- gráfico ---------- */
+figure { margin: 26px 0 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 22px 20px 16px; }
+.chart-hd { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.chart-ttl { font-family: var(--cond); font-weight: 600; font-size: 17px; color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.svg-scroll { overflow-x: auto; }
+svg { display: block; min-width: 660px; }
+.gridline { stroke: var(--rule); stroke-width: 1; }
+.axis { stroke: var(--rule-firm); stroke-width: 1; }
+.tick { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+.axlab { font-family: var(--sans); font-size: 12px; fill: var(--ink-2); }
+.dlab { font-family: var(--sans); font-size: 11.5px; fill: var(--ink); font-weight: 500; }
+.mark { cursor: pointer; }
+.mark:focus-visible { outline: 2px solid var(--s-nos); outline-offset: 3px; }
+.band { fill: var(--muted); opacity: 0.09; }
+.bandlab { font-family: var(--sans); font-size: 11px; fill: var(--muted); font-style: italic; }
+#tip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity .12s;
+  background: var(--ink); color: var(--ground); font-family: var(--mono); font-size: 11.5px;
+  padding: 7px 10px; border-radius: 3px; line-height: 1.5; z-index: 50; white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) { #tip { transition: none; } }
+
+/* ---------- pontos de operação ---------- */
+.ops { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 24px 0 0; }
+.op { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 18px 20px; }
+.op.pick { border-color: var(--s-nos); box-shadow: inset 0 0 0 1px var(--s-nos); }
+.op .tag {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); display: block; margin-bottom: 8px;
+}
+.op.pick .tag { color: var(--s-nos); font-weight: 600; }
+.op .big { font-family: var(--cond); font-weight: 700; font-size: 25px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.op ul { margin: 10px 0 0; padding-left: 17px; font-size: 13.5px; color: var(--ink-2); }
+.op li { margin-bottom: 3px; }
+
+ul.body { padding-left: 20px; margin: 0 0 15px; }
+ul.body li { margin-bottom: 8px; }
+
+footer { border-top: 1px solid var(--rule); margin-top: 60px; padding-top: 22px; }
+footer p { font-size: 12.5px; color: var(--muted); max-width: 80ch; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">
+    <span>TC-330.03A · Cabiúnas</span><span>Decisão de modelo</span><span>1 set 2026</span>
+  </div>
+  <h1>Quatro detectores, uma régua</h1>
+  <p class="standfirst">Thallys, Diego, Francisco e Lara atacaram a antecipação de trips do
+  compressor por caminhos independentes. Alinhada a régua, os quatro resultados ficam
+  comparáveis pela primeira vez — e a escolha deixa de ser questão de preferência.</p>
+</header>
+
+<div class="verdict">
+  <div class="shead"><h2>Segue o detector físico de 4 sinais</h2></div>
+  <p class="prose" style="margin-top:10px">É o único que antecipa as oito falhas do catálogo,
+  e o único cuja fronteira custo × detecção fica abaixo da dos outros em <em>todos</em> os níveis
+  de detecção. A vantagem tem mecanismo medido, não é sorte de calibração.</p>
+  <div class="scoreboard">
+    <div class="stat"><div class="k">8/8</div><div class="l">falhas antecipadas</div></div>
+    <div class="stat"><div class="k">7/8</div><div class="l">sob LOEO</div></div>
+    <div class="stat"><div class="k">0,52</div><div class="l">FP por mês</div></div>
+    <div class="stat"><div class="k">7,15</div><div class="l">h/mês em alarme falso</div></div>
+    <div class="stat"><div class="k">29,0 h</div><div class="l">antecedência média</div></div>
+  </div>
+  <div class="cfg">4 sinais (t · p · sp · vb) · kb 1,7 / kv 2,2 · blackout 6 h · voto ≥2 exigindo sp ou vb · CUSUM H=80 · refratário 48 h · duração mínima 120 min</div>
+</div>
+
+<section>
+  <div class="shead"><span class="snum">01</span><h2>A régua, antes dos números</h2></div>
+  <div class="prose">
+    <p>Comparar “8/8” com “6/8” e com “90%” só faz sentido se os três significarem a mesma coisa.
+    Conferi no código de cada time, e o alinhamento existe de um lado e não do outro.</p>
+    <p><strong>Francisco e Lara usam exatamente a nossa régua.</strong> No
+    <code>automl_clearml.py</code> deles: <code>DETECTION_WINDOW = "48h"</code>,
+    <code>EPISODE_GAP = "2h"</code>, alvo derivado como “8 eventos físicos a partir de 9 trips
+    (parada ≥ 2 h + alarme de nível)”, período 2025-01-01 a 2026-04-30, e a regra C já adotada.
+    O denominador deles é 348,6 dias de operação vigiada contra os nossos 353,2 — 1,3% de
+    diferença. A comparação é direta.</p>
+    <p><strong>Diego está em outra régua.</strong> A dele é uma janela simétrica de ±24 h
+    (<code>EXCLUDE_MINUTES_AROUND_ALARM: 1440</code>), em que metade conta detecção <em>depois</em>
+    do evento. O relatório dele reconhece: dos oito, seis tiveram aviso prévio real e dois foram
+    capturados só depois. Na régua de antecipação, ele é <strong>6/8</strong>. O “90% (36/40)”
+    dele é sobre linhas de alarme, não eventos físicos — o próprio repositório documenta que
+    46 de 47 tags disparam em 3 minutos num mesmo episódio, o que infla a contagem por tag.</p>
+  </div>
+
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th>Abordagem</th><th class="n">Recall antecipatório</th><th class="n">FP/mês</th>
+        <th class="n">h/mês</th><th class="n">Antecedência</th>
+      </tr></thead>
+      <tbody>
+        <tr class="hi"><td><span class="dot" style="background:var(--s-nos)"></span>Thallys — 4 sinais físicos</td><td class="n">8/8 · 7/8 LOEO</td><td class="n">0,52</td><td class="n">7,15</td><td class="n">29,0 h</td></tr>
+        <tr><td><span class="dot" style="background:var(--s-fran)"></span>Francisco — PCA 30 s</td><td class="n">6/8</td><td class="n">0,86</td><td class="n">9,2</td><td class="n">11,8 h</td></tr>
+        <tr><td><span class="dot" style="background:var(--s-fran)"></span>Francisco — silêncio 12 h</td><td class="n">6/8</td><td class="n">0,84</td><td class="n">3,6</td><td class="n">11,8 h</td></tr>
+        <tr><td><span class="dot" style="background:var(--s-fran)"></span>Francisco — silêncio 24 h</td><td class="n">6/8</td><td class="n">0,77</td><td class="n">4,0</td><td class="n">18,3 h</td></tr>
+        <tr><td><span class="dot" style="background:var(--s-lara)"></span>Lara — fp_first</td><td class="n">5/8</td><td class="n">0,43</td><td class="n">10,2</td><td class="n">8,8 h</td></tr>
+        <tr><td>Diego — EXP28/29</td><td class="n">6/8</td><td class="n">não conversível</td><td class="n">1,86 *</td><td class="n">12,7 h</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">Todos em regra C (episódio perdoado se houve parada real de ≥ 2 h entre o início do alerta e 48 h após o fim).
+  * O 1,86 h/mês do Diego cobre ~21,9 meses e inclui o período usado para ajustar o modelo; não é a mesma base.
+  O <code>normal_alert_rate</code> dele (0,0469%) é fração de amostras de 30 s, não FP/mês.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">02</span><h2>A fronteira, não um ponto</h2></div>
+  <div class="prose">
+    <p>Um placar de configuração única esconde a pergunta que a operação vai fazer: <em>e se
+    aceitarmos menos detecção em troca de menos alarme?</em> Varri 756 configurações nossas
+    (limiar × silêncio pós-partida × refratário × duração mínima) e tomei, para cada nível de
+    detecção, o menor custo alcançado.</p>
+    <p><strong>A nossa fronteira fica abaixo da deles em todos os níveis</strong> — inclusive,
+    e principalmente, no regime de poucos falsos positivos. Em 5/8 chegamos a 0,089 FP/mês
+    contra 0,43 da Lara, e a 0,66 h/mês contra 2,0 do melhor ponto do Francisco.</p>
+  </div>
+
+  <figure>
+    <div class="chart-hd">
+      <div class="chart-ttl">Custo × detecção — canto superior esquerdo é o melhor lugar</div>
+      <div class="legend">
+        <span><svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="var(--s-nos)" stroke-width="2"></line><circle cx="11" cy="5" r="4" fill="var(--s-nos)" stroke="var(--surface)" stroke-width="1.6"></circle></svg> nosso (756 configs)</span>
+        <span><span class="dot" style="background:var(--s-fran)"></span>Francisco</span>
+        <span><span class="dot" style="background:var(--s-lara)"></span>Lara</span>
+      </div>
+    </div>
+    <div class="svg-scroll"><svg id="fr" viewBox="0 0 980 392" role="img"
+      aria-label="Dois painéis mostrando a fronteira custo versus detecção. Em ambos, a fronteira do detector de 4 sinais fica à esquerda dos pontos publicados por Francisco e Lara em todos os níveis de detecção."></svg></div>
+    <p class="cap" style="padding:0 2px">A linha azul é fronteira medida (mínimo por nível sobre as 756 configurações).
+    Os quadrados são os sete pontos que o Francisco recalculou em regra C — valores medidos, não convertidos.
+    A fronteira completa dele está publicada em regra A; convertê-la produziria uma linha estimada indistinguível
+    de uma medida, então não está aqui. Em 6/8, “produção 2 min” e “PCA 30 s” coincidem em 0,86 FP/mês.</p>
+  </figure>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Nível</th><th class="n">Nosso menor FP/mês</th><th class="n">Nosso menor h/mês</th><th class="n">Melhor deles, FP/mês</th><th class="n">Melhor deles, h/mês</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td>8 de 8</td><td class="n">0,517</td><td class="n">7,15</td><td class="n">inalcançável</td><td class="n">inalcançável</td></tr>
+        <tr><td>7 de 8</td><td class="n">0,431</td><td class="n">5,17</td><td class="n">1,13 †</td><td class="n">27,0 †</td></tr>
+        <tr><td>6 de 8</td><td class="n">0,344</td><td class="n">1,67</td><td class="n">0,77</td><td class="n">3,6</td></tr>
+        <tr><td>5 de 8</td><td class="n">0,089</td><td class="n">0,66</td><td class="n">0,43</td><td class="n">2,0</td></tr>
+        <tr><td>4 de 8</td><td class="n">0,000</td><td class="n">0,00</td><td class="n">0,34</td><td class="n">0,6</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">† O 7/8 do Francisco só aparece com o filtro T5 e modelo Mahalanobis, a 1,13 FP/mês — 13% acima do teto
+  de 1 FP/mês que a própria equipe dele definiu. As linhas de 4/8 e 6/8 “melhor deles” vêm da fronteira em regra A
+  com a correção que ele mesmo declarou (“a regra C tira entre 0,08 e 0,10 do FP/mês de todo mundo”); são estimativas.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">03</span><h2>O mecanismo: não é o sensor, é onde fica o limiar</h2></div>
+  <div class="prose">
+    <p>Duas falhas separam os resultados. Francisco registra, ao fim de <strong>51.840
+    configurações</strong>, que 04/11/2025 e 09/12/2025 não são antecipadas por nenhuma delas
+    dentro do teto de falso positivo, e conclui que o limite é dos dados. Nós antecipamos as
+    duas. Diego também. Vale entender por quê, porque a primeira explicação que me ocorreu
+    estava errada.</p>
+
+    <p>Supus que fosse falta do sensor de vibração — ele tem quatro famílias e nenhuma delas é
+    vibração. <strong>Mas os “36 sensores” do diagnóstico de precursor dele são as 26 tags das
+    famílias mais as 10 <code>TV_*</code>.</strong> Ele olhou a vibração. Mediu z no percentil
+    79–85 nas 48 h antes das falhas e concluiu, com razão para o método dele, que não separa.</p>
+
+    <p>Medi o nosso sinal cru de vibração na mesma janela: <strong>p80 na mediana, p90 no
+    máximo</strong> — dentro da faixa que ele descartou. Mesmo sensor, mesmo percentil.
+    A diferença é o que se faz com ele.</p>
+
+    <p>O nosso limiar de <code>vb</code> está no <strong>percentil 69</strong> da distribuição
+    saudável. O Francisco opera todos os canais em <strong>p99,9</strong>. Um sinal em p80 é
+    invisível para um limiar em p99,9 e visível para um em p69. Substituí só o nosso limiar de
+    <code>vb</code> pelos percentis dele, com o resto do detector intacto:</p>
+  </div>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Limiar de vb</th><th class="n">Percentil</th><th class="n">Detecta</th><th class="n">FP/mês</th><th>Falhas perdidas</th></tr></thead>
+      <tbody>
+        <tr class="hi"><td>6,60 — nosso</td><td class="n">p69</td><td class="n">8/8</td><td class="n">0,517</td><td>—</td></tr>
+        <tr><td>19,31</td><td class="n">p90</td><td class="n">4/8</td><td class="n">0,517</td><td>04/11 · 09/12 · 26/02 · 29/04</td></tr>
+        <tr><td>25,50</td><td class="n">p95</td><td class="n">3/8</td><td class="n">0,517</td><td>+ 27/02</td></tr>
+        <tr><td>44,35</td><td class="n">p99</td><td class="n">3/8</td><td class="n">0,431</td><td>+ 27/02</td></tr>
+        <tr><td>65,83</td><td class="n">p99,9 — o dele</td><td class="n">2/8</td><td class="n">0,344</td><td>+ 07/04</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">Só o limiar de <code>vb</code> muda; os outros três canais, o voto, o CUSUM, o refratário e a duração ficam idênticos.</p>
+
+  <div class="prose">
+    <h3>Por que podemos operar tão baixo</h3>
+    <p>Repare na coluna de FP: subir o limiar de p69 para p99,9 derruba a detecção de 8/8 para
+    2/8 e o falso positivo cai só de 0,517 para 0,344. <strong>O limiar não é a alavanca de
+    custo aqui.</strong> Quem segura o falso positivo é a máquina de decisão a jusante — voto de
+    pelo menos dois canais, 30 min de persistência, CUSUM acumulando desvio fraco, refratário de
+    48 h e duração mínima de 120 min. Isso libera o limiar para ficar baixo o suficiente para
+    ver um precursor em p80.</p>
+    <p>É a mesma razão pela qual o teste de vibração do Francisco falhou: ele acrescentou as dez
+    <code>TV_*</code> como quinta família de PCA, residualizada e pontuada em p99,9. Naquele
+    limiar, o precursor de fato não existe. O resultado dele está certo para a arquitetura dele.</p>
+    <p>Confirmação por ablação: removendo <code>vb</code> do voto e revarrendo os limiares, o
+    detector cai para <strong>3/8</strong> e perde exatamente 04/11 e 09/12.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">04</span><h2>Cada detecção tem testemunha independente</h2></div>
+  <div class="prose">
+    <p>A objeção natural a um resultado 8/8 é que ele foi calibrado nos mesmos oito eventos que
+    mede. Vale o cruzamento: Francisco antecipa 27/02, 17/03, 07/04, 11/04, 29/04 e 26/02.
+    Diego antecipa 07/04, 11/04, 29/04, 04/11, 09/12 e 26/02. <strong>A união dos dois é
+    exatamente o nosso conjunto de oito.</strong></p>
+    <p>Não reivindicamos nenhuma detecção que nenhum outro time veja. E os dois eventos que só
+    nós e o Diego pegamos são justamente os que ele confirma em dado genuinamente fora de
+    amostra — no recorte dele, 04/11, 09/12 e 26/02 são posteriores ao corte de treino, e ele
+    acerta os três.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">05</span><h2>O que pesa contra, e precisa ir para a apresentação</h2></div>
+
+  <div class="note">
+    <span class="lbl">O número a apresentar é 7/8, não 8/8</span>
+    <p>Sob leave-one-event-out o 8/8 não se sustenta. O evento que cai é sempre <strong>04/11/2025</strong>,
+    detectado por apenas <strong>24%</strong> das configurações dentro do teto de 1 FP/mês — os outros
+    sete ficam entre 59% e 76%. Apresentar 8/8 sem essa ressalva é indefensável, e o Francisco,
+    que sabe que aquele evento é difícil, vai perguntar.</p>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Nada aqui é estatisticamente significativo</span>
+    <p>Os intervalos de Poisson do falso positivo se sobrepõem largamente: o nosso [0,19; 1,12]
+    contra [0,42; 1,60] do Francisco. E 8/8 contra 6/8 dá dois pares discordantes — McNemar
+    exato, <strong>p = 0,50</strong>. No regime de baixo FP, o nosso 5/8 contra o ponto da Lara
+    dá <strong>p = 0,119</strong>. Provar superioridade a p &lt; 0,05 exigiria cerca de 24 eventos,
+    uns quatro anos de operação.</p>
+    <p>A decisão tem de ser feita por mecanismo e assimetria de custo, não por teste de hipótese.
+    Quem apresentar isso como “estatisticamente comprovado” será desmontado.</p>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Os dois lados são mínimos selecionados</span>
+    <p>Tanto a nossa fronteira quanto a dele são o menor valor de uma varredura sobre oito
+    eventos — otimista por construção. Só 6 das 100 configurações do nível 5/8 chegam a
+    ≤ 0,2 FP/mês; a mediana daquele nível é 0,569. A favor da conclusão: ele varreu 10.368
+    configurações por variante contra as nossas 756, então a seleção dele deveria ser mais
+    enviesada para baixo, não menos — e mesmo assim a fronteira dele fica acima.</p>
+  </div>
+
+  <div class="note">
+    <span class="lbl">A engenharia dele é melhor que a nossa</span>
+    <p>Nossos limiares foram calibrados à mão sobre oito eventos. Ele varreu 51.840
+    configurações no ClearML com o critério declarado antes de ver os números, e tem a
+    infraestrutura de busca que nos falta. Para portar o detector a outra máquina, o método
+    dele é o certo. Isso não muda qual modelo entrega mais hoje, mas muda o que construímos
+    a seguir.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">06</span><h2>Escolher o ponto de operação é decisão da operação</h2></div>
+  <div class="prose">
+    <p>Os três pontos abaixo saem do <em>mesmo</em> modelo — muda só um parâmetro de silêncio
+    pós-partida e o limiar. Isso separa duas decisões que estavam coladas: qual detector seguir
+    (esta semana) e onde operá-lo (com a operação, depois).</p>
+  </div>
+
+  <div class="ops">
+    <div class="op pick">
+      <span class="tag">Recomendado · cobertura máxima</span>
+      <div class="big">8 de 8</div>
+      <ul>
+        <li>0,52 FP/mês · 7,15 h/mês</li>
+        <li>antecedência 29,0 h</li>
+        <li>blackout 6 h · kb 1,7 / kv 2,2</li>
+      </ul>
+    </div>
+    <div class="op">
+      <span class="tag">Equilíbrio</span>
+      <div class="big">6 de 8</div>
+      <ul>
+        <li>0,34 FP/mês · 1,67 h/mês</li>
+        <li>4,3× menos horas de alarme</li>
+        <li>abre mão de 04/11 e 11/04</li>
+      </ul>
+    </div>
+    <div class="op">
+      <span class="tag">Mínimo incômodo</span>
+      <div class="big">5 de 8</div>
+      <ul>
+        <li>0,09 FP/mês · 0,66 h/mês</li>
+        <li>1 único falso positivo em 11 meses</li>
+        <li>silêncio 12 h · duração mín. 240 min</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="prose">
+    <h3>A conta que sustenta o ponto recomendado</h3>
+    <p>As oito falhas somam <strong>791,9 h</strong> de máquina fora. Os dois eventos que a
+    abordagem sem vibração não alcança valem <strong>151,8 h</strong> — 04/11 sozinho é 144,1 h.
+    Cobri-los custa 41,2 h a mais de alarme falso no período inteiro que a opção mais barata do
+    Francisco: <strong>3,7 h de máquina parada evitada por hora de atenção do operador</strong>.</p>
+    <p>Descer do ponto recomendado para o de mínimo incômodo economiza 75 h de alarme falso e
+    cinco episódios, mas abre mão de 189,9 h de indisponibilidade não antecipada — razão de
+    2,5 para 1, desfavorável mas não absurda. Se a operação tiver limite duro de alarmes, é uma
+    troca defensável, e o modelo é o mesmo.</p>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="snum">07</span><h2>O que levar de cada time</h2></div>
+  <div class="prose">
+    <ul class="body">
+      <li><strong>Do Francisco — a infraestrutura de varredura.</strong> ClearML com critério
+      declarado antes dos números, e a grade de 30 s, que ele mostrou ser melhor que 2 min.
+      É o que sustenta o resultado quando o equipamento mudar de regime.</li>
+      <li><strong>Do Diego — a corroboração em tempo de alerta</strong> contra o catálogo
+      completo de alarmes, mas com janela de ±2 h, não ±24 h. Medi o controle negativo que falta
+      no relatório dele: a ±24 h, <strong>70% de instantes aleatórios também são “explicados”</strong>,
+      então o 88,1% precisa ser lido contra 70%, não contra zero. A ±2 h o enriquecimento é
+      real, 3,4×.</li>
+      <li><strong>Da Lara — o <code>fp_first</code> como âncora de baixo FP.</strong> É o ponto
+      de referência certo para quando a operação recusar qualquer regra discutível.</li>
+    </ul>
+
+    <h3>O próximo passo, e é conjunto</h3>
+    <p>O canal <code>vb</code> — z robusto contra referência rolante, máximo entre as dez sondas,
+    limiar em p69 — entrando na máquina de varredura do Francisco. Ele tem a busca sistemática;
+    nós temos o sinal e a evidência de onde pôr o limiar. É o único caminho que junta 8/8 com
+    51.840 configurações auditadas, e é testável na semana que vem.</p>
+    <p>O resultado que vale mais que o placar: <strong>dois times independentes, com
+    estimadores diferentes, extraem precursor de vibração em eventos que a abordagem sem ela
+    declara impossíveis</strong> — e agora sabemos que a diferença não é o sensor, é o percentil
+    do limiar.</p>
+  </div>
+</section>
+
+<footer>
+  <p>Fontes: <code>scripts/pdm_fisico/</code> (branch <code>exp/pdm-deteccao-trip</code>) ·
+  <code>notebooks/10_resultado_final.ipynb</code> (branch <code>feat/pdm-deteccao-4sinais</code>) ·
+  <code>relatorio_exp28.pdf</code> e branch <code>feat/exp21_portao_pressao</code>.
+  Período de avaliação 2025-01-01 a 2026-04-30; 353,2 dias de operação vigiada.
+  Todos os números deste relatório foram recalculados a partir dos dados, não copiados de relatórios anteriores.</p>
+</footer>
+
+</div>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+const NIVEIS = [4, 5, 6, 7, 8];
+const NOSSO = [
+  { n: 4, fp: 0.000, h: 0.00, lab: "zero FP" },
+  { n: 5, fp: 0.089, h: 0.66, lab: "mínimo FP" },
+  { n: 6, fp: 0.344, h: 1.67, lab: null },
+  { n: 7, fp: 0.431, h: 5.17, lab: null },
+  { n: 8, fp: 0.517, h: 7.15, lab: "produção" }
+];
+const DELES = [
+  { nome: "produção (2 min)",     n: 6, fp: 0.86, h: 13.3, who: "fran" },
+  { nome: "PCA 30 s, sem filtro", n: 6, fp: 0.86, h: 9.2,  who: "fran" },
+  { nome: "silêncio 12 h",        n: 6, fp: 0.84, h: 3.6,  who: "fran" },
+  { nome: "silêncio 24 h",        n: 6, fp: 0.77, h: 4.0,  who: "fran" },
+  { nome: "PCA 30 s, alvo 5/8",   n: 5, fp: 0.52, h: 8.7,  who: "fran" },
+  { nome: "silêncio 24 h, 5/8",   n: 5, fp: 0.58, h: 2.0,  who: "fran" },
+  { nome: "ponto da Lara",        n: 5, fp: 0.43, h: 10.2, who: "lara" }
+];
+
+const NS = "http://www.w3.org/2000/svg";
+const el = (t, a = {}) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const tip = document.getElementById("tip");
+
+function showTip(e, html) {
+  tip.innerHTML = html;
+  tip.style.opacity = "1";
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY - r.height - 10;
+  if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y < 8) y = e.clientY + 18;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.opacity = "0"; };
+
+function painel(svg, ox, key, xmax, titulo, ticks) {
+  const W = 380, y0 = 62, y1 = 322;
+  const X = v => ox + (v / xmax) * W;
+  const Y = n => y1 - ((n - 4) / 4) * (y1 - y0);
+
+  // faixa do nível 8/8
+  svg.appendChild(el("rect", { x: ox - 14, y: y0 - 22, width: W + 28, height: 44, class: "band" }));
+
+  ticks.forEach(t => {
+    svg.appendChild(el("line", { x1: X(t), y1: y0 - 22, x2: X(t), y2: y1, class: "gridline" }));
+    const tx = el("text", { x: X(t), y: y1 + 18, class: "tick", "text-anchor": "middle" });
+    tx.textContent = String(t).replace(".", ",");
+    svg.appendChild(tx);
+  });
+  NIVEIS.forEach(n => {
+    svg.appendChild(el("line", { x1: ox - 14, y1: Y(n), x2: ox + W + 14, y2: Y(n), class: "gridline" }));
+    const tx = el("text", { x: ox - 22, y: Y(n) + 4, class: "tick", "text-anchor": "end" });
+    tx.textContent = n; svg.appendChild(tx);
+  });
+  svg.appendChild(el("line", { x1: ox - 14, y1: y1, x2: ox + W + 14, y2: y1, class: "axis" }));
+
+  const ax = el("text", { x: ox + W / 2, y: y1 + 42, class: "axlab", "text-anchor": "middle" });
+  ax.textContent = titulo; svg.appendChild(ax);
+
+  // fronteira
+  const pts = NOSSO.map(d => `${X(d[key])},${Y(d.n)}`).join(" ");
+  svg.appendChild(el("polyline", { points: pts, fill: "none", stroke: "var(--s-nos)", "stroke-width": 2, "stroke-linejoin": "round" }));
+
+  DELES.forEach(d => {
+    const g = el("g", { class: "mark", tabindex: "0", role: "img",
+      "aria-label": `${d.nome}: ${d.n} de 8 falhas, ${d.fp} FP por mês, ${d.h} horas por mês` });
+    g.appendChild(el("rect", {
+      x: X(d[key]) - 5.5, y: Y(d.n) - 5.5, width: 11, height: 11, rx: 2,
+      fill: d.who === "lara" ? "var(--s-lara)" : "var(--s-fran)",
+      stroke: "var(--surface)", "stroke-width": 2
+    }));
+    const info = `${d.nome}<br>${d.n}/8 · ${String(d.fp).replace(".", ",")} FP/mês · ${String(d.h).replace(".", ",")} h/mês`;
+    g.addEventListener("mousemove", e => showTip(e, info));
+    g.addEventListener("mouseleave", hideTip);
+    g.addEventListener("focus", e => showTip({ clientX: g.getBoundingClientRect().left, clientY: g.getBoundingClientRect().top }, info));
+    g.addEventListener("blur", hideTip);
+    svg.appendChild(g);
+  });
+
+  NOSSO.forEach(d => {
+    const g = el("g", { class: "mark", tabindex: "0", role: "img",
+      "aria-label": `Nosso detector: ${d.n} de 8 falhas, ${d.fp} FP por mês, ${d.h} horas por mês` });
+    g.appendChild(el("circle", {
+      cx: X(d[key]), cy: Y(d.n), r: 5.5, fill: "var(--s-nos)",
+      stroke: "var(--surface)", "stroke-width": 2
+    }));
+    const info = `nosso — ${d.n}/8<br>${String(d.fp).replace(".", ",")} FP/mês · ${String(d.h).replace(".", ",")} h/mês`;
+    g.addEventListener("mousemove", e => showTip(e, info));
+    g.addEventListener("mouseleave", hideTip);
+    g.addEventListener("focus", () => { const b = g.getBoundingClientRect(); showTip({ clientX: b.left, clientY: b.top }, info); });
+    g.addEventListener("blur", hideTip);
+    svg.appendChild(g);
+    if (d.lab && key === "fp") {
+      // 8/8 ao lado; 4/8 acima (abaixo cairia em cima da linha de ticks); resto abaixo
+      const dy = d.n === 8 ? 4 : d.n === 4 ? -11 : 17;
+      const t = el("text", { x: X(d[key]) + 11, y: Y(d.n) + dy, class: "dlab" });
+      t.textContent = d.lab; svg.appendChild(t);
+    }
+  });
+  return { X, Y, y0, W };
+}
+
+const svg = document.getElementById("fr");
+const p1 = painel(svg, 58, "fp", 1.0, "falsos positivos por mês  (menor é melhor)", [0, 0.2, 0.4, 0.6, 0.8, 1.0]);
+painel(svg, 558, "h", 14, "horas por mês em alarme falso  (menor é melhor)", [0, 2, 4, 6, 8, 10, 12, 14]);
+
+const bl = el("text", { x: 58 + p1.W + 12, y: p1.y0 - 30, class: "bandlab", "text-anchor": "end" });
+bl.textContent = "nenhuma das 51.840 configurações do Francisco chega a 8 de 8";
+svg.appendChild(bl);
+
+const yl = el("text", { x: 16, y: 200, class: "axlab", "text-anchor": "middle", transform: "rotate(-90 16 200)" });
+yl.textContent = "falhas antecipadas (de 8)";
+svg.appendChild(yl);
+</script>
