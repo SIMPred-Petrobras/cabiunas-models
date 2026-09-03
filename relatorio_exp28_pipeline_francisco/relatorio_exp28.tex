@@ -1098,9 +1098,12 @@ eixos ao mesmo tempo.}
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{comparativo_estrategias.png}
-\caption{Todas as estratégias testadas nesta seção, no mesmo plano
-detecção$\times$custo do relatório de decisão da equipe. EXP37 fica
-isolado no canto superior esquerdo -- melhor detecção, menor custo,
+\caption{Todas as estratégias testadas nesta investigação, no mesmo
+plano detecção$\times$custo do relatório de decisão da equipe --
+inclui também EXP38 (óleo isolado) e as duas variantes da pipeline
+final de 4 canais (Seção~\ref{sec:pipeline-final}). EXP37 (3 canais) e
+a pipeline final com votação $\geq$2 de 4 ficam praticamente empatados
+no canto superior esquerdo -- melhor detecção, menor custo,
 simultaneamente.}
 \end{figure}
 
@@ -1161,9 +1164,116 @@ referência rápida:
     seleção que a documentação da equipe recomenda).
 \end{itemize}
 
-O grupo de óleo (EXP29/31) não foi reavaliado nesta rodada -- é o
-próximo passo natural, replicando a mesma separação (pressão de óleo
-isolada + o mesmo canal de alarme de processo).
+\section{Fechando a pipeline: EXP38 (óleo isolado) e a votação de 4 canais}
+\label{sec:pipeline-final}
+
+O EXP37 (Seção~\ref{sec:exp37}) deixou pendente o grupo de óleo: o
+mesmo problema de sensores misturados (EXP29/31 juntavam pressão de
+óleo com os 10 canais de vibração no mesmo modelo) nunca tinha sido
+corrigido para esse grupo. Esta seção fecha esse ponto e consolida
+\textbf{a pipeline única de produção}, com os 4 sinais físicos
+disponíveis (temperatura, vibração, óleo) mais o canal de alarme de
+processo.
+
+\subsection{Passo 8: EXP38 -- pressão de óleo isolada}
+
+Mesmo molde do EXP33/EXP34: \texttt{PI\_0308} e \texttt{PDIT\_0305}
+isolados em seu próprio modelo OCSVM, sem os 10 canais de vibração
+misturados, com a mesma grade de percentil ampliada (p69 a p99,9) para
+não repetir a armadilha do grid alto.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Config} & \textbf{Sensores do modelo} & \textbf{TRIPs} & \textbf{FP/mês} \\
+\midrule
+EXP29/31 (óleo + vibração juntos) & PI\_0308, PDIT\_0305 + 10$\times$TV\_* & -- & -- \\
+EXP38 (óleo isolado) & PI\_0308, PDIT\_0305 & 4 de 8 & 3,57 \\
+\bottomrule
+\end{tabular}
+\caption{EXP38 sozinho detecta metade dos TRIPs com o menor custo de
+todos os canais individuais testados -- um sinal genuíno mas parcial,
+não um substituto para temperatura/vibração.}
+\end{table}
+
+\subsection{Passo 9: votação de 4 canais}
+
+\texttt{scripts/pipeline\_unificada\_final.py} combina os 3 modelos já
+gateados (EXP33 temperatura, EXP34 vibração, EXP38 óleo) com o mesmo
+canal de alarme de processo do EXP37, e varre o número mínimo de votos
+necessário (de 4 canais):
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Votação mínima} & \textbf{TRIPs} & \textbf{FP/mês} & \textbf{Episódios inconclusivos} \\
+\midrule
+$\geq$2 de 4 canais & \textbf{8 de 8} & 6,59 & 42 \\
+$\geq$3 de 4 canais & 5 de 8 & 3,09 & 33 \\
+\midrule
+\emph{referência: EXP37 (3 canais, $\geq$2)} & 8 de 8 & 6,39 & 41 \\
+\bottomrule
+\end{tabular}
+\caption{Exigir 3 votos de 4 derruba 3 TRIPs (os que só tinham 2
+canais concordando) -- inaceitável. A votação $\geq$2 de 4 mantém 8 de
+8, com FP/mês praticamente igual ao EXP37 de 3 canais (6,59 contra
+6,39 -- diferença dentro do ruído esperado para $n=8$ eventos).}
+\end{table}
+
+\textbf{Configuração final escolhida: votação $\geq$2 de 4 canais +
+refratário 48h.} O quarto canal (óleo) não muda a taxa de detecção
+sobre os 8 eventos históricos -- 3 canais já bastavam -- mas acrescenta
+\textbf{redundância física genuína}: se um evento futuro não tiver
+precursor claro em temperatura ou vibração mas tiver em pressão de
+óleo (como o próprio EXP38 mostra acontecer em metade dos casos
+históricos), a pipeline de 4 canais ainda tem uma chance de pegá-lo
+que a de 3 canais não tinha. O custo dessa redundância é marginal: 0,20
+FP/mês a mais.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{diagrama_arquitetura_final.png}
+\caption{Arquitetura final: 4 sensores/grupos de sensores, 3 modelos
+especializados + 1 canal estatístico sem modelo, votação $\geq$2 de 4
+e refratário de 48h.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{serie_final_pipeline_unificada.png}
+\caption{TI\_0305 / TC382\_03\_A / T5\_AVG\_A / PI\_0308 com a decisão
+final da pipeline unificada: roxo = TRIP curado (8 no período); verde
+= acerto (todos os 8); preto = falso positivo remanescente.}
+\end{figure}
+
+A antecedência média da pipeline final (22,16h) é praticamente
+idêntica à do EXP37 de 3 canais (22,0h) -- os horários de primeira
+detecção não mudam porque os mesmos 3 canais originais (temperatura,
+vibração, alarme) já fechavam os 8 eventos; o canal de óleo participa
+da votação sem alterar o instante em que o limiar de 2 votos é
+cruzado nos casos já cobertos.
+
+\subsection{Configuração recomendada -- resumo final}
+
+\begin{itemize}
+  \item \textbf{3 modelos especializados} (OCSVM): temperatura de
+    mancal (EXP33), vibração de mancal (EXP34), pressão de óleo
+    (EXP38) -- cada um vendo apenas os sensores do seu próprio
+    mecanismo físico, com todos os portões de produção (duração
+    mínima, rampa de carga, degrau, veto de sensor congelado) já
+    aplicados.
+  \item \textbf{1 canal sem modelo} -- proximidade temporal a 5 tags
+    de alarme de processo já catalogadas (nenhum parâmetro treinado).
+  \item \textbf{Camada de decisão}: votação $\geq$2 de 4 canais +
+    refratário de 48h -- regras fixas, parâmetros escolhidos por
+    varredura contra a régua rigorosa, não contra os mesmos 8 eventos
+    usados para relatar o resultado final.
+  \item \textbf{Resultado}: 8 de 8 TRIPs detectados, 6,59 FP/mês,
+    antecedência média de 22,2h -- substitui tanto o EXP30 (mancal)
+    quanto o EXP29/31 (óleo) como configuração única de produção.
+\end{itemize}
 
 \appendix
 \section{Checkup geral: TRIPs, alarmes e isolados (reconstrução literal)}

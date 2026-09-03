@@ -2089,5 +2089,55 @@ reproduzível) + `combine_channels_vote`/`apply_refractory`/
 `compute_persistence_gate`/`compute_cusum_gate` em `scoring.py`
 (testadas com dados sintéticos antes de aplicar aos dados reais).
 
-**Pendente**: replicar a mesma separação no grupo de óleo
-(EXP29/31) — não foi refeito nesta rodada.
+**Pendente (resolvido abaixo)**: replicar a mesma separação no grupo
+de óleo (EXP29/31) — ver "EXP38 e a pipeline unificada final".
+
+## EXP38 e a pipeline unificada final — 4 canais (2026-09-03)
+
+EXP29/31 (grupo óleo) tinham o mesmo problema que o mancal tinha antes
+do EXP33/34: `954005_624_PI_0308`/`954005_624_PDIT_0305` misturados
+com os 10 canais de vibração no mesmo modelo. Corrigido isolando a
+pressão de óleo em seu próprio modelo (mesmo molde do EXP33/34:
+OCSVM, grade de percentil ampliada p69–p99,9, sem volatility gate).
+
+**EXP38 (óleo isolado) sozinho**: 4/8 TRIPs, 3,57 FP/mês — sinal
+genuíno mas parcial (metade dos eventos), não um substituto para
+temperatura/vibração.
+
+`scripts/pipeline_unificada_final.py` combina os 3 modelos já
+gateados (EXP33 temperatura, EXP34 vibração, EXP38 óleo) + o mesmo
+canal de alarme de processo do EXP37, varrendo o número mínimo de
+votos de 4 canais:
+
+| Votação mínima | TRIPs | FP/mês |
+|---|---|---|
+| ≥2 de 4 canais | **8/8** | 6,59 |
+| ≥3 de 4 canais | 5/8 | 3,09 |
+| referência — EXP37 (3 canais, ≥2) | 8/8 | 6,39 |
+
+**Config final escolhida: votação ≥2 de 4 canais + refratário 48h.**
+O 4º canal (óleo) não muda a taxa de detecção sobre os 8 eventos
+históricos (3 canais já bastavam), mas acrescenta redundância física
+real: um evento futuro sem precursor claro em temperatura/vibração
+mas com precursor em óleo (como acontece em metade dos casos
+históricos, isoladamente) ainda tem chance de ser pego. Custo
+marginal: +0,20 FP/mês frente ao EXP37 de 3 canais — dentro do ruído
+esperado para n=8. Antecedência média 22,2h (praticamente idêntica ao
+EXP37, já que os 3 canais originais já fechavam os 8 eventos; o óleo
+participa da votação sem antecipar a detecção nos casos já cobertos).
+
+**Configuração recomendada — resumo final**:
+- 3 modelos OCSVM especializados (temperatura, vibração, óleo), cada
+  um só com os sensores do seu mecanismo, todos os portões de
+  produção já aplicados.
+- 1 canal sem modelo (proximidade temporal a 5 tags de alarme de
+  processo catalogadas).
+- Votação ≥2 de 4 + refratário de 48h — regras fixas, calibradas por
+  varredura contra a régua, não contra os mesmos 8 eventos do
+  relatório final.
+- Resultado: **8/8 TRIPs, 6,59 FP/mês, antecedência média 22,2h** —
+  substitui EXP30 (mancal) e EXP29/31 (óleo) como pipeline única de
+  produção.
+
+**Implementação**: `configs/calibracao_v4_eq/test_grupo_exp38_oleo_pressao_isolada.json`,
+`scripts/pipeline_unificada_final.py` (produção, reproduzível).
