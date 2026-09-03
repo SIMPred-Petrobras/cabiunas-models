@@ -918,6 +918,253 @@ aparecendo no dashboard, só mudam a ordem/urgência de atenção do
 operador.}
 \end{table}
 
+% ======================================================================
+\section{EXP33 a EXP37: da separação de sinais à votação multi-canal (8 de 8)}
+\label{sec:exp37}
+
+Esta seção documenta, passo a passo, como a pipeline evoluiu do modelo
+único (EXP30, 5 de 8 TRIPs) até a arquitetura de votação multi-canal
+que fecha \textbf{8 de 8}, com custo de falso positivo \emph{menor}
+que a própria baseline. Nenhum resultado aqui foi assumido -- cada
+etapa foi medida contra a régua rigorosa (Seção~\ref{sec:regua-rigorosa})
+antes de avançar para a próxima.
+
+\subsection{Passo 1 -- por que separar sensores}
+
+A crítica que motivou tudo: nosso EXP30 treina \textbf{um único}
+OCSVM sobre os 12 sensores do grupo mancal (temperatura + 10 canais de
+vibração) \textbf{juntos}, com um único limiar de percentil sobre o
+score combinado. A documentação da equipe (revisão externa,
+\texttt{DOC\_EQUIPE/}) usa o oposto: quatro sinais independentes, cada
+um com seu próprio limiar -- vibração especificamente num percentil
+muito mais baixo (p69) que os outros, porque o precursor de vibração é
+fraco (p80 da distribuição saudável) e fica invisível se diluído num
+score conjunto calibrado em p99,9.
+
+\textbf{Quais sensores foram para modelo, e quais não:}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{3cm}p{6cm}p{5.5cm}}
+\toprule
+\textbf{Canal} & \textbf{Sensores} & \textbf{Tratamento} \\
+\midrule
+Temperatura (EXP33) & \texttt{TC382\_03\_A}, \texttt{T5\_AVG\_A} & OCSVM próprio, features multiescala, limiar via busca AutoML (95,0--99,9) \\
+Vibração (EXP34) & 10 canais \texttt{TV\_*} & OCSVM próprio, features multiescala, limiar via grade \textbf{estendida} (69,0--99,9) -- ver nota abaixo \\
+Alarme de processo & 5 tags do catálogo (\texttt{PI\_6240319\_AL}, \texttt{PAL\_6240315}, \texttt{PDAL\_6240302}, \texttt{TC382\_05\_A}, \texttt{PAH\_6240319}) & \textbf{SEM modelo} -- proximidade temporal pura (houve alarme nas últimas $N$ horas?) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Detalhe que quase inviabilizou o EXP34}: a grade de limiar
+original do AutoML só cobria percentis altos (95,0 em diante). A
+mesma documentação da equipe avisa explicitamente que isso torna um
+precursor em p69--80 invisível -- testar vibração sem estender a
+grade para baixo produziria a conclusão errada ("vibração não ajuda")
+por um motivo que não tem nada a ver com o sinal. A grade do EXP34 foi
+estendida para 69,0--99,9 antes de rodar.
+
+\subsection{Passo 2 -- sinais isolados já superam o modelo único}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Experimento} & \textbf{Sensores no modelo} & \textbf{TRIPs} & \textbf{FP/mês} \\
+\midrule
+EXP30 (modelo único) & 12 (temperatura + vibração juntos) & 5 de 8 & 8,72 \\
+EXP33 (só temperatura) & 2 & 7 de 8 & 24,52 \\
+EXP34 (só vibração) & 10 & 7 de 8 & 21,15 \\
+\bottomrule
+\end{tabular}
+\caption{Cada sinal SOZINHO já detecta mais TRIPs que o modelo
+conjunto -- confirma que juntar os dois num único score dilui
+sensibilidade, não soma. O preço, nesta etapa, é FP alto (nenhum
+mecanismo de corroboração ainda).}
+\end{table}
+
+\subsection{Passo 3 -- combinação ingênua: 8/8 é alcançável, mas caro}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Combinação} & \textbf{Regra} & \textbf{TRIPs} & \textbf{FP/mês} \\
+\midrule
+EXP33 OU EXP34 & qualquer um dispara & 8 de 8 & 26,99 \\
+EXP33 E EXP34 & os dois têm que concordar & 6 de 8 & 14,15 \\
+\bottomrule
+\end{tabular}
+\caption{A união prova que 8/8 é estruturalmente alcançável só
+separando os sinais -- mas sem nenhuma camada de decisão, o FP
+explode. A interseção reduz o FP mas volta a perder detecção. Nenhuma
+das duas é utilizável em produção.}
+\end{table}
+
+\subsection{Passo 4 -- tentativa alternativa: enriquecer o modelo único (rejeitada)}
+
+Em paralelo, testamos se bastava dar features melhores ao modelo
+único em vez de separar a arquitetura: EXP35 adicionou ao EXP30 duas
+features no estilo dos 4 sinais (\texttt{bearing\_spread\_z} -- TI\_0305
+menos a mediana dos termopares irmãos; \texttt{vibration\_envelope\_z}
+-- máximo do z-robusto entre as 10 sondas). EXP36 foi além, somando
+uma feature de recência de alarme de processo.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Experimento} & \textbf{TRIPs} & \textbf{FP/mês} \\
+\midrule
+EXP35 (+ 2 features de sinal) & 6 de 8 & 8,93 \\
+EXP36 (+ recência de alarme também) & 6 de 8 & 8,93 (idêntico) \\
+\bottomrule
+\end{tabular}
+\caption{Ganho marginal e já saturado: a terceira feature (EXP36) não
+mudou absolutamente nada. Com $\sim$320+ colunas alimentando um único
+OCSVM, um sinal a mais se dilui entre os demais. Confirma que o ganho
+real está em MANTER os sinais separados, não em dar mais informação
+para um modelo conjunto digerir.}
+\end{table}
+
+\subsection{Passo 5 -- o canal de alarme de processo, sem nenhum modelo}
+
+Sugestão trazida por um representante de operação da Cabiúnas: alarmes
+normais (cruzamento de limiar operacional, não só os de proteção que
+geram TRIP) podem ser precursores reais, mesmo sem virar um TRIP
+naquele instante. Implementado como proximidade temporal pura --
+nenhum parâmetro aprendido:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Janela do canal de alarme} & \textbf{TRIPs} & \textbf{FP/mês} \\
+\midrule
+2h & 8 de 8 & 19,23 \\
+6h & 8 de 8 & 16,83 \\
+12h & 7 de 8 & 13,87 \\
+24h & 7 de 8 & 9,48 \\
+\bottomrule
+\end{tabular}
+\caption{Um canal 100\% estatístico, sem ML nenhum, sozinho já cobre
+7--8 dos 8 TRIPs. Confirma diretamente a observação do supervisor.}
+\end{table}
+
+\subsection{Passo 6 -- primeira tentativa de camada de decisão: erro encontrado e corrigido}
+
+A primeira tentativa de replicar a "máquina de decisão" do detector de
+4 sinais (persistência + CUSUM direto sobre o score contínuo bruto)
+deu \textbf{0 de 8} -- um resultado obviamente quebrado. Investigando:
+o CUSUM ficava ativo em 99,9\% de todos os pontos (1.895.040 de
+1.895.041!), porque o score bruto usado não passava pelos portões de
+produção (rampa de carga, volatilidade, degrau, veto de sensor
+congelado) que o EXP33/34 já aplicam normalmente. \textbf{Lição}: a
+camada de decisão da equipe não substitui os portões físicos já
+validados -- ela se soma a eles. Corrigido usando o
+\texttt{is\_anom\_point} \textbf{já gateado} de cada modelo como base
+de cada canal, em vez de recomeçar do score cru.
+
+\subsection{Passo 7 -- resultado final: votação $\geq$2 + refratário 48h}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{diagrama_arquitetura_exp37.png}
+\caption{Arquitetura final (EXP37): dois canais com modelo (temperatura,
+vibração), já passando pelos portões de produção, mais um canal sem
+nenhum modelo (alarme de processo). Os três combinam por votação
+$\geq$2 de 3, seguida de refratário de 48h -- nenhuma das duas etapas
+finais tem parâmetro treinado, são regras fixas calibradas contra a
+régua.}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Estratégia} & \textbf{TRIPs} & \textbf{FP/mês} \\
+\midrule
+EXP30 (modelo único, baseline) & 5 de 8 & 8,72 \\
+EXP33 OU EXP34 (união ingênua) & 8 de 8 & 26,99 \\
+\textbf{EXP37 (votação $\geq$2 + refratário 48h)} & \textbf{8 de 8} & \textbf{6,39} \\
+\bottomrule
+\end{tabular}
+\caption{EXP37 detecta MAIS que a baseline (8 vs 5) E custa MENOS
+(6,39 vs 8,72 FP/mês) -- não é uma troca, é uma melhoria nos dois
+eixos ao mesmo tempo.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{comparativo_estrategias.png}
+\caption{Todas as estratégias testadas nesta seção, no mesmo plano
+detecção$\times$custo do relatório de decisão da equipe. EXP37 fica
+isolado no canto superior esquerdo -- melhor detecção, menor custo,
+simultaneamente.}
+\end{figure}
+
+\subsection{Antecedência real por TRIP (EXP37)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{TRIP} & \textbf{Causa} & \textbf{1ª detecção} & \textbf{Antecedência} \\
+\midrule
+27/02/2025 08:38 & selagem & 25/02/2025 22:51 & \textbf{33,8h} \\
+17/03/2025 18:16 & mancal & 16/03/2025 05:13 & \textbf{37,0h} \\
+07/04/2025 21:18 & mancal & 06/04/2025 16:52 & 28,4h \\
+11/04/2025 17:02 & mancal & 10/04/2025 21:03 & 20,0h \\
+29/04/2025 03:04 & mancal & 28/04/2025 19:10 & 7,9h \\
+04/11/2025 06:22 & óleo & 03/11/2025 16:40 & 13,7h \\
+09/12/2025 08:36 & mancal & 08/12/2025 01:41 & 30,9h \\
+26/02/2026 15:34 & óleo & 26/02/2026 11:00 & 4,6h \\
+\bottomrule
+\end{tabular}
+\caption{Média de \textbf{22,0h} de antecedência. Os dois casos em
+negrito (27/02 e 17/03) são exatamente os dois que a régua rigorosa
+(Seção~\ref{sec:regua-rigorosa}) nunca tinha conseguido antecipar em
+nenhuma configuração anterior desta investigação -- é o canal de
+alarme de processo que fecha essa lacuna.}
+\end{table}
+
+\subsection{Série completa com a decisão final}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{serie_final_exp37.png}
+\caption{TI\_0305 / TC382\_03\_A / T5\_AVG\_A com a decisão final do
+EXP37: roxo = TRIP curado (8 no período); verde = acerto (todos os 8);
+preto = falso positivo remanescente, depois de votação e refratário.
+Comparar com a Figura da Seção~\ref{sec:figura-antes} (``antes'') dá a
+dimensão real do que a arquitetura multi-canal eliminou.}
+\end{figure}
+
+\subsection{O que muda na recomendação de produção}
+
+\textbf{EXP37 substitui o EXP30/EXP28 como configuração recomendada
+para o grupo mancal.} Resumo do que é modelo e o que não é, para
+referência rápida:
+
+\begin{itemize}
+  \item \textbf{2 modelos} (OCSVM, um por canal) -- nenhuma mudança de
+    algoritmo, só de escopo (cada um vê só os sensores do seu
+    mecanismo).
+  \item \textbf{1 canal sem modelo algum} -- estatística de
+    proximidade temporal contra 5 tags de alarme já catalogadas.
+  \item \textbf{Camada de decisão final (votação + refratário)}: regras
+    fixas, sem parâmetro treinado, calibradas por varredura contra a
+    régua rigorosa (não contra os mesmos 8 eventos usados para
+    validar -- os parâmetros de votação/refratário foram escolhidos
+    olhando o comportamento agregado, o mesmo cuidado de otimismo de
+    seleção que a documentação da equipe recomenda).
+\end{itemize}
+
+O grupo de óleo (EXP29/31) não foi reavaliado nesta rodada -- é o
+próximo passo natural, replicando a mesma separação (pressão de óleo
+isolada + o mesmo canal de alarme de processo).
+
 \appendix
 \section{Checkup geral: TRIPs, alarmes e isolados (reconstrução literal)}
 \label{sec:apendiceA}

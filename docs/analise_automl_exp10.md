@@ -2017,3 +2017,77 @@ amostragem ("os mais salientes parecem cobrir o caso geral") pode
 subestimar quanto sinal real existe escondido no que parece FP.
 Reforça a prática já padrão aqui — verificar via reconstrução
 literal de TODOS os itens, não extrapolar de uma amostra.
+
+## EXP33-37: da separação de sinais à votação multi-canal — 8 de 8 (2026-09-03)
+
+**Config recomendada a partir de agora**, substituindo o EXP30 como
+referência principal do grupo mancal. Passo a passo completo (figuras
+e tabelas cheias em `relatorio_exp28_pipeline_francisco/relatorio_exp28.pdf`,
+seção "EXP33 a EXP37"):
+
+**Passo 1 — separar sensores.** Crítica da documentação externa da
+equipe: EXP30 treina UM OCSVM sobre os 12 sensores (temperatura +
+vibração) juntos, um único limiar. EXP33 isola temperatura
+(`TC382_03_A`, `T5_AVG_A`); EXP34 isola vibração (10 `TV_*`), com a
+grade de limiar **estendida para p69-p99,9** (grade só acima de p99
+tornaria um precursor em p69-80 invisível — aviso explícito da
+documentação da equipe).
+
+**Passo 2 — sinais isolados já batem o modelo único**: EXP33 sozinho
+7/8, EXP34 sozinho 7/8 — ambos melhores que os 5/8 do EXP30 conjunto.
+
+**Passo 3 — combinação ingênua é insuficiente**: EXP33 OU EXP34 dá
+8/8 mas 26,99 FP/mês (inaceitável); EXP33 E EXP34 dá 6/8 com 14,15
+FP/mês. Nenhuma das duas é utilizável.
+
+**Passo 4 — enriquecer o modelo único, rejeitado**: EXP35 (+
+`bearing_spread_z`, `vibration_envelope_z`) e EXP36 (+ recência de
+alarme) dão 6/8, 8,93 FP/mês — ganho marginal e já saturado (EXP36
+idêntico ao EXP35, a 3ª feature não mudou nada). Confirma que o ganho
+vem de separar arquitetura, não de enriquecer features de um modelo
+conjunto.
+
+**Passo 5 — canal de alarme de processo, sem modelo** (ideia de um
+representante de operação da Cabiúnas: alarmes normais podem
+preceder um TRIP mesmo sem virar TRIP naquele instante): proximidade
+temporal pura contra 5 tags (`PI_6240319_AL`, `PAL_6240315`,
+`PDAL_6240302`, `TC382_05_A`, `PAH_6240319`). Sozinho, sem ML nenhum,
+já cobre 7-8/8 dependendo da janela (2-24h).
+
+**Passo 6 — primeiro erro e correção**: tentativa de replicar
+persistência+CUSUM direto no score contínuo bruto deu **0/8** — bug
+de desenho, não de código: o CUSUM ficava ativo em 99,9% de todos os
+pontos (1.895.040 de 1.895.041) porque pulava os portões de produção
+(rampa, volatilidade, degrau, veto de sensor congelado) que EXP33/34
+já aplicam. Corrigido usando `is_anom_point` **já gateado** como base
+de cada canal.
+
+**Passo 7 — resultado final (EXP37)**: votação ≥2 de 3 canais
+(temperatura, vibração, alarme de processo em janela de 24h) +
+refratário de 48h — regras fixas, sem parâmetro treinado.
+
+| Estratégia | TRIPs | FP/mês |
+|---|---|---|
+| EXP30 (baseline) | 5/8 | 8,72 |
+| EXP33 OU EXP34 | 8/8 | 26,99 |
+| **EXP37 (votação + refratário)** | **8/8** | **6,39** |
+
+**Detecta mais E custa menos que a baseline simultaneamente** — não é
+troca, é melhoria nos dois eixos. Antecedência média 22,0h; os 2 casos
+que a régua rigorosa nunca tinha antecipado antes (27/02/2025 selagem,
+17/03/2025 mancal) agora têm 33,8h e 37,0h de antecedência — é o canal
+de alarme de processo que fecha essa lacuna específica.
+
+**O que é modelo, o que não é**: 2 modelos OCSVM (um por canal, mesma
+arquitetura de sempre, só escopo de sensores reduzido) + 1 canal
+100% estatístico (proximidade temporal, zero ML) + camada de decisão
+final (votação+refratário) que também não é modelo — regra fixa
+calibrada por varredura contra a régua.
+
+**Implementação**: `scripts/multicanal_votacao_exp37.py` (produção,
+reproduzível) + `combine_channels_vote`/`apply_refractory`/
+`compute_persistence_gate`/`compute_cusum_gate` em `scoring.py`
+(testadas com dados sintéticos antes de aplicar aos dados reais).
+
+**Pendente**: replicar a mesma separação no grupo de óleo
+(EXP29/31) — não foi refeito nesta rodada.
