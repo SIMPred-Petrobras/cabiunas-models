@@ -527,6 +527,8 @@ def run_automl_group(
     best_model_obj = None
     best_model_type = None
     best_point_df: pd.DataFrame | None = None
+    best_all_err: np.ndarray | None = None
+    best_threshold_value: float | None = None
 
     for model_type in model_types:
         fitter = _FITTERS.get(model_type)
@@ -659,6 +661,14 @@ def run_automl_group(
                         best_model_obj = model_obj
                         best_model_type = model_type
                         best_point_df = df_point
+                        # Score continuo do trial vencedor (nao so o binario
+                        # is_anom_point) -- necessario pra construir canais de
+                        # decisao com persistencia/CUSUM proprios (ver
+                        # docs/analise_automl_exp10.md, secao "Camada de
+                        # decisao multi-canal"). None no caso walk-forward
+                        # (score vem por periodo, nao um array unico).
+                        best_all_err = None if walkforward_periods is not None else np.asarray(all_err).copy()
+                        best_threshold_value = threshold
 
     if best_trial is None:
         return {"group": group_name, "sensors": sensors, "skipped": True, "reason": "no_valid_trials"}
@@ -758,6 +768,10 @@ def run_automl_group(
               f"enriquecimento={enrichment['enrichment_factor']:.2f}x")
 
     best_point_df.to_csv(os.path.join(out_dirs["csv"], "point_anomalies_all.csv"))
+
+    if best_all_err is not None:
+        df_scores = pd.DataFrame({"score": best_all_err, "threshold": best_threshold_value}, index=all_index)
+        df_scores.to_csv(os.path.join(out_dirs["csv"], "sequence_scores_all.csv"))
 
     anomalous_times = best_point_df.index[best_point_df["is_anom_point"] == 1]
     for s in sensors:

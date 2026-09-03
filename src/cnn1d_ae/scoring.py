@@ -262,6 +262,98 @@ def classify_episodes_regua(
     return episodes
 
 
+def compute_persistence_gate(score: pd.Series, threshold: float, persistence_minutes: float) -> pd.Series:
+    """Canal ativo (True) quando `score` fica ACIMA de `threshold` por
+    pelo menos `persistence_minutes` seguidos -- causal (so olha o
+    passado, via `.rolling()` trailing). Equivalente ao "degrau: acima
+    do limiar por 30 min seguidos" do detector de 4 sinais
+    (DOC_EQUIPE/ROTEIRO_APRESENTACAO_TC33003A.pdf). Diferente do nosso
+    debounce (`map_seq_to_point_anomalies`/`point_window`), que conta
+    AMOSTRAS de sequencia (nao necessariamente minutos reais) -- aqui
+    usa o grid real dos dados (mediana do `diff()` do indice)."""
+    dt_seconds = score.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    n_samples = max(1, int(round((float(persistence_minutes) * 60.0) / dt_seconds)))
+    above = (score > float(threshold)).astype(int)
+    sustained = above.rolling(n_samples, min_periods=n_samples).sum() >= n_samples
+    return sustained.fillna(False)
+
+
+def compute_cusum_gate(score: pd.Series, baseline_mean: float, slack: float, h: float) -> pd.Series:
+    """Gatilho CUSUM (soma cumulativa unidirecional, positiva): acumula
+    `max(0, score - baseline_mean - slack)`, resetando quando o
+    acumulado cairia abaixo de 0; ativa quando o acumulado ultrapassa
+    `h`. Pega deriva FRACA e PERSISTENTE que nunca cruzaria um limiar
+    fixo sozinha -- mesmo mecanismo do canal CUSUM do detector de 4
+    sinais (H=80 no exemplo deles). Complementar a
+    `compute_persistence_gate` (que pega excursao FRANCA); os dois
+    juntos, em OR, formam "os dois gatilhos por canal" da arquitetura
+    deles."""
+    x = score.to_numpy(dtype=np.float64)
+    out = np.empty(len(x), dtype=np.float64)
+    cusum = 0.0
+    k = float(slack)
+    mu0 = float(baseline_mean)
+    for i in range(len(x)):
+        cusum = max(0.0, cusum + (x[i] - mu0 - k))
+        out[i] = cusum
+    return pd.Series(out > float(h), index=score.index)
+
+
+def combine_channels_vote(
+    channels: dict[str, pd.Series], min_votes: int, required_any: list[str] | None = None,
+) -> pd.Series:
+    """Combina canais booleanos (mesmo indice) por votacao: True se
+    pelo menos `min_votes` canais estiverem ativos ao mesmo tempo, e
+    (se `required_any` for dado) pelo menos um dos canais NOMEADOS ali
+    estiver entre os ativos -- mesma regra do detector de 4 sinais
+    ("voto >=2 canais, exigindo que um deles seja mancal ou vibracao").
+    Substitui o OR/AND ingenuo testado antes (EXP33 OU EXP34: 8/8 mas
+    FP explode; EXP33 E EXP34: FP melhora mas volta a perder
+    deteccoes) -- a votacao com >=3 canais disponiveis (temperatura,
+    vibracao, alarme de processo) tem mais graus de liberdade que um
+    OR/AND binario entre so 2."""
+    df = pd.DataFrame({k: v.astype(bool) for k, v in channels.items()})
+    n_active = df.sum(axis=1)
+    vote = n_active >= int(min_votes)
+    if required_any:
+        vote = vote & df[list(required_any)].any(axis=1)
+    return vote
+
+
+def apply_refractory(signal: pd.Series, refractory_minutes: float) -> pd.Series:
+    """Suprime re-ativacoes de `signal` (bool) que comecem dentro de
+    `refractory_minutes` depois do INICIO da ativacao anterior --
+    "repetir nao e noticia, resolve a deriva de custo" (detector de 4
+    sinais, refratario de 48h). Um episodio contiguo de True conta
+    como uma unica ativacao; qualquer novo episodio que comece dentro
+    da janela refrataria da ativacao anterior e suprimido por
+    inteiro."""
+    dt_seconds = signal.index.to_series().diff().dt.total_seconds().median()
+    if not np.isfinite(dt_seconds) or dt_seconds <= 0:
+        dt_seconds = 30.0
+    refractory_td = pd.Timedelta(minutes=float(refractory_minutes))
+
+    vals = signal.to_numpy(dtype=bool)
+    idx = signal.index
+    out = np.zeros(len(vals), dtype=bool)
+    last_trigger = None
+    i = 0
+    n = len(vals)
+    while i < n:
+        if vals[i] and (last_trigger is None or (idx[i] - last_trigger) >= refractory_td):
+            last_trigger = idx[i]
+            j = i
+            while j < n and vals[j]:
+                out[j] = True
+                j += 1
+            i = j
+        else:
+            i += 1
+    return pd.Series(out, index=idx)
+
+
 def compute_operational_period_days(df_point: pd.DataFrame) -> float:
     """Dias de OPERACAO VIGIADA (denominador correto da regua) --
     conta so `operational_state == "on"` (maquina rodando, quente,
