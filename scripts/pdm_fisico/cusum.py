@@ -29,10 +29,9 @@ from __future__ import annotations
 import sys, itertools
 import numpy as np, pandas as pd
 
-PDM = ("/tmp/claude-1000/-home-thallys-Documents-projeto-petrobras-Analise-exploratoria-dos-"
-       "dados-analise-cabiunas-cabv2-cabiunas-models/e6d62cc6-1642-437f-9af7-77c9e87ef823/"
-       "scratchpad/pdm/src")
-sys.path.insert(0, PDM)
+# O pacote `cabiunas_pdm` vive agora em ./cabiunas_pdm, restaurado da branch
+# do Francisco (ver cabiunas_pdm/__init__.py). O caminho antigo era um
+# diretorio temporario que foi apagado; nao ha mais sys.path a inserir.
 from cabiunas_pdm import detector as DET
 import avalia as A
 from ablacao import canonico, roda, mascara_pontuacao
