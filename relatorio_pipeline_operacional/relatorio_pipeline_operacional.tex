@@ -427,9 +427,158 @@ duração mínima (média 23,8h).}
 \caption{Série bruta (TI\_0305, TC382\_03\_A, T5\_AVG\_A, PI\_0308)
 com a decisão final da pipeline (já com o filtro de duração mínima de
 45min): linhas verticais roxas = TRIPs reais; pontos verdes = acerto
-(8 de 8); pontos pretos = falso positivo remanescente (25, antes 42);
-faixas cinza = turbina desligada.}
+(8 de 8); pontos pretos = falso positivo remanescente (42 episódios,
+eram 96 antes do filtro); faixas cinza = turbina desligada.}
 \end{figure}
+
+\section{Auditoria dos 42 FP remanescentes: sinal físico ou ruído?}
+\label{sec:auditoria42}
+
+A Seção~\ref{sec:estudo-fp} deixou uma pergunta em aberto: os 42
+falsos positivos que sobram depois do filtro de 45min são ruído do
+modelo, ou são eventos físicos reais que simplesmente não escalaram
+para um TRIP catalogado? A resposta importa porque muda o que fazer a
+seguir -- se for ruído, ainda há o que suprimir com segurança; se for
+sinal real, suprimir mais seria apagar informação que o operador
+provavelmente quer ver. Esta seção documenta a auditoria feita para
+responder isso, passo a passo, com duas linhas de evidência
+independentes.
+
+\subsection{Passo 1 -- seleção dos episódios}
+
+Os 42 episódios classificados como \texttt{falso\_positivo} pela
+régua rigorosa (Seção~\ref{sec:resultado}) foram listados com seus
+instantes exatos de início e fim. Ao contrário dos episódios curtos
+do checkup anterior (Apêndice A do relatório de investigação, quase
+pontuais), estes têm duração real: de 48 minutos a 9,65 horas --
+consequência direta do filtro de 45min, que só deixa passar
+concordâncias sustentadas.
+
+\subsection{Passo 2 -- checkup de sinal físico (z-score contra baseline)}
+
+Para cada episódio, comparou-se o comportamento dos sensores durante
+a janela do episódio contra um \textbf{baseline de 2 horas
+imediatamente antes} (terminando 3 minutos antes do início, para não
+contaminar o baseline com o próprio início do evento). O conjunto de
+sensores checados inclui todo o grupo de mancal (temperatura e os 10
+canais de vibração) mais os dois sensores de óleo -- mais amplo que
+os sensores do modelo que efetivamente disparou o alarme, para não
+deixar passar despercebido um sinal em outro sensor correlato.
+
+\textbf{Um cuidado metodológico que mudou o resultado}: a primeira
+tentativa comparou a \emph{média} de todo o episódio contra o
+baseline. Como esses episódios podem durar horas, um pico breve real
+no meio de uma janela longa fica diluído pela média -- e o resultado
+saiu artificialmente baixo (21,4\% ``confirmado''). Corrigido para
+usar o \textbf{pico máximo pontual} dentro do episódio (o critério
+correto, coerente com como o próprio modelo de anomalia reage a
+picos, não a médias), o resultado mudou para:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Classificação} & \textbf{\% dos 42} \\
+\midrule
+Confirmado real (forte: $|z|\geq10$ e $\geq$2 sensores) & 26,2\% (11) \\
+Confirmado real (moderado: $|z|\geq3$ e $\geq$2 sensores) & 35,7\% (15) \\
+Borderline (só 1 sensor com $|z|\geq3$) & 28,6\% (12) \\
+Fraco / sem explicação física & 9,5\% (4) \\
+\bottomrule
+\end{tabular}
+\caption{Checkup individual dos 42 FP -- pico de z-score dentro do
+episódio contra baseline de 2h. \textbf{61,9\% confirmados reais}
+(forte+moderado), consistente com os 79\% já encontrados nos 24
+episódios isolados do relatório de investigação.}
+\end{table}
+
+Apenas 4 episódios não mostram nenhuma explicação física em nenhum
+sensor checado -- únicos candidatos honestos a ruído puro:
+\texttt{2025-01-14\_17h57}, \texttt{2025-01-24\_12h42},
+\texttt{2025-02-21\_03h27} e \texttt{2026-03-09\_12h07}.
+
+\subsection{Passo 3 -- segunda evidência: corroboração por outro alarme de processo}
+
+Sinal físico no próprio sensor é uma evidência; uma segunda e
+independente é verificar se \textbf{outro alarme do processo}, já
+catalogado pela planta, ocorreu perto do mesmo instante -- ou seja,
+se o próprio sistema de alarmes da Cabiúnas também percebeu algo ali,
+por um caminho diferente do nosso modelo.
+
+Usou-se o catálogo completo (47 tags, 3.757 ocorrências ativas no
+período), \textbf{excluindo os 5 tags já usados no canal de alarme
+da própria pipeline} (para não contar a mesma evidência duas vezes) e
+uma janela de $\pm$2h.
+
+\textbf{Controle negativo obrigatório}: uma taxa alta de ``explicado
+por outro alarme'' só é evidência real se for muito maior do que a
+taxa que apareceria em instantes aleatórios -- do contrário, é só
+reflexo de um catálogo denso (mesmo cuidado já aplicado nesta
+investigação para o enriquecimento por catálogo, Seção~2 do
+relatório de investigação). Comparou-se a taxa nos 42 FP contra
+5.000 instantes aleatórios do período monitorado:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Grupo} & \textbf{Taxa (outro alarme em $\pm$2h)} \\
+\midrule
+42 FP (pós-filtro 45min) & \textbf{23,8\% (10 de 42)} \\
+Baseline aleatório (5.000 amostras) & 3,4\% \\
+\midrule
+\textbf{Enriquecimento} & \textbf{6,9$\times$} \\
+\bottomrule
+\end{tabular}
+\caption{Corroboração por outro alarme de processo, com controle
+negativo. Um enriquecimento de 6,9$\times$ é forte -- bem acima de
+1,0$\times$ (que indicaria catálogo denso demais para discriminar) --
+não é artefato.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{alarmes_proximos_42fp.png}
+\caption{Esquerda: taxa de corroboração por outro alarme nos 42 FP
+vs. baseline aleatório (controle negativo). Direita: quais tags do
+catálogo explicam os 10 episódios corroborados -- concentradas em
+alarmes do próprio sensor de temperatura de mancal
+(\texttt{TC382\_03\_A}, \texttt{T5\_AVG\_A}).}
+\end{figure}
+
+\subsection{Passo 4 -- visualização na série completa}
+
+A Figura~\ref{fig:auditoria42} mostra as duas evidências sobrepostas
+na série bruta inteira: os 10 FP corroborados por outro alarme
+aparecem em azul, com uma linha pontilhada fina marcando o instante
+exato desse outro alarme (não é TRIP -- é um alarme de processo
+diferente, catalogado pela planta); os 32 FP sem essa corroboração
+específica continuam em preto (a maioria deles ainda tem sinal físico
+próprio confirmado pelo Passo 2, só não bateu com outro alarme do
+catálogo em $\pm$2h).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{serie_auditoria_42fp.png}
+\caption{Série bruta completa com a auditoria dos 42 FP: roxo = TRIP
+real; verde = acerto; preto = FP sem corroboração por outro alarme;
+azul = FP corroborado; linhas pontilhadas azuis finas = instante
+exato do outro alarme de processo que explica cada FP corroborado.}
+\label{fig:auditoria42}
+\end{figure}
+
+\subsection{Conclusão da auditoria}
+
+Combinando as duas linhas de evidência independentes -- 90,5\% dos
+42 FP com sinal físico próprio (confirmado ou borderline) e 23,8\%
+também corroborados por outro alarme de processo já catalogado --
+fica difícil defender que os FP remanescentes sejam ruído do modelo.
+São, na maioria, \textbf{eventos físicos reais que a própria planta
+às vezes também registra}, mas que não escalaram para um TRIP
+catalogado desta vez. \textbf{Recomendação: não suprimir mais} --
+2,88 FP/mês é um teto honesto, não apenas técnico. Os 4 episódios sem
+nenhuma explicação (Passo 2) são os únicos candidatos legítimos a uma
+investigação futura mais específica.
 
 \section{Reprodução operacional}
 
