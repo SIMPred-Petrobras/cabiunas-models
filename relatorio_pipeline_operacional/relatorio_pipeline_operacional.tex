@@ -300,6 +300,38 @@ resolve o mesmo tipo de ruído sem esse efeito colateral, porque ataca
 a característica real do ruído (duração) em vez de uma
 correlação temporal aproximada (proximidade a um religamento).
 
+\subsection{Teto prático confirmado}
+
+Antes de fechar esta configuração como definitiva, mais três
+alavancas de baixo custo foram testadas -- todas sem sucesso adicional,
+o que confirma que 2,88 FP/mês é o teto prático desta arquitetura:
+
+\begin{itemize}
+  \item \textbf{Filtro de duração por canal individual} (em vez de só
+    na votação combinada): resultado quase idêntico, redundante --
+    os dois filtros capturam o mesmo mecanismo de ruído, não são
+    efeitos aditivos.
+  \item \textbf{Grade de AutoML mais fina} (153 combinações por
+    canal, era 15--27): melhorou a calibração \emph{isolada} de
+    vibração e óleo (taxa de alarme normal menor), mas a pipeline
+    completa caiu de \textbf{8/8 para 4/8 TRIPs} com essas novas
+    calibrações -- revertido. Lição: o AutoML por canal otimiza uma
+    métrica local (contra a própria referência de alarme), não o
+    resultado do conjunto contra a régua rigorosa.
+  \item \textbf{Duração do refratário} (24h a 120h, com o filtro de
+    45min já fixado): 48h já é o ótimo -- 60h já derruba 2 TRIPs para
+    uma redução marginal de FP.
+\end{itemize}
+
+Os 42 FP que restam também mudaram de natureza: não são mais
+coincidências pontuais (isso o filtro de 45min já eliminou), e sim
+episódios sustentados (mediana 1,2h, até 9,65h), distribuídos
+uniformemente ao longo de $\sim$17 meses -- estatisticamente mais
+parecidos com os episódios isolados do checkup geral (79\%
+confirmados como sinal físico real) do que com ruído de amostragem.
+Reduzir mais exigiria um 5º canal com informação nova ou auditoria
+individual desses episódios -- não mais ajuste de parâmetro.
+
 \section{Resultado final}
 \label{sec:resultado}
 
