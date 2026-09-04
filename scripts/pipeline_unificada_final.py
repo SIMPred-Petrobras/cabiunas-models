@@ -43,11 +43,13 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "runs_p
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # --- canais 1, 2, 3: modelos ja treinados e gateados (EXP33/EXP34/EXP38) ---
-TID_TEMP = "eb46b8afc61c447bb773fe836a504773"
+# retreino completo em 2026-09-03 (ver docs/analise_automl_exp10.md) --
+# task ids anteriores: eb46b8afc61c447bb773fe836a504773 / 806178140f38456cbb094c67320b7cec / d1b70f12e55040c9a38fb3cce0703f17
+TID_TEMP = "805fbf34f99f4a889dbdcca7185f20a1"
 KEY_TEMP_POINT = "mancal_temperatura_isolada/csv/point_anomalies_all.csv"
-TID_VIB = "806178140f38456cbb094c67320b7cec"
+TID_VIB = "7815d2cf0d07491eb1c949d555cb5de7"
 KEY_VIB_POINT = "mancal_vibracao_isolada/csv/point_anomalies_all.csv"
-TID_OLEO = "d1b70f12e55040c9a38fb3cce0703f17"
+TID_OLEO = "18a61687eb78412ead48c9ce31109b67"
 KEY_OLEO_POINT = "oleo_pressao_isolada/csv/point_anomalies_all.csv"
 
 # --- canal 4: alarme de processo, SEM modelo ---

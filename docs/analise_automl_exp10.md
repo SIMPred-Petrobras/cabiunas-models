@@ -2141,3 +2141,10 @@ participa da votação sem antecipar a detecção nos casos já cobertos).
 
 **Implementação**: `configs/calibracao_v4_eq/test_grupo_exp38_oleo_pressao_isolada.json`,
 `scripts/pipeline_unificada_final.py` (produção, reproduzível).
+
+**Retreino completo confirmado (2026-09-03)**: os 3 modelos (EXP33,
+EXP34, EXP38) foram retreinados do zero no ClearML (novas task ids)
+para checar se o resultado dependia da instância de treino específica.
+Resultado idêntico: 8/8 TRIPs, 6,59 FP/mês, exatamente as mesmas 8
+falhas detectadas nos mesmos instantes — confirma que a pipeline é
+reprodutível ponta a ponta, não uma coincidência de uma rodada.
