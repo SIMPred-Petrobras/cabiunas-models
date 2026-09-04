@@ -2148,3 +2148,29 @@ para checar se o resultado dependia da instância de treino específica.
 Resultado idêntico: 8/8 TRIPs, 6,59 FP/mês, exatamente as mesmas 8
 falhas detectadas nos mesmos instantes — confirma que a pipeline é
 reprodutível ponta a ponta, não uma coincidência de uma rodada.
+
+## Ideia testada e rejeitada: supressão de 6h pós-religamento (2026-09-03)
+
+Sugestão (prática de Thallys/Lara/Francisco): suprimir alarmes nas
+primeiras 6h após a máquina religar, para reduzir FP concentrados
+perto de partidas. Verificado **antes** de implementar:
+
+- 20 de 96 FP (20,8%) caem dentro de 6h de um religamento — ganho
+  real se fosse só isso.
+- **2 de 8 detecções reais também caem nessa janela**: TRIP de
+  11/04/2025 detectado a 0,92h do religamento (canal temperatura +
+  alarme), e TRIP de 04/11/2025 detectado a 0,00h — exatamente no
+  instante do religamento (canal óleo + alarme).
+
+Uma supressão cega de 6h derrubaria essas 2 detecções (8/8 → 6/8) —
+mesmo padrão de falha já visto na "supressão cirúrgica baseada em
+mecanismo" (rejeitada anteriormente nesta investigação por matar 3
+precursores reais). Reforça a rejeição: os canais de
+temperatura/vibração já passam por portão de rampa de carga
+(`LOAD_GATE`, halflife 15min) e portão de degrau antes de virarem
+`is_anom_point` — o que sobrevive até a votação já filtrou o
+transiente típico de partida; o que resta pode ser precursor
+genuíno coincidindo com o religamento, não artefato de partida.
+
+**Decisão**: não implementar. Configuração mantida como
+`scripts/pipeline_unificada_final.py` (8/8, 6,59 FP/mês).
