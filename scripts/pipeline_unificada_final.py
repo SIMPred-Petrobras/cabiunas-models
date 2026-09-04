@@ -51,6 +51,15 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # --- canais 1, 2, 3: modelos ja treinados e gateados (EXP33/EXP34/EXP38) ---
 # retreino completo em 2026-09-03 (ver docs/analise_automl_exp10.md) --
 # task ids anteriores: eb46b8afc61c447bb773fe836a504773 / 806178140f38456cbb094c67320b7cec / d1b70f12e55040c9a38fb3cce0703f17
+# testado e rejeitado (2026-09-04): AUTOML_MODELS=[dense,ocsvm,iforest],
+# grade original -- temp manteve ocsvm, vib/oleo escolheram iforest
+# (melhor normal_alert_rate isolado), mas a pipeline completa caiu de
+# 8/8 para 6/8 (perdeu exatamente os 2 TRIPs mais dificeis: 27/02 e
+# 17/03/2025). Mesmo padrao da grade mais fina: metrica local do canal
+# nao prediz resultado do conjunto. Ver docs/analise_automl_exp10.md.
+# TID_TEMP = "e4c731bc82d34477b454bba336eaaf5b"  (rejeitado)
+# TID_VIB = "692264dfd099468283bf1573f3bd4915"   (rejeitado)
+# TID_OLEO = "a12d14e5a68b4b1ab508fa540cf52018"  (rejeitado)
 TID_TEMP = "805fbf34f99f4a889dbdcca7185f20a1"
 KEY_TEMP_POINT = "mancal_temperatura_isolada/csv/point_anomalies_all.csv"
 TID_VIB = "7815d2cf0d07491eb1c949d555cb5de7"

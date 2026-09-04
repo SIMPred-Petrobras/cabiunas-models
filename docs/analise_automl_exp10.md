@@ -2410,3 +2410,33 @@ registra, só que não escalaram para um TRIP catalogado.
 **Implementação**: `dataset_francisco_lara/checa_alarmes_proximos_42fp.py`
 + `figura_alarmes_proximos_42fp.py`, resultado em
 `alarmes_proximos_42fp.csv`/`.png`.
+
+### Testado e rejeitado: AUTOML_MODELS com dense/iforest além de ocsvm (2026-09-04)
+
+Pergunta: será que outro tipo de modelo (não só OCSVM) sai melhor?
+Testado com cuidado -- **isolando a variável** desta vez (grade de
+percentil/debounce voltou ao original validado, só mudou
+`AUTOML_MODELS` de `["ocsvm"]` para `["dense","ocsvm","iforest"]`,
+deixando o AutoML escolher o tipo de modelo por canal).
+
+Resultado da calibração individual: temperatura manteve OCSVM (sem
+mudança); vibração e óleo escolheram `iforest`, com taxa de alarme
+normal melhor isoladamente (vibração: 10,1%→7,9%; óleo: 0,27%→0,07%).
+
+Rodando a pipeline completa (voto≥2 + filtro 45min + refratário) com
+essas novas calibrações: **8/8 → 6/8 TRIPs** -- perdeu exatamente os
+2 TRIPs mais difíceis (27/02/2025 e 17/03/2025, os que só o canal de
+alarme resolvia originalmente no EXP37). FP/mês caiu para 3,16, mas
+não compensa perder 2 detecções reais.
+
+**Terceira confirmação do mesmo padrão** (depois da grade mais fina e
+agora da troca de modelo): a métrica de calibração individual de cada
+canal (hit\_rate/normal\_alert\_rate contra a própria referência) não
+prediz o resultado do conjunto contra a régua rigorosa. Qualquer
+mudança na calibração de um canal precisa ser validada pela pipeline
+completa antes de ser aceita -- nunca só pela métrica isolada.
+
+**Decisão: revertido**. `scripts/pipeline_unificada_final.py` volta
+aos task ids validados (OCSVM nos 3 canais): `805fbf34f99f4a889dbdcca7185f20a1`,
+`7815d2cf0d07491eb1c949d555cb5de7`, `18a61687eb78412ead48c9ce31109b67`
+-- confirmado 8/8 TRIPs, 2,88 FP/mês.
