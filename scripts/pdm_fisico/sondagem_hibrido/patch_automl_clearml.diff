@@ -1,0 +1,109 @@
+diff --git a/scripts/automl_clearml.py b/scripts/automl_clearml.py
+index 9e6596e..db38aa9 100644
+--- a/scripts/automl_clearml.py
++++ b/scripts/automl_clearml.py
+@@ -141,6 +141,35 @@ BEARING_PEERS = ["954005_624_TI_0301", "954005_624_TI_0303", "954005_624_TI_0307
+ # contra o próprio baseline.
+ SEAL_TARGET = "954005_624_PDIT_0305"
+ 
++# 5º sinal, vindo PRE-COMPUTADO de fora (acrescentado 04/09/2026)
++# ----------------------------------------------------------------------
++# O `--with-vibration` existente injeta as 10 tags TV_* cruas como familia de
++# PCA, e essa construcao falha: o NIVEL das sondas deriva ao longo dos
++# trimestres e a normalizacao mensal nao remove essa deriva -- medido, 5/8 a
++# 2,48 FP/mes. O canal que funciona usa referencia ROLANTE de 400 h com banda
++# de guarda de 24 h, e essa referencia e parte do sinal, nao pre-processamento.
++# Por isso ele entra pronto, como coluna, em vez de ser derivado aqui.
++#
++# CRITICO: ja vem normalizado (z robusto, maximo das 10 sondas). Passa-lo pela
++# normalizacao mensal dos derivados aplicaria abs(vb - mediana), o que DOBRA a
++# distribuicao na mediana e mapeia amostra quieta para escore alto -- invertido.
++# Daí `PRE_NORMALIZADOS`: para esses o centro e 0 e a escala e 1.
++SINAL_EXTERNO_COL = "VB_ROLANTE_Z"
++SINAL_EXTERNO_NOME = "vibracao_z"
++PRE_NORMALIZADOS = {SINAL_EXTERNO_NOME}
++
++# Portao de canal obrigatorio (acrescentado 04/09/2026)
++# ----------------------------------------------------------------------
++# `confirm` exige N sinais simultaneos entre TODOS -- uma contagem. O detector
++# de 4 sinais do Thallys exige `voto >= 2 E (sp OU vb)`: contagem MAIS um canal
++# obrigatorio qualificado. A diferenca decide se um canal de limiar baixo e
++# utilizavel: medido, com o vb em p60 e `confirm=2` sem portao, NENHUMA das 48
++# configuracoes passa no teto de 1 FP/mes -- o canal fica aceso 40% do tempo e
++# qualquer segundo sinal fecha o voto. Com portao, o canal baixo so conta se
++# houver corroboracao QUALIFICADA.
++# Vazio = comportamento original (so a contagem).
++PORTAO_OBRIGATORIO: set[str] = set()
++
+ PHYSICAL_RANGE = {"temperatura": (-15.0, 900.0), "pressao_oleo": (-1.5, 120.0),
+                   "vibracao": (0.0, 200.0)}
+ RANGE_BY_COLUMN = {c: PHYSICAL_RANGE[fam] for fam, cols in FAMILIES.items() for c in cols}
+@@ -370,6 +399,8 @@ class DataBundle:
+         # de 4 sinais realmente ganha, em vez de afirmar que ganha.
+         self.single_model = single_model
+         self.derived_signals = not single_model
++        # ligado por --sinal-externo; exige a coluna SINAL_EXTERNO_COL no CSV
++        self.sinal_externo = False
+         if single_model:
+             todos = [c for cols in self.families.values() for c in cols]
+             self.families = {"tudo": todos}
+@@ -941,6 +972,8 @@ class WalkForwardEvaluator:
+ 
+         derivados = (("mancal_spread", self._spread), ("selagem_z", self._seal)) \
+             if getattr(self.bundle, "derived_signals", True) else ()
++        if getattr(self.bundle, "sinal_externo", False):
++            derivados = derivados + ((SINAL_EXTERNO_NOME, self._externo),)
+         names = list(self.bundle.families) + [n for n, _ in derivados]
+         parts: dict[str, list[tuple[pd.Series, pd.Series]]] = {n: [] for n in names}
+         diagnosticos: list[dict] = []
+@@ -978,8 +1011,11 @@ class WalkForwardEvaluator:
+                 base_serie = derivado(base_stable).dropna()
+                 if base_serie.empty:
+                     continue
+-                centro = base_serie.median()
+-                escala = (base_serie - centro).abs().median() * 1.4826
++                if name in PRE_NORMALIZADOS:
++                    centro, escala = 0.0, 1.0   # ja e z robusto; nao renormalizar
++                else:
++                    centro = base_serie.median()
++                    escala = (base_serie - centro).abs().median() * 1.4826
+                 if not escala or not np.isfinite(escala):
+                     continue
+                 parts[name].append((
+@@ -995,6 +1031,13 @@ class WalkForwardEvaluator:
+         peers = frame[[c for c in BEARING_PEERS if c in frame.columns]].median(axis=1)
+         return frame[BEARING_TARGET] - peers
+ 
++    @staticmethod
++    def _externo(frame: pd.DataFrame) -> pd.Series:
++        """O sinal pre-computado, tal como veio no CSV -- sem transformacao."""
++        if SINAL_EXTERNO_COL not in frame.columns:
++            return pd.Series(dtype="float64", index=frame.index)
++        return frame[SINAL_EXTERNO_COL]
++
+     @staticmethod
+     def _seal(frame: pd.DataFrame) -> pd.Series:
+         """Diferencial de selagem cru — o z robusto é aplicado por quem chama."""
+@@ -1125,6 +1168,12 @@ class WalkForwardEvaluator:
+             return TrialResult(asdict(trial), 0, len(self.events), None, {}, 0, 0.0, 0.0)
+         combined = pd.concat(active, axis=1).fillna(False)
+         alert = combined.sum(axis=1) >= trial.confirm
++        if PORTAO_OBRIGATORIO:
++            # indexa por POSICAO em `order`: os nomes de coluna vindos do concat
++            # nao sao confiaveis (dependem do name das Series)
++            idx_obr = [i for i, n in enumerate(order) if n in PORTAO_OBRIGATORIO]
++            if idx_obr:
++                alert = alert & combined.iloc[:, idx_obr].any(axis=1)
+         # alerta só é EMITIDO se ficar de pé o tempo mínimo exigido
+         n_min = max(int(pd.Timedelta(trial.min_alert).total_seconds() / step), 1)
+         if n_min > 1:
+@@ -1453,6 +1502,9 @@ def main() -> None:
+     parser.add_argument("--eval-start", default="2025-02")
+     parser.add_argument("--eval-end", default="2026-04")
+     parser.add_argument("--max-fp-per-month", type=float, default=1.0)
++    parser.add_argument("--sinal-externo", action="store_true",
++                        help=f"usa a coluna {SINAL_EXTERNO_COL} do CSV como 5o sinal, "
++                             "ja normalizada (ver PRE_NORMALIZADOS)")
+     parser.add_argument("--with-vibration", action="store_true",
+                         help="tira a vibração da quarentena (não recomendado)")
+     parser.add_argument("--policy-hours", type=float, nargs="*", default=None,
