@@ -2296,3 +2296,44 @@ apontar para os task ids validados (v2: `805fbf34f99f4a889dbdcca7185f20a1`,
 confirmando 8/8 TRIPs, 2,88 FP/mês. Os configs JSON continuam com a
 grade ampliada (não há motivo para desfazer isso — mais trials não
 faz mal), mas os task ids de produção são os do treino v2, não v3.
+
+### Panorama após o filtro de 45min: o que sobrou nos 42 FP, e teto do refratário (2026-09-04)
+
+Caracterização dos 42 FP restantes (pós-filtro de 45min) por
+combinação de canais — mudou de natureza em relação aos 96 originais:
+
+| Combinação | Nº episódios | Duração mediana |
+|---|---|---|
+| Temp+Vib+Alarme | 20 | ~1,2h |
+| Vibração+Alarme | 11 | ~1,1h |
+| Óleo+Alarme | 4 | ~1,4h |
+| Temperatura+Alarme | 3 | ~1,7h (um outlier de 9,65h) |
+| Temp+Vib+Óleo+Alarme | 2 | ~3,8h |
+
+Diferença crucial: já não são coincidências pontuais (isso o filtro
+de 45min já eliminou) — são **episódios sustentados** (mediana 1,2h,
+até 9,65h), distribuídos uniformemente ao longo de ~17 meses (1-4/mês,
+sem clustering). Isso é qualitativamente mais parecido com os
+episódios isolados do Apêndice A (79% confirmados como sinal físico
+real) do que com ruído de amostragem.
+
+Varredura adicional de refratário (com o filtro de 45min já fixado):
+
+| Refratário | TRIPs | FP/mês |
+|---|---|---|
+| 24h | 8/8 | 3,78 |
+| 36h | 8/8 | 3,09 |
+| **48h (atual)** | **8/8** | **2,88** |
+| 60h | 6/8 | 2,82 (já perde 2 TRIPs) |
+| 72h+ | 4-6/8 | 2,1-2,5 (piora) |
+
+**48h já é o ótimo local no eixo refratário** — subir mais derruba
+TRIPs para um ganho marginal de FP.
+
+**Conclusão**: as alavancas "baratas" (duração combinada, duração por
+canal, grade de AutoML, refratário) estão todas testadas e no limite.
+2,88 FP/mês é o teto prático desta arquitetura de 4 canais + regras.
+Reduzir mais exigiria (a) um 5º canal com informação genuinamente
+nova, ou (b) auditoria individual dos 42 episódios restantes (mesmo
+método do Apêndice A) para separar ruído real de precursor não
+catalogado — não mais ajuste de parâmetro.
