@@ -1,0 +1,300 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazilian]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\title{Documentação Operacional da Pipeline de Detecção de Anomalias\\
+\large Turbina A -- Cabiúnas}
+\author{Equipe de Modelagem}
+\date{Setembro de 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Este documento descreve, de forma operacional e reproduzível, a
+pipeline final de detecção de anomalias adotada como configuração de
+produção: como os três modelos especializados são montados e
+configurados, como o treinamento é conduzido, o que acontece depois
+do treinamento (portões de produção, canalização binária, votação,
+refratário) e o resultado final sobre o histórico de TRIPs
+disponível. Todas as figuras e tabelas foram geradas nesta rodada, a
+partir do retreino completo dos três modelos em 03/09/2026.
+\end{abstract}
+
+\tableofcontents
+
+\section{Visão geral}
+
+A pipeline combina \textbf{3 modelos especializados} (um por
+mecanismo físico: temperatura de mancal, vibração de mancal, pressão
+de óleo) com \textbf{1 canal estatístico sem modelo} (proximidade
+temporal a alarmes de processo já catalogados), cujas saídas binárias
+são combinadas por uma camada de decisão de regras fixas (votação e
+refratário). A Figura~\ref{fig:arquitetura} mostra a arquitetura
+completa, ponta a ponta.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{diagrama_pipeline_operacional.png}
+\caption{Arquitetura end-to-end da pipeline operacional: 4 canais
+(3 modelos + 1 estatístico), portões de produção, votação e
+refratário.}
+\label{fig:arquitetura}
+\end{figure}
+
+\section{Como a pipeline é montada}
+
+\subsection{Separação de sinais por canal}
+
+Cada canal modelado vê apenas os sensores do seu próprio mecanismo
+físico -- essa separação (em vez de um único modelo recebendo todos
+os sinais juntos) é o que permite que cada modelo seja sensível ao
+seu próprio regime de anomalia, sem diluição por variação normal de
+outros mecanismos.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Canal} & \textbf{Sensores usados} & \textbf{Sensor alvo} \\
+\midrule
+1 -- Temperatura & TC382\_03\_A, T5\_AVG\_A & TC382\_03\_A \\
+2 -- Vibração & 10 canais TV\_351X/Y\_A ... TV\_355X/Y\_A & TV\_351X\_A \\
+3 -- Óleo & PI\_0308, PDIT\_0305 & PI\_0308 \\
+4 -- Alarme de processo & 5 tags de catálogo (sem sensor contínuo) & -- \\
+\bottomrule
+\end{tabular}
+\caption{Separação de sensores por canal. Nenhum canal modelado
+compartilha sensores com outro.}
+\end{table}
+
+\subsection{Configuração de treinamento}
+
+Os três canais modelados usam o mesmo algoritmo (\textit{One-Class
+SVM}), a mesma janela de dados e o mesmo procedimento de calibração
+por AutoML (busca de limiar de anomalia e debounce por grade,
+validação fora da amostra). O que muda entre eles é apenas o escopo
+de sensores e, em alguns casos, quais portões de produção fazem
+sentido fisicamente para aquele mecanismo.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Parâmetro} & \textbf{Temperatura} & \textbf{Vibração} & \textbf{Óleo} \\
+\midrule
+Modelo & OCSVM & OCSVM & OCSVM \\
+$\nu$ (nu) & 0,05 & 0,05 & 0,05 \\
+$\gamma$ (gamma) & scale & scale & scale \\
+Máx. amostras de treino & 50.000 & 50.000 & 50.000 \\
+Grade de percentil (limiar) & 95 -- 99,9 & 69 -- 99,9 & 69 -- 99,9 \\
+Grade de debounce (min) & 1, 4, 12 & 1, 4, 12 & 1, 4, 12 \\
+Janela de dados & \multicolumn{3}{c}{01/07/2024 -- 20/04/2026} \\
+Split fora-da-amostra & \multicolumn{3}{c}{a partir de 01/07/2025} \\
+\midrule
+Filtro de duração mínima & 4,5 min & 4,5 min & 4,5 min \\
+Veto de sensor congelado & 30 min & 30 min & 30 min \\
+Portão de degrau (T5\_AVG\_A) & sim & sim & não \\
+Portão de rampa de carga (T5\_AVG\_A) & sim & sim & não \\
+Portão de volatilidade & não & não & não \\
+\bottomrule
+\end{tabular}
+\caption{Configuração de treinamento por canal. A grade de percentil
+de temperatura é mais restrita porque o sinal já vive em percentis
+altos; vibração e óleo usam uma grade ampliada (desde p69) para não
+descartar precursores fracos que vivem em percentis mais baixos.}
+\end{table}
+
+O canal de alarme de processo não tem parâmetro treinado: é uma
+verificação direta de proximidade temporal (``houve um alarme de uma
+das 5 tags catalogadas nas últimas 24h?''), contra o catálogo
+\texttt{alarmes\_selecionados\_turbina\_a.csv}, tags
+\texttt{PI\_6240319\_AL}, \texttt{PAL\_6240315},
+\texttt{PDAL\_6240302}, \texttt{TC382\_05\_A}, \texttt{PAH\_6240319}.
+
+\subsection{Resultado do treinamento (calibração por AutoML)}
+
+Para cada canal, a etapa de AutoML varre a grade de percentil de
+limiar e debounce, escolhe a combinação com melhor pontuação composta
+(taxa de detecção contra alarmes de referência, penalizada por falso
+alarme) e valida fora da amostra.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Métrica de calibração} & \textbf{Temperatura} & \textbf{Vibração} & \textbf{Óleo} \\
+\midrule
+Limiar escolhido (percentil) & p97,5 & p95,0 & p99,9 \\
+Valor do limiar (erro OCSVM) & 10,50 & 0,176 & 29,67 \\
+Debounce escolhido & 1 min & 4 min & 12 min \\
+Nº de combinações testadas & 15 & 27 & 27 \\
+Taxa de detecção (val. interna) & 92,5\% & 87,5\% & 100\% \\
+Taxa de alarme em período normal & 0,68\% & 10,06\% & 0,27\% \\
+Pontos normais usados no ajuste & 386.492 & 386.492 & 574.951 \\
+\bottomrule
+\end{tabular}
+\caption{Resultado da calibração AutoML por canal, retreino de
+03/09/2026. Essas métricas são internas ao próprio canal (contra seus
+alarmes de referência), antes da votação final -- não confundir com
+o resultado da régua rigorosa apresentado na Seção~\ref{sec:resultado}.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{treino_temperatura.png}
+\caption{Canal 1 (temperatura) -- série com anomalias marcadas ao
+final do treinamento e calibração.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{treino_vibracao.png}
+\caption{Canal 2 (vibração) -- série com anomalias marcadas ao final
+do treinamento e calibração.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{treino_oleo.png}
+\caption{Canal 3 (óleo) -- série com anomalias marcadas ao final do
+treinamento e calibração.}
+\end{figure}
+
+\section{O que é feito depois do treinamento}
+
+O modelo treinado de cada canal produz um \textbf{score contínuo} de
+anomalia (erro de reconstrução/distância à fronteira do OCSVM).
+Esse score passa por uma sequência de etapas antes de virar o
+``voto'' binário do canal:
+
+\begin{enumerate}
+  \item \textbf{Limiar calibrado}: o score é comparado ao limiar
+    escolhido pelo AutoML (Tabela acima) -- acima do limiar por pelo
+    menos o tempo de debounce, o ponto é candidato a anomalia.
+  \item \textbf{Portões de produção}: cada candidato passa por filtro
+    de duração mínima (4,5 min), veto de sensor congelado, e, quando
+    aplicável ao mecanismo (temperatura e vibração), portão de
+    degrau e de rampa de carga -- isso suprime falsos alarmes
+    causados por transientes operacionais normais (partida, parada,
+    mudança de carga), não por anomalia real.
+  \item \textbf{Canal binário}: o que sobra depois dos portões é o
+    canal binário (0/1) daquele mecanismo -- é isso que entra na
+    votação.
+  \item \textbf{Votação}: os 4 canais binários (3 modelados + 1
+    estatístico) são somados ponto a ponto; a decisão bruta é
+    ``ativa'' quando \textbf{pelo menos 2 dos 4} concordam no mesmo
+    instante.
+  \item \textbf{Refratário}: uma vez que a decisão dispara, novas
+    ativações do mesmo evento são suprimidas por 48h -- isso evita
+    que um único evento físico prolongado gere múltiplos alarmes
+    repetidos.
+\end{enumerate}
+
+A Figura~\ref{fig:passoapasso} ilustra essa sequência sobre uma
+janela real (o TRIP de 04/11/2025): no Passo 1 cada canal acende de
+forma independente e em instantes diferentes; no Passo 2 a soma de
+votos cruza o limiar de 2 pouco antes do TRIP; no Passo 3 a decisão
+final dispara uma única vez (verde) e fica suprimida pelo refratário
+até o TRIP acontecer (linha roxa).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{passo_a_passo_decisao.png}
+\caption{Passo a passo da camada de decisão pós-treino, sobre uma
+janela real de TRIP.}
+\label{fig:passoapasso}
+\end{figure}
+
+\section{Resultado final}
+\label{sec:resultado}
+
+O resultado abaixo é do \textbf{retreino completo} dos 3 modelos
+(03/09/2026), avaliado contra a régua rigorosa: episódios com
+fusão de intervalo menor que 2h; detecção = alarme em até 48h antes
+de um TRIP catalogado; inconclusivo = seguido de parada real
+($\geq$2h) em até 48h; senão, falso positivo. O denominador de
+FP/mês é o tempo efetivamente monitorado (estado operacional
+``ligado''), não o intervalo de calendário.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Métrica} & \textbf{Valor} \\
+\midrule
+TRIPs catalogados no período & 8 \\
+TRIPs detectados & \textbf{8 (100\%)} \\
+Falsos positivos por mês & 6,59 \\
+Episódios inconclusivos & 42 \\
+Antecedência média & 22,2 h \\
+\bottomrule
+\end{tabular}
+\caption{Resultado final da pipeline operacional, régua rigorosa.}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{TRIP} & \textbf{1ª detecção} & \textbf{Antecedência} \\
+\midrule
+27/02/2025 08:38 & 25/02/2025 22:28 & 34,2 h \\
+17/03/2025 18:16 & 16/03/2025 05:13 & 37,1 h \\
+07/04/2025 21:18 & 06/04/2025 16:52 & 28,4 h \\
+11/04/2025 17:02 & 10/04/2025 21:04 & 20,0 h \\
+29/04/2025 03:04 & 28/04/2025 19:11 & 7,9 h \\
+04/11/2025 06:22 & 03/11/2025 16:05 & 14,3 h \\
+09/12/2025 08:36 & 08/12/2025 01:42 & 30,9 h \\
+26/02/2026 15:34 & 26/02/2026 11:01 & 4,6 h \\
+\bottomrule
+\end{tabular}
+\caption{Antecedência real por TRIP, pipeline final (média 22,2h).}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{resultado_operacional_serie.png}
+\caption{Série bruta (TI\_0305, TC382\_03\_A, T5\_AVG\_A, PI\_0308)
+com a decisão final da pipeline: linhas verticais roxas = TRIPs
+reais; pontos verdes = acerto (8 de 8); pontos pretos = falso
+positivo remanescente; faixas cinza = turbina desligada.}
+\end{figure}
+
+\section{Reprodução operacional}
+
+Todo o resultado deste documento é reproduzível a partir do
+repositório, sem passos manuais além de submeter os jobs de
+treinamento:
+
+\begin{itemize}
+  \item \textbf{Configs de treino}:
+    \texttt{configs/calibracao\_v4\_eq/test\_grupo\_exp33\_mancal\_temperatura\_isolada.json},
+    \texttt{test\_grupo\_exp34\_mancal\_vibracao\_isolada.json},
+    \texttt{test\_grupo\_exp38\_oleo\_pressao\_isolada.json}.
+  \item \textbf{Treino}: \texttt{PYTHONPATH=. python src/main.py --config <config>.json}
+    para cada um dos 3 canais (envia para a fila remota do ClearML).
+  \item \textbf{Decisão final}: \texttt{PYTHONPATH=. python
+    scripts/pipeline\_unificada\_final.py} -- baixa os 3
+    \texttt{point\_anomalies\_all.csv} já treinados, monta o canal de
+    alarme, aplica votação e refratário, e escreve o resultado final
+    em \texttt{runs\_pipeline\_unificada\_final/}.
+  \item \textbf{Retreino completo confirmado em 03/09/2026}: os três
+    modelos foram retreinados do zero (novas tasks no ClearML) e o
+    resultado final foi idêntico ao deste documento -- 8/8 TRIPs,
+    6,59 FP/mês, mesmos instantes de detecção -- confirmando que a
+    pipeline é reprodutível ponta a ponta.
+\end{itemize}
+
+\end{document}
