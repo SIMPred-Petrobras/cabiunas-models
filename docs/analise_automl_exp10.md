@@ -2337,3 +2337,40 @@ Reduzir mais exigiria (a) um 5º canal com informação genuinamente
 nova, ou (b) auditoria individual dos 42 episódios restantes (mesmo
 método do Apêndice A) para separar ruído real de precursor não
 catalogado — não mais ajuste de parâmetro.
+
+### Auditoria individual dos 42 FP pós-filtro (2026-09-04)
+
+Mesmo método do Apêndice A (z-score fresco do episódio contra
+baseline de 2h antes, incluindo agora também pressão de óleo no
+conjunto de sensores checados), aplicado aos 42 FP que restam depois
+do filtro de 45min.
+
+**Bug metodológico pego antes de reportar**: a primeira passada usou
+a *média* do episódio inteiro contra o baseline. Como esses episódios
+têm duração real (48min a 9,65h, ao contrário dos 24 isolados
+anteriores que eram quase pontuais), a média dilui um pico breve real
+dentro de uma janela longa — resultado inicial (errado): só 21,4%
+confirmados. Corrigido para usar o **pico máximo pontual** dentro da
+janela (`checkup_42_fp_pos_filtro.py`), que é o critério correto:
+
+| Classificação | % (n=42) |
+|---|---|
+| Confirmado real (forte, \|z\|≥10 e ≥2 sensores) | 26,2% (11) |
+| Confirmado real (moderado, \|z\|≥3 e ≥2 sensores) | 35,7% (15) |
+| Borderline (só 1 sensor) | 28,6% (12) |
+| Fraco / sem explicação | 9,5% (4) |
+
+**61,9% confirmados reais** (forte+moderado), consistente com os 79%
+encontrados nos 24 isolados do Apêndice A. Só 4 episódios não mostram
+nenhuma explicação física em nenhum sensor checado: `2025-01-14_17h57`,
+`2025-01-24_12h42`, `2025-02-21_03h27`, `2026-03-09_12h07` -- únicos
+candidatos honestos a ruído puro.
+
+**Implicação**: os 42 FP remanescentes não são majoritariamente
+ruído — são excursões físicas genuínas que não escalaram a TRIP
+catalogado. Suprimir mais isso não seria "limpar ruído", seria
+apagar sinal real que o operador provavelmente quer ver. Reforça que
+2,88 FP/mês é um teto honesto, não apenas técnico.
+
+**Implementação**: `dataset_francisco_lara/checkup_42_fp_pos_filtro.py`,
+resultado em `checkup_42_fp_pos_filtro.csv`.
