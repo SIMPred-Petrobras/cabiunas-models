@@ -2236,3 +2236,24 @@ operacional (`relatorio_pipeline_operacional/`) atualizado com a
 nova seção "Estudo dos falsos positivos e filtro de duração mínima",
 diagrama de arquitetura, figura passo-a-passo (4 passos agora) e
 tabelas de resultado.
+
+### Testado: replicar o filtro de duração por canal individual (rejeitado, redundante)
+
+Antes de decidir retreinar os 3 modelos com um `MIN_DURATION_FILTER_MINUTES`
+maior por canal (hoje 4,5min cada), testado offline (sem retreino,
+aplicando `apply_min_duration_filter` extra em cima do `is_anom_point`
+já calculado de cada canal):
+
+- Filtro extra por canal (0 a 30min) **+** filtro combinado de 45min: FP/mês
+  travado em 2,88 — nenhuma mudança.
+- Só o filtro por canal, sem o combinado: resultado quase idêntico ao
+  do filtro combinado sozinho (45min → 2,95 FP/mês; 60min → quebra
+  6/8, mesmo ponto de ruptura).
+
+**Conclusão**: os dois filtros capturam o mesmo mecanismo de ruído
+(coincidência de curta duração) — não são efeitos aditivos. Filtrar
+por canal individual não reduz FP além do que o filtro na votação
+combinada já reduz. **Decisão: não retreinar os 3 modelos com
+`MIN_DURATION_FILTER_MINUTES` maior** — custo de retreino sem ganho
+mensurável. O teto de ~2,88 FP/mês é o limite dessa alavanca
+(duração); reduzir mais exigiria um mecanismo diferente.
