@@ -2374,3 +2374,39 @@ apagar sinal real que o operador provavelmente quer ver. Reforça que
 
 **Implementação**: `dataset_francisco_lara/checkup_42_fp_pos_filtro.py`,
 resultado em `checkup_42_fp_pos_filtro.csv`.
+
+### Segunda linha de evidência: corroboração por outros alarmes de processo (2026-09-04)
+
+Além do sinal físico (z-score), verificado se os 42 FP coincidem com
+**outros** alarmes de processo já catalogados (os 47 tags do
+catálogo, excluindo os 5 já usados no canal 4, para não ser
+circular), janela ±2h -- **com controle negativo obrigatório** (mesma
+disciplina já aplicada nesta investigação para o enriquecimento por
+catálogo, ver seção "Controle negativo do enriquecimento por
+catálogo").
+
+| | Taxa |
+|---|---|
+| 42 FP (pós-filtro 45min) | **23,8% (10 de 42)** |
+| Baseline aleatório (5000 amostras, mesmo catálogo, mesma janela) | 3,44% |
+| **Enriquecimento** | **6,9x** |
+
+Um enriquecimento de 6,9x é forte (bem acima do 1,0x que indicaria
+"catálogo denso demais para discriminar", e mais alto até que o
+1,36x visto no controle negativo original de ±24h) -- não é
+artefato. Os 10 episódios explicados se concentram em tags de
+temperatura de mancal (`TC382_03_A`: 5, `T5_AVG_A`: 2) e alguns
+isolados de óleo/vibração, o que faz sentido físico: o alarme de
+processo do próprio sensor relacionado dispara perto da mesma janela
+que o modelo já sinalizou.
+
+**Conclusão combinada**: das duas linhas de evidência independentes
+-- 90,5% com sinal físico próprio (z-score) e 23,8% corroborados por
+outro alarme do processo -- fica mais difícil defender que os FP
+remanescentes sejam ruído do modelo. São, na maioria, eventos físicos
+reais que o próprio sistema de alarmes da planta às vezes também
+registra, só que não escalaram para um TRIP catalogado.
+
+**Implementação**: `dataset_francisco_lara/checa_alarmes_proximos_42fp.py`
++ `figura_alarmes_proximos_42fp.py`, resultado em
+`alarmes_proximos_42fp.csv`/`.png`.
