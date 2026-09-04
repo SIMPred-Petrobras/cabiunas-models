@@ -300,6 +300,47 @@ resolve o mesmo tipo de ruído sem esse efeito colateral, porque ataca
 a característica real do ruído (duração) em vez de uma
 correlação temporal aproximada (proximidade a um religamento).
 
+\subsection{Efeito visual do filtro: mecanismo e antes/depois na série completa}
+
+A Figura~\ref{fig:mecanismo} mostra o mecanismo em um exemplo real e
+isolado (14/08/2025): temperatura e vibração cruzam seus limiares ao
+mesmo tempo por menos de 1 minuto -- sem o filtro, esse instante
+seria um alarme (curva vermelha); com o filtro de 45min, a
+coincidência nunca chega a se sustentar e o resultado fica em zero
+(curva verde). Não há dados de outros canais nem eventos próximos
+nesta janela -- é uma coincidência pontual isolada, exatamente o tipo
+de ruído que o filtro foi desenhado para eliminar.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{mecanismo_filtro_duracao.png}
+\caption{Mecanismo do filtro de duração mínima em um exemplo real e
+isolado: a votação bruta (vermelho) dispara por menos de 1 minuto; o
+filtro de 45min descarta essa coincidência (verde, permanece em
+zero).}
+\label{fig:mecanismo}
+\end{figure}
+
+A Figura~\ref{fig:antesdepois} mostra o mesmo efeito sobre a série
+inteira (não apenas um exemplo): em laranja, todos os pontos que
+seriam classificados como anomalia \emph{antes} do filtro e que o
+filtro de 45min elimina; em preto, os que sobrevivem (falso positivo
+remanescente); em verde, os 8 acertos de TRIP; em roxo, as ocorrências
+reais de TRIP. O volume de laranja domina visualmente sobre o preto
+em quase todos os episódios -- é a mesma redução de 56\% (6,59 para
+2,88 FP/mês) vista ponto a ponto ao longo dos $\sim$22 meses de dados.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{serie_antes_depois_filtro.png}
+\caption{Série bruta completa (TI\_0305, TC382\_03\_A, T5\_AVG\_A,
+PI\_0308) com os pontos que o filtro de 45min elimina (laranja, n=29.250
+pontos) sobrepostos aos que permanecem como falso positivo (preto) e
+aos 8 acertos de TRIP (verde). As linhas verticais roxas marcam as
+ocorrências reais de TRIP.}
+\label{fig:antesdepois}
+\end{figure}
+
 \subsection{Teto prático confirmado}
 
 Antes de fechar esta configuração como definitiva, mais três
