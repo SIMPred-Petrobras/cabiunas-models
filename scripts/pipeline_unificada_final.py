@@ -7,13 +7,18 @@ Canais:
   3. pressao de oleo isolada       (EXP38, OCSVM)   -- ja gateado
   4. alarme de processo, SEM modelo (proximidade temporal a catalogo)
 
-Combinacao: votacao >=N canais + refratario de 48h. Nenhum modelo novo
-e treinado aqui -- reusa os `is_anom_point` de EXP33/34/38 (ja com
-todos os portoes de producao: filtro de duracao minima, rampa de
-carga, degrau, veto de sensor congelado) e adiciona o canal 100%
-estatistico de alarme. A camada de decisao final (voto + refratario)
+Combinacao: votacao >=N canais + filtro de duracao minima (45min) +
+refratario de 48h. Nenhum modelo novo e treinado aqui -- reusa os
+`is_anom_point` de EXP33/34/38 (ja com todos os portoes de producao:
+filtro de duracao minima por canal, rampa de carga, degrau, veto de
+sensor congelado) e adiciona o canal 100% estatistico de alarme. A
+camada de decisao final (voto + filtro de duracao + refratario)
 tambem nao e um modelo -- e uma camada de regras cujos parametros sao
-escolhidos por varredura contra a regua rigorosa (nao treinados).
+escolhidos por varredura contra a regua rigorosa (nao treinados). O
+filtro de duracao na votacao combinada (novo em 2026-09-04) elimina
+FP residuais de coincidencia pontual entre canais ja individualmente
+filtrados (ex.: temperatura+alarme concordando por so 30s) -- reduz
+FP/mes de 6.59 para 2.88 mantendo 8/8.
 
 Roda a varredura de MIN_VOTES em {2, 3} (de 4 canais) para decidir a
 config final -- ver print "RESUMO DA VARREDURA" ao final.
@@ -33,6 +38,7 @@ from clearml import Task, Dataset
 from src.cnn1d_ae.scoring import (
     combine_channels_vote,
     apply_refractory,
+    apply_min_duration_filter,
     group_alerts_into_episodes,
     classify_episodes_regua,
     compute_regua_metrics,
@@ -61,6 +67,18 @@ ALARM_WINDOW_HOURS = 24.0
 # --- camada de decisao (regras, sem treino) ---
 REFRACTORY_HOURS = 48.0
 MIN_VOTES_GRID = [2, 3]
+
+# Filtro de duracao minima aplicado na VOTACAO combinada (antes do
+# refratario) -- reduz FP residuais de coincidencia pontual entre
+# canais ja filtrados individualmente (ex.: temperatura+alarme por
+# 30s). Verificado por varredura (2026-09-04, ver
+# docs/analise_automl_exp10.md): plato seguro e 8/8 de 16 a 52min
+# (14-15min tem um caso de fronteira instavel -- o TRIP de 11/04/2025,
+# que ja e sabido disparar a 0,9h de um religamento com so 2 votos --
+# mas volta a 8/8 logo acima); quebra permanente (perde >=1 TRIP) so a
+# partir de 55min. 45min fica com margem folgada dos dois lados e
+# reduz FP/mes de 6.59 para 2.88 (-56%).
+MIN_VOTE_DURATION_MINUTES = 45.0
 
 FALHAS_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dataset_francisco_lara", "alarmes_francisco_falhas.csv")
 
@@ -134,7 +152,9 @@ def main() -> None:
     resultados = {}
     for min_votes in MIN_VOTES_GRID:
         voto = combine_channels_vote(canais, min_votes=min_votes)
-        decisao_final = apply_refractory(voto, refractory_minutes=REFRACTORY_HOURS * 60.0)
+        df_voto = pd.DataFrame({"is_anom_point": voto.astype(int)}, index=idx)
+        voto_filtrado = apply_min_duration_filter(df_voto, MIN_VOTE_DURATION_MINUTES)["is_anom_point"].astype(bool)
+        decisao_final = apply_refractory(voto_filtrado, refractory_minutes=REFRACTORY_HOURS * 60.0)
         cls, metrics = evaluate(decisao_final, op_state, ft)
         resultados[min_votes] = (decisao_final, cls, metrics)
         print(f"min_votes={min_votes}: falhas={metrics['falhas_detectadas']}/{metrics['n_falhas_catalogadas']}  "
@@ -182,6 +202,7 @@ def main() -> None:
                 "alarm_window_hours": ALARM_WINDOW_HOURS,
                 "min_votes": min_votes_final,
                 "n_canais": 4,
+                "min_vote_duration_minutes": MIN_VOTE_DURATION_MINUTES,
                 "refractory_hours": REFRACTORY_HOURS,
                 "temp_task_id": TID_TEMP,
                 "vib_task_id": TID_VIB,

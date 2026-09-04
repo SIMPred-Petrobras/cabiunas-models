@@ -2174,3 +2174,65 @@ genuíno coincidindo com o religamento, não artefato de partida.
 
 **Decisão**: não implementar. Configuração mantida como
 `scripts/pipeline_unificada_final.py` (8/8, 6,59 FP/mês).
+
+## Estudo dos 96 FP e filtro de duração mínima na votação (2026-09-04)
+
+Em vez de suprimir por proximidade temporal (rejeitado acima), os 96
+FP da config anterior (votação ≥2 + refratário, sem filtro de
+duração) foram caracterizados por combinação de canais que os
+disparou:
+
+| Combinação | Nº episódios | Duração mediana |
+|---|---|---|
+| Temperatura+Alarme | 27 | ~30s |
+| Vibração+Alarme | 26 | ~12min |
+| Temperatura+Vibração | 22 | ~45s |
+| Temp+Vib+Alarme | 12 | ~1,4h |
+| Óleo+Alarme | 6 | ~45min |
+| Temp+Vib+Óleo+Alarme | 2 | ~1,9h |
+| Vib+Óleo+Alarme | 1 | 1,2h |
+
+**49 de 96 FP (51%) têm duração mediana abaixo de 1 minuto** —
+coincidência pontual entre canais já individualmente filtrados
+(cada um já tem seu próprio filtro de duração mínima de 4,5min), não
+sinal sustentado. Isso sugeriu aplicar `apply_min_duration_filter`
+(já existente em `scoring.py`, usado por canal) na **votação
+combinada**, antes do refratário — nunca tinha sido feito nesse
+nível.
+
+Varredura de duração mínima (antes de escolher qualquer valor):
+
+| Duração mín. | TRIPs | FP/mês |
+|---|---|---|
+| 0min (sem filtro) | 8/8 | 6,59 |
+| 12min | 8/8 | 4,67 |
+| 14min | **7/8** | 4,33 |
+| 16 a 52min | **8/8** (platô verificado ponto a ponto) | 4,19 → 2,68 |
+| 55min | 7/8 | 2,54 |
+| 58-60min | 5/8 | 2,40-2,47 |
+
+A queda pontual em 14-15min é o TRIP de 11/04/2025 — já sabido ser um
+caso de fronteira (detectado com só 2 votos, a 0,9h de um
+religamento). Volta a 8/8 de 16 a 52min. A quebra permanente começa em
+55min (perde o TRIP de 17/03/2025) e piora até 5/8 aos 60min.
+
+**Config escolhida: 45min** (margem de 10min da quebra em 55min, bem
+longe da zona instável de 14-15min). Resultado final:
+
+| Métrica | Antes (EXP37/pipeline s/ filtro) | Com filtro 45min |
+|---|---|---|
+| TRIPs | 8/8 | 8/8 |
+| FP/mês | 6,59 | **2,88 (-56%)** |
+| Episódios inconclusivos | 42 | 25 |
+| Antecedência média | 22,2h | 23,8h |
+
+Nenhum TRIP perdido, FP/mês mais que a metade do valor anterior, com
+margem de segurança **verificada ponto a ponto**, não extrapolada.
+
+**Implementação**: `scripts/pipeline_unificada_final.py`
+(`MIN_VOTE_DURATION_MINUTES = 45.0`, aplicado a `voto` via
+`apply_min_duration_filter` antes de `apply_refractory`). Relatório
+operacional (`relatorio_pipeline_operacional/`) atualizado com a
+nova seção "Estudo dos falsos positivos e filtro de duração mínima",
+diagrama de arquitetura, figura passo-a-passo (4 passos agora) e
+tabelas de resultado.

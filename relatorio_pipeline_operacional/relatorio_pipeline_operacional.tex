@@ -25,9 +25,12 @@ pipeline final de detecção de anomalias adotada como configuração de
 produção: como os três modelos especializados são montados e
 configurados, como o treinamento é conduzido, o que acontece depois
 do treinamento (portões de produção, canalização binária, votação,
-refratário) e o resultado final sobre o histórico de TRIPs
-disponível. Todas as figuras e tabelas foram geradas nesta rodada, a
-partir do retreino completo dos três modelos em 03/09/2026.
+filtro de duração mínima, refratário) e o resultado final sobre o
+histórico de TRIPs disponível. Todas as figuras e tabelas foram
+geradas a partir do retreino completo dos três modelos (03/09/2026) e
+do estudo dos falsos positivos residuais (04/09/2026), que resultou
+na adição do filtro de duração mínima de 45 minutos na votação
+combinada.
 \end{abstract}
 
 \tableofcontents
@@ -196,6 +199,12 @@ Esse score passa por uma sequência de etapas antes de virar o
     estatístico) são somados ponto a ponto; a decisão bruta é
     ``ativa'' quando \textbf{pelo menos 2 dos 4} concordam no mesmo
     instante.
+  \item \textbf{Filtro de duração mínima (45 min)}: aplicado sobre a
+    votação combinada -- descarta episódios de concordância
+    \emph{pontual} entre canais (coincidências de segundos a poucos
+    minutos) que não representam um evento físico sustentado. Ver
+    justificativa e varredura de segurança na
+    Seção~\ref{sec:estudo-fp}.
   \item \textbf{Refratário}: uma vez que a decisão dispara, novas
     ativações do mesmo evento são suprimidas por 48h -- isso evita
     que um único evento físico prolongado gere múltiplos alarmes
@@ -205,9 +214,10 @@ Esse score passa por uma sequência de etapas antes de virar o
 A Figura~\ref{fig:passoapasso} ilustra essa sequência sobre uma
 janela real (o TRIP de 04/11/2025): no Passo 1 cada canal acende de
 forma independente e em instantes diferentes; no Passo 2 a soma de
-votos cruza o limiar de 2 pouco antes do TRIP; no Passo 3 a decisão
-final dispara uma única vez (verde) e fica suprimida pelo refratário
-até o TRIP acontecer (linha roxa).
+votos cruza o limiar de 2 pouco antes do TRIP; no Passo 3 o filtro de
+duração mínima mantém apenas o trecho sustentado da votação; no Passo
+4 a decisão final dispara uma única vez (verde) e fica suprimida pelo
+refratário até o TRIP acontecer (linha roxa).
 
 \begin{figure}[H]
 \centering
@@ -216,6 +226,79 @@ até o TRIP acontecer (linha roxa).
 janela real de TRIP.}
 \label{fig:passoapasso}
 \end{figure}
+
+\section{Estudo dos falsos positivos e filtro de duração mínima}
+\label{sec:estudo-fp}
+
+Antes de aceitar qualquer mudança para reduzir falso positivo, os 96
+episódios de FP da configuração anterior (votação ≥2 + refratário,
+sem filtro de duração) foram caracterizados pela combinação de canais
+que os disparou:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Combinação de canais} & \textbf{Nº de episódios} & \textbf{Duração mediana} \\
+\midrule
+Temperatura + Alarme & 27 & $\sim$30s \\
+Vibração + Alarme & 26 & $\sim$12min \\
+Temperatura + Vibração & 22 & $\sim$45s \\
+Temperatura + Vibração + Alarme & 12 & $\sim$1,4h \\
+Óleo + Alarme & 6 & $\sim$45min \\
+Temp.+Vib.+Óleo+Alarme & 2 & $\sim$1,9h \\
+Vibração + Óleo + Alarme & 1 & 1,2h \\
+\bottomrule
+\end{tabular}
+\caption{Caracterização dos 96 FP por combinação de canais (config.
+sem filtro de duração). Mais da metade (49 de 96) tem duração
+mediana abaixo de 1 minuto -- coincidência pontual entre canais já
+individualmente filtrados, não sinal sustentado.}
+\end{table}
+
+Isso motivou testar um filtro de duração mínima na votação combinada
+(análogo ao já usado em cada canal individualmente), varrendo o
+limiar de duração contra a régua rigorosa \textbf{antes} de adotar
+qualquer valor:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{cccl}
+\toprule
+\textbf{Duração mín.} & \textbf{TRIPs} & \textbf{FP/mês} & \textbf{Observação} \\
+\midrule
+0 min (sem filtro) & 8/8 & 6,59 & configuração anterior \\
+14--15 min & 7/8 & 4,3 & zona de fronteira instável (ver texto) \\
+16 a 52 min & \textbf{8/8} & 4,19 a 2,68 & \textbf{platô seguro, verificado ponto a ponto} \\
+55 min & 7/8 & 2,54 & quebra permanente começa aqui \\
+58--60 min & 5/8 & 2,4--2,5 & 3 TRIPs perdidos \\
+\midrule
+\textbf{45 min (escolhido)} & \textbf{8/8} & \textbf{2,88} & margem de 10min do início da quebra \\
+\bottomrule
+\end{tabular}
+\caption{Varredura de duração mínima na votação combinada, 04/09/2026.
+A zona instável em 14--15min corresponde ao TRIP de 11/04/2025, que já
+era conhecido como caso de fronteira (detectado com apenas 2 votos, a
+0,9h de um religamento da máquina) -- volta a 8/8 logo acima, e o
+valor final (45min) fica com folga de ambos os lados.}
+\end{table}
+
+\textbf{Decisão: filtro de duração mínima de 45 minutos}, aplicado à
+votação combinada antes do refratário. Reduz FP/mês de 6,59 para
+\textbf{2,88 (-56\%)} e episódios inconclusivos de 42 para 25, sem
+perder nenhum dos 8 TRIPs -- com margem de segurança verificada, não
+apenas extrapolada, dos dois lados do limiar escolhido.
+
+Uma ideia alternativa avaliada e \textbf{rejeitada} nesta mesma
+investigação foi suprimir alarmes nas primeiras 6h após a máquina
+religar (prática usada por outros pesquisadores no mesmo contexto):
+20 dos 96 FP caíam nessa janela, mas 2 dos 8 TRIPs reais também
+disparavam dentro dela (a 0h e a 0,9h de um religamento) -- uma
+supressão cega os teria eliminado junto. O filtro de duração mínima
+resolve o mesmo tipo de ruído sem esse efeito colateral, porque ataca
+a característica real do ruído (duração) em vez de uma
+correlação temporal aproximada (proximidade a um religamento).
 
 \section{Resultado final}
 \label{sec:resultado}
@@ -236,12 +319,13 @@ FP/mês é o tempo efetivamente monitorado (estado operacional
 \midrule
 TRIPs catalogados no período & 8 \\
 TRIPs detectados & \textbf{8 (100\%)} \\
-Falsos positivos por mês & 6,59 \\
-Episódios inconclusivos & 42 \\
-Antecedência média & 22,2 h \\
+Falsos positivos por mês & \textbf{2,88} \\
+Episódios inconclusivos & 25 \\
+Antecedência média & 23,8 h \\
 \bottomrule
 \end{tabular}
-\caption{Resultado final da pipeline operacional, régua rigorosa.}
+\caption{Resultado final da pipeline operacional, régua rigorosa, com
+o filtro de duração mínima de 45min (Seção~\ref{sec:estudo-fp}).}
 \end{table}
 
 \begin{table}[H]
@@ -250,26 +334,28 @@ Antecedência média & 22,2 h \\
 \toprule
 \textbf{TRIP} & \textbf{1ª detecção} & \textbf{Antecedência} \\
 \midrule
-27/02/2025 08:38 & 25/02/2025 22:28 & 34,2 h \\
-17/03/2025 18:16 & 16/03/2025 05:13 & 37,1 h \\
-07/04/2025 21:18 & 06/04/2025 16:52 & 28,4 h \\
-11/04/2025 17:02 & 10/04/2025 21:04 & 20,0 h \\
-29/04/2025 03:04 & 28/04/2025 19:11 & 7,9 h \\
-04/11/2025 06:22 & 03/11/2025 16:05 & 14,3 h \\
-09/12/2025 08:36 & 08/12/2025 01:42 & 30,9 h \\
-26/02/2026 15:34 & 26/02/2026 11:01 & 4,6 h \\
+27/02/2025 08:38 & 25/02/2025 22:51 & 33,8 h \\
+17/03/2025 18:16 & 16/03/2025 11:04 & 31,2 h \\
+07/04/2025 21:18 & 06/04/2025 02:05 & 43,2 h \\
+11/04/2025 17:02 & 10/04/2025 21:15 & 19,8 h \\
+29/04/2025 03:04 & 27/04/2025 14:22 & 36,7 h \\
+04/11/2025 06:22 & 03/11/2025 16:40 & 13,7 h \\
+09/12/2025 08:36 & 09/12/2025 00:15 & 8,4 h \\
+26/02/2026 15:34 & 26/02/2026 11:48 & 3,8 h \\
 \bottomrule
 \end{tabular}
-\caption{Antecedência real por TRIP, pipeline final (média 22,2h).}
+\caption{Antecedência real por TRIP, pipeline final com filtro de
+duração mínima (média 23,8h).}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{resultado_operacional_serie.png}
 \caption{Série bruta (TI\_0305, TC382\_03\_A, T5\_AVG\_A, PI\_0308)
-com a decisão final da pipeline: linhas verticais roxas = TRIPs
-reais; pontos verdes = acerto (8 de 8); pontos pretos = falso
-positivo remanescente; faixas cinza = turbina desligada.}
+com a decisão final da pipeline (já com o filtro de duração mínima de
+45min): linhas verticais roxas = TRIPs reais; pontos verdes = acerto
+(8 de 8); pontos pretos = falso positivo remanescente (25, antes 42);
+faixas cinza = turbina desligada.}
 \end{figure}
 
 \section{Reprodução operacional}
@@ -292,9 +378,14 @@ treinamento:
     em \texttt{runs\_pipeline\_unificada\_final/}.
   \item \textbf{Retreino completo confirmado em 03/09/2026}: os três
     modelos foram retreinados do zero (novas tasks no ClearML) e o
-    resultado final foi idêntico ao deste documento -- 8/8 TRIPs,
-    6,59 FP/mês, mesmos instantes de detecção -- confirmando que a
-    pipeline é reprodutível ponta a ponta.
+    resultado final (antes do filtro de duração mínima) foi idêntico
+    -- 8/8 TRIPs, 6,59 FP/mês, mesmos instantes de detecção --
+    confirmando que a pipeline é reprodutível ponta a ponta.
+  \item \textbf{Filtro de duração mínima adicionado em 04/09/2026}
+    (Seção~\ref{sec:estudo-fp}): 45 minutos aplicados à votação
+    combinada, via \texttt{apply\_min\_duration\_filter} (já existente
+    em \texttt{src/cnn1d\_ae/scoring.py}, antes usado só por canal) --
+    reduz FP/mês para 2,88 mantendo 8/8.
 \end{itemize}
 
 \end{document}
