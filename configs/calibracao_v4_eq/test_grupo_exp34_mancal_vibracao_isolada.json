@@ -50,19 +50,33 @@
   ],
   "AUTOML_THRESHOLD_PERCENTILES": [
     69.0,
+    72.0,
     75.0,
+    78.0,
     80.0,
+    82.0,
     85.0,
+    87.0,
     90.0,
+    92.0,
     95.0,
+    97.0,
+    97.5,
+    98.0,
     99.0,
     99.5,
     99.9
   ],
   "AUTOML_DEBOUNCE_GRID": [
     1,
+    2,
     4,
-    12
+    6,
+    8,
+    12,
+    16,
+    20,
+    30
   ],
   "AUTOML_FP_PENALTY": 2.0,
   "AUTOML_MIN_DETECTION_RATE": 0.3,
@@ -81,7 +95,7 @@
   "AUTOML_IFOREST_CONTAMINATION": 0.05,
   "AUTOML_IFOREST_N_ESTIMATORS": 200,
   "AUTOML_OOS_SPLIT_DATE": "2025-07-01",
-  "AUTOML_SEED_SWEEP_N": 4,
+  "AUTOML_SEED_SWEEP_N": 6,
   "ENABLE_MIN_DURATION_FILTER": true,
   "MIN_DURATION_FILTER_MINUTES": 4.5,
   "EXTRA_NEAR_ALARM_TAGS": [
