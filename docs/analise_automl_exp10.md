@@ -2257,3 +2257,42 @@ combinada já reduz. **Decisão: não retreinar os 3 modelos com
 `MIN_DURATION_FILTER_MINUTES` maior** — custo de retreino sem ganho
 mensurável. O teto de ~2,88 FP/mês é o limite dessa alavanca
 (duração); reduzir mais exigiria um mecanismo diferente.
+
+### Testado e rejeitado: grade de AutoML mais fina (153 trials/canal, 2026-09-04)
+
+Ideia: ampliar a grade de percentil/debounce dos 3 canais (de 15/27/27
+para 153 combinações cada, 17 percentis × 9 debounces, seed sweep
+4→6) para ver se uma busca mais fina encontra limiar/debounce
+melhores antes de fechar a config definitiva.
+
+Resultado da calibração **individual** de cada canal:
+
+| Canal | Antes | Depois (grade fina) | Taxa de alarme normal |
+|---|---|---|---|
+| Temperatura | p97,5 / debounce 1 | igual (sem mudança) | 0,68% (igual) |
+| Vibração | p95,0 / debounce 4 | p98,0 / debounce 2 | 10,1% → **4,3%** (melhor) |
+| Óleo | p99,9 / debounce 12 | p99,9 / debounce 30 | 0,27% → **0,17%** (melhor) |
+
+Cada canal isolado melhorou. Mas ao rodar a pipeline completa (voto
+≥2 + filtro 45min + refratário) com essas novas calibrações:
+
+| Métrica | Config validada (v2) | Grade fina (v3) |
+|---|---|---|
+| TRIPs | 8/8 | **4/8** (regressão grave) |
+| FP/mês | 2,88 | 2,40 |
+
+**Lição importante**: o AutoML de cada canal otimiza uma métrica
+*local* (hit\_rate/taxa de alarme normal contra a própria referência
+de alarme daquele canal), não o resultado do *conjunto* (votação
+multi-canal contra a régua rigorosa dos 8 TRIPs). Uma calibração
+"melhor" isoladamente pode mudar o timing/sobreposição dos canais de
+um jeito que piora a votação combinada — mesmo padrão de cautela já
+documentado nesta investigação (otimismo de seleção, régua rigorosa):
+métricas por-canal não substituem avaliação do pipeline completo.
+
+**Decisão: revertido**. `scripts/pipeline_unificada_final.py` volta a
+apontar para os task ids validados (v2: `805fbf34f99f4a889dbdcca7185f20a1`,
+`7815d2cf0d07491eb1c949d555cb5de7`, `18a61687eb78412ead48c9ce31109b67`),
+confirmando 8/8 TRIPs, 2,88 FP/mês. Os configs JSON continuam com a
+grade ampliada (não há motivo para desfazer isso — mais trials não
+faz mal), mas os task ids de produção são os do treino v2, não v3.

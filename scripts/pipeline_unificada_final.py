@@ -58,6 +58,20 @@ KEY_VIB_POINT = "mancal_vibracao_isolada/csv/point_anomalies_all.csv"
 TID_OLEO = "18a61687eb78412ead48c9ce31109b67"
 KEY_OLEO_POINT = "oleo_pressao_isolada/csv/point_anomalies_all.csv"
 
+# testado e rejeitado (2026-09-04): retreino v3 com grade ampliada
+# (17x9=153 trials, seed sweep 6) mudou a calibracao de vibracao
+# (p95->p98, debounce4->2) e oleo (debounce12->30) -- cada canal
+# isolado melhorou a PROPRIA taxa de alarme normal, mas o resultado
+# da pipeline combinada (voto+filtro45min+refratario) caiu de 8/8
+# para 4/8 TRIPs. Licao: o AutoML por canal otimiza uma metrica local
+# (hit_rate/normal_alert_rate contra a propria referencia de alarme),
+# nao o resultado do conjunto contra a regua rigorosa -- uma
+# calibracao "melhor" isolada pode ser pior para o ensemble. Ver
+# docs/analise_automl_exp10.md. Mantidos os task ids validados (v2):
+# TID_TEMP = "c145a98161e243d48c52dd09da73cc53"  (rejeitado)
+# TID_VIB = "be83a26e99c4427cb37ef5408942f0af"   (rejeitado)
+# TID_OLEO = "128938ff0c3741f99c11044aa3f4d080"  (rejeitado)
+
 # --- canal 4: alarme de processo, SEM modelo ---
 ALARM_CATALOG_DATASET_ID = "a97ba56ba14840fbb1125c2a82f883c9"
 ALARM_CATALOG_FILE = "alarmes_selecionados_turbina_a.csv"
@@ -166,7 +180,9 @@ def main() -> None:
         min_votes_final = min(candidatos, key=lambda x: x[1]["falso_positivo_por_mes"])[0]
     else:
         min_votes_final = max(resultados.keys(), key=lambda mv: resultados[mv][2]["falhas_detectadas"])
-    print(f"\n>>> config final escolhida: min_votes={min_votes_final} de 4 canais (8/8 com menor FP/mes)")
+    falhas_final = resultados[min_votes_final][2]["falhas_detectadas"]
+    print(f"\n>>> config final escolhida: min_votes={min_votes_final} de 4 canais "
+          f"({falhas_final}/8, menor FP/mes entre os candidatos com mais falhas)")
 
     decisao_final, cls, metrics = resultados[min_votes_final]
     print("\n=== RESULTADO FINAL (pipeline unificada) ===")
