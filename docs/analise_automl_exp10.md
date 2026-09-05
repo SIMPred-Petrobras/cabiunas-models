@@ -2440,3 +2440,32 @@ completa antes de ser aceita -- nunca só pela métrica isolada.
 aos task ids validados (OCSVM nos 3 canais): `805fbf34f99f4a889dbdcca7185f20a1`,
 `7815d2cf0d07491eb1c949d555cb5de7`, `18a61687eb78412ead48c9ce31109b67`
 -- confirmado 8/8 TRIPs, 2,88 FP/mês.
+
+### Testado e rejeitado: "ensemble por sinal" (melhor modelo por canal) -- matriz completa (2026-09-04)
+
+Pergunta natural depois do resultado acima: e se usássemos o melhor
+modelo POR SINAL (não necessariamente todos iguais)? Já tínhamos os
+artefatos de ambas as versões (OCSVM e iforest) de vibração e óleo
+-- testada a matriz 2x2 completa (temperatura fixa em OCSVM, único
+tipo que ela escolheu em ambas as rodadas), offline, sem retreinar:
+
+| vibração | óleo | TRIPs | FP/mês | falta |
+|---|---|---|---|---|
+| OCSVM | OCSVM | **8/8** | **2,88** | -- |
+| OCSVM | iforest | 7/8 | 2,75 | 17/03/2025 |
+| iforest | OCSVM | 7/8 | 3,37 | 27/02/2025 |
+| iforest | iforest | 6/8 | 3,16 | ambos |
+
+**Achado limpo**: mesmo trocando UM canal por vez (não os dois
+juntos), cada troca custa exatamente um dos 2 TRIPs mais difíceis --
+iforest na vibração perde especificamente 27/02/2025; iforest no óleo
+perde especificamente 17/03/2025. Nenhuma das 4 combinações supera
+OCSVM-nos-3 em detecção; a única forma de ganhar FP/mês é aceitando
+perder pelo menos 1 TRIP.
+
+**Conclusão**: "ensemble por sinal" (melhor tipo de modelo por canal)
+não ajuda aqui -- OCSVM nos 3 canais é a única combinação que mantém
+8/8. Uma forma diferente de ensemble (somar OCSVM e iforest como
+votos ADICIONAIS dentro do mesmo canal, em vez de substituir um pelo
+outro) não foi testada e é uma ideia distinta, não avaliada nesta
+rodada.
