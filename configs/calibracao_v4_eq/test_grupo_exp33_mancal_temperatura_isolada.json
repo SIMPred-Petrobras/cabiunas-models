@@ -38,9 +38,7 @@
   ],
   "ENABLE_AUTOML": true,
   "AUTOML_MODELS": [
-    "dense",
-    "ocsvm",
-    "iforest"
+    "ocsvm"
   ],
   "AUTOML_THRESHOLD_PERCENTILES": [
     95.0,
