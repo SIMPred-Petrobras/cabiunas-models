@@ -2469,3 +2469,78 @@ não ajuda aqui -- OCSVM nos 3 canais é a única combinação que mantém
 votos ADICIONAIS dentro do mesmo canal, em vez de substituir um pelo
 outro) não foi testada e é uma ideia distinta, não avaliada nesta
 rodada.
+
+## Revisão externa de um colega: dependência do canal 4 (2026-09-08)
+
+Um colega de trabalho (não o Francisco) rodou `pipeline_unificada_final.py`
+sobre os nossos próprios artefatos (`805fbf34`/`7815d2cf`/`18a61687`) e
+levantou 3 questões sobre o canal 4 (alarme de processo, sem modelo,
+proximidade a 5 tags: `PI_6240319_AL`, `PAL_6240315`, `PDAL_6240302`,
+`TC382_05_A`, `PAH_6240319`). Ainda sem acesso aos scripts originais dele,
+os 3 testes foram **reconstruídos do zero** a partir da descrição, reusando
+os canais já calculados em `runs_pipeline_unificada_final/point_anomalies_final.csv`
+(sem retreinar nada) e o catálogo completo de alarmes em cache local.
+Implementação: `dataset_francisco_lara/validacao_canal4_colega.py`.
+
+### Teste 1 -- ablação do canal 4 (voto só entre os 3 canais modelados)
+
+Resultado: **0/8** -- bate exatamente com o número dele. Abrindo por
+evento, a reconstrução mostra as **8 falhas** (não 5, como ele reportou)
+dependendo do canal 4 para fechar o voto na configuração de produção
+exata (voto≥2 + filtro 45min + refratário 48h) -- possivelmente uma
+diferença de critério no "abrir por evento" dele (talvez sem o filtro de
+duração/refratário), mas o número agregado é idêntico. Confirma a causa
+apontada por ele: os 3 canais modelados (temperatura/vibração/óleo) quase
+nunca coincidem entre si (~1,2% do tempo).
+
+### Teste 2 -- controle negativo por tag (enriquecimento vs. acaso)
+
+| tag | /mês | obs/8 | esperado/8 | enriq. | p |
+|---|---|---|---|---|---|
+| `PI_6240319_AL` | 43,3 | 7/8 | 5,31 | 1,32x | 0,191 |
+| `PAL_6240315` | 38,3 | 6/8 | 4,35 | 1,38x | 0,210 |
+| `PDAL_6240302` | 7,6 | 2/8 | 1,24 | 1,61x | 0,358 |
+| `TC382_05_A` | 6,3 | 1/8 | 0,59 | 1,70x | 0,457 |
+| `PAH_6240319` | 10,0 | 2/8 | 0,47 | 4,30x | 0,075 |
+| qualquer das 5 | 105,4 | 8/8 | 6,48 | 1,23x | 0,186 |
+
+Os `obs/8` bateram **exatamente** com a tabela dele. Enriquecimento/p
+saíram na mesma direção mas não idênticos (provável diferença na
+definição de "esperado por acaso" -- aqui usei duty cycle de uma janela
+deslizante de 72h, ele pode ter usado permutação Monte Carlo). **Mesma
+conclusão**: nenhuma tag isolada é significativa a p<0,05, com n=8.
+
+### Teste 3 -- removendo as 3 tags de "utilidade" (gás/motor de partida)
+
+Removendo `PI_6240319_AL`, `PAL_6240315`, `PAH_6240319` do canal 4 (sobra
+`PDAL_6240302` + `TC382_05_A`): duty cycle cai de 46,8% para 7,5%
+(ele reportou ~47,6%→8,1%), e o resultado da pipeline completa cai de
+**8/8 · 2,88 FP/mês para 3/8 · 1,51 FP/mês** -- **bate exatamente** com o
+dele. Confirma que o canal 4 depende essencialmente de duas tags de
+pressão de gás combustível, sendo `PI_6240319_AL` a mesma tag já
+registrada nesta investigação (seção "Investigando os 222 restantes do
+EXP22") com padrão de *chattering* de instrumento em alguns períodos --
+suspeita dele corroborada por achado interno independente.
+
+### Teste 4 -- varredura fina do filtro de duração (14-60min)
+
+Confirma a instabilidade em 14-15min (7/8) e a quebra a partir de 55min
+(cai a até 5/8) já documentadas. **Novo**: a grade de 1min inteira entre
+16-54min fecha 8/8 sem nenhum buraco escondido -- responde à preocupação
+de que o platô fosse "in-sample": o interior é robusto, só as bordas (já
+conhecidas) são frágeis.
+
+**Conclusão geral**: os 3 achados do colega se confirmam de forma
+independente. O canal 4 carrega a maior parte da votação (mais forte do
+que ele mesmo reportou: 8/8 dependem dele, não 5/8), e dentro dele o
+peso real está concentrado em `PI_6240319_AL` + `PAL_6240315` -- a
+primeira com suspeita de artefato de instrumento já registrada por nós.
+**Nenhuma das 2 modificações testadas (tirar o canal 4, ou tirar as tags
+de utilidade) melhora o resultado** -- as duas pioram (0/8 e 3/8,
+respectivamente, contra 8/8 atual). Não há mudança de pipeline a fazer
+a partir destes 4 testes por si só; a ação é de transparência na
+apresentação (deixar explícito que o canal 4, e dentro dele essas 2
+tags, fazem a maior parte do trabalho) e uma investigação futura em
+aberto -- isolar só `PI_6240319_AL` para medir seu peso individual e
+decidir se o *chattering* de instrumento invalida parte da contribuição
+dela.

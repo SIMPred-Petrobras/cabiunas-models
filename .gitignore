@@ -1,6 +1,7 @@
 clearml.conf
 
 data*/
+!dataset_francisco_lara/
 dados/
 record_*/
 data_record*/
