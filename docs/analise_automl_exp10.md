@@ -2544,3 +2544,16 @@ tags, fazem a maior parte do trabalho) e uma investigação futura em
 aberto -- isolar só `PI_6240319_AL` para medir seu peso individual e
 decidir se o *chattering* de instrumento invalida parte da contribuição
 dela.
+
+**Retreino de reprodutibilidade (2026-09-08)**: antes de reenviar os 3
+modelos (EXP33/34/38) pro treino, achamos os configs `test_grupo_exp33/
+34/38_*_isolada.json` ainda com `AUTOML_MODELS` incluindo dense/iforest
+-- resíduo do experimento testado e rejeitado em 04/09 (revertido só no
+`pipeline_unificada_final.py`, nunca nos arquivos de config no disco).
+Corrigido de volta para `["ocsvm"]` antes de treinar. Com os 3 modelos
+retreinados do zero (task ids novos: `b494d457...`, `9c344688...`,
+`fc4123fb...`), a pipeline unificada reproduziu **exatamente** o mesmo
+resultado (8/8 · 2,88 FP/mês · 25 inconclusivos) e os 4 testes de
+`validacao_canal4_colega.py` deram os mesmos números -- confirma que a
+dependência do canal 4 não é artefato de uma instância de treino
+específica.

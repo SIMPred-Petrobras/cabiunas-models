@@ -60,11 +60,16 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # TID_TEMP = "e4c731bc82d34477b454bba336eaaf5b"  (rejeitado)
 # TID_VIB = "692264dfd099468283bf1573f3bd4915"   (rejeitado)
 # TID_OLEO = "a12d14e5a68b4b1ab508fa540cf52018"  (rejeitado)
-TID_TEMP = "805fbf34f99f4a889dbdcca7185f20a1"
+# retreino de reprodutibilidade em 2026-09-08 (apos fix do AUTOML_MODELS
+# dos configs, que ainda tinha dense/iforest esquecido do EXP.. rejeitado
+# em 04/09 -- ver docs/analise_automl_exp10.md, secao "Revisao externa de
+# um colega: dependencia do canal 4"). Task ids anteriores (validados em
+# 03/09): 805fbf34f99f4a889dbdcca7185f20a1 / 7815d2cf0d07491eb1c949d555cb5de7 / 18a61687eb78412ead48c9ce31109b67
+TID_TEMP = "b494d457161347c293e0d9ccae7ee15a"
 KEY_TEMP_POINT = "mancal_temperatura_isolada/csv/point_anomalies_all.csv"
-TID_VIB = "7815d2cf0d07491eb1c949d555cb5de7"
+TID_VIB = "9c344688f7914fbda89963d7af693729"
 KEY_VIB_POINT = "mancal_vibracao_isolada/csv/point_anomalies_all.csv"
-TID_OLEO = "18a61687eb78412ead48c9ce31109b67"
+TID_OLEO = "fc4123fb935c4907931c69c065b6bc5d"
 KEY_OLEO_POINT = "oleo_pressao_isolada/csv/point_anomalies_all.csv"
 
 # testado e rejeitado (2026-09-04): retreino v3 com grade ampliada
