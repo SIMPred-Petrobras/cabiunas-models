@@ -1,112 +1,99 @@
 #!/usr/bin/env python3
-"""Detector de dois niveis: ATENCAO (canal lento) e CONFIRMADO (ponto atual).
+"""IDEIA 5 -- gatilho de DOIS NIVEIS (sensivel-corroborado OU especifico).
 
-De onde vem. O canal lento de meia-vida 24 h da o maior lead da investigacao -- 39,5 h --
-mas custa 154,7 h/mes contra 52,8 do ponto atual. Como alarme unico nao serve; como
-AVISO ANTECIPADO de baixa severidade pode servir, porque o custo dele nao e da mesma
-natureza: uma flag de atencao que fica ligada nao interrompe ninguem, so muda a cor do
-painel.
+DESCOBERTA QUE MOTIVA (troca_limiar_voto.py): com kb=1,0 e voto>=3 o lead medio
+sobe de 14,4 h para 27,7 h -- na faixa do Diego (23,8 h) -- mas a cobertura cai
+para 5/8. Com kb=1,7 e voto>=2 a cobertura e 8/8 mas o lead e 14,4 h.
 
-Os dois niveis se medem com reguas DIFERENTES, e isso e o ponto do exercicio:
+Os dois regimes acertam eventos por caminhos diferentes: o sensivel pega a
+deriva cedo exigindo corroboracao ampla; o especifico pega a excursao forte com
+poucos canais. Nunca testamos a UNIAO.
 
-  CONFIRMADO  e alarme acionavel -> mede-se por episodio: FP/mes, deteccao, lead.
-  ATENCAO     nao e acionavel    -> mede-se por: (a) quanto tempo fica ligado, (b) que
-              fracao dos episodios de atencao ESCALA para confirmado, (c) quanta
-              antecedencia extra da nos eventos que o confirmado ja pega.
+  nivel A (precoce)   : voto >= 3 canais em limiar BAIXO  (kb_lo)
+  nivel B (especifico): voto >= 2 canais em limiar ALTO   (kb_hi) + portao sp|vb
+  alarme = A ou B
 
-O teste que decide: a atencao precede mesmo o confirmado, evento a evento? Se a diferenca
-de lead for pequena ou negativa, o nivel extra e ruido com nome bonito.
-
-E a taxa de escalonamento e o numero que diz se a atencao carrega informacao: se episodios
-de atencao que NAO escalam forem a regra, a flag e so um limiar frouxo.
+HIPOTESE: cobertura do B com o lead do A. O custo extra do A deve ser pequeno
+porque exigir 3 de 4 canais simultaneos e raro.
 """
 from __future__ import annotations
-import sys
+import itertools
 import numpy as np, pandas as pd
+import avalia as AV
+from pos_processamento import EW, pos, mask, idx, alvo
+from publica_clearml import SIN, BASE, SUSTAIN, KAPPA, H_CUSUM, DUR_MIN
+from blackout_curto import cusum
+from corte_com_rearme import corta_rearma
+from plota_estilo_francisco import paradas_reais_2h, classifica_regra_c
 
-# O pacote `cabiunas_pdm` vive agora em ./cabiunas_pdm, restaurado da branch
-# do Francisco (ver cabiunas_pdm/__init__.py). O caminho antigo era um
-# diretorio temporario que foi apagado; nao ha mais sys.path a inserir.
-from cabiunas_pdm import detector as DET
-import avalia as A
-from ablacao import canonico, roda, mascara_pontuacao
-from ablacao4 import BRACO
-import reduz_fp as RF
-
-T0 = pd.Timestamp("2025-01-01", tz="UTC")
-HL = {"t": "1h", "p": "1h", "sp": "30min", "vb": "30min"}
-BASE = {"t": DET.THR_FAM, "p": DET.THR_FAM, "sp": DET.THR_SPREAD, "vb": 3.0}
-K = {"t": 1.7, "p": 1.7, "sp": 1.7, "vb": 2.2}
-SIN = ["t", "p", "sp", "vb"]
-KAPPA, H_CUSUM = 0.75, 40
-LENTOS = [("24h", 0.8, 60), ("24h", 1.0, 180), ("12h", 1.0, 60), ("24h", 1.3, 180)]
-JAN = pd.Timedelta(hours=48)
+reset = (~mask).to_numpy()
+paradas = paradas_reais_2h(); meses = float(mask.sum())*2/60.0/730.0
+TMIN, TMAX = 4.0, 48.0
+CACHE = {}
 
 
-def cusum_bool(z, kappa, h, reset):
-    x = (z - kappa).fillna(0.0).to_numpy(); r = reset.to_numpy()
-    S = np.empty(len(x)); acc = 0.0
-    for i in range(len(x)):
-        acc = 0.0 if r[i] else max(0.0, acc + x[i]); S[i] = acc
-    return S > h
+def canais(kb, kv):
+    if (kb, kv) in CACHE:
+        return CACHE[(kb, kv)]
+    K = {"t": kb, "p": kb, "sp": kb, "vb": kv}
+    out = {}
+    for c in SIN:
+        thr = BASE[c]*K[c]
+        E = EW[c].where(mask)
+        deg = ((E > thr).astype(int).rolling(SUSTAIN, min_periods=SUSTAIN).sum() >= SUSTAIN)
+        cu = pd.Series(cusum(((E/thr).clip(upper=20) - KAPPA).fillna(0.0).to_numpy(),
+                             reset) > H_CUSUM, index=idx)
+        out[c] = (deg | cu) & mask
+    CACHE[(kb, kv)] = out
+    return out
 
 
-def main():
-    df = canonico(); idx = df.index
-    todas = pd.read_csv("falhas.csv", parse_dates=["evento"])["evento"].dt.tz_convert("UTC")
-    sel = (idx >= T0); mask = mascara_pontuacao(df) & sel
-    alvo = list(todas[todas >= T0]); m2 = mask[sel]
-    op = df["in_operation"].astype(bool)
-    reset = (~mask) | (op & ~op.shift(fill_value=False))
-    out = roda(BRACO, df, todas)
-    E = {c: out[c].ewm(halflife=pd.Timedelta(h), times=idx).mean().where(mask) for c, h in HL.items()}
-    Z = {c: (E[c] / (BASE[c]*K[c])).clip(upper=20) for c in SIN}
-    mv = mask.values
-    meses = mask.sum()*2/60/730.0
-
-    # --- nivel CONFIRMADO: degrau OU CUSUM por sinal, voto >=2
-    ew = np.array([DET._sustained(E[c], BASE[c]*K[c]).values for c in SIN])
-    cu = np.array([cusum_bool(Z[c], KAPPA, H_CUSUM, reset) for c in SIN])
-    conf = RF.dur_min(RF.refratario(pd.Series(((ew | cu).sum(axis=0) >= 2) & mv, index=idx), 48), 60)
-    xc = A.avalia(conf[sel], alvo, m2)
-    print("=" * 100)
-    print(f"NIVEL CONFIRMADO (acionavel): {xc['det']}/8  {xc['episodios']} eps  "
-          f"{xc['fp_mes']:.2f} FP/mes  {xc['h_fp_mes']:.1f} h/mes  lead {xc['lead_med']:.1f} h")
-    print("=" * 100, flush=True)
-
-    for hl, kk, sm in LENTOS:
-        n = max(1, int(pd.Timedelta(minutes=sm) / pd.Timedelta("2min")))
-        sl = np.array([((out[c].ewm(halflife=pd.Timedelta(hl), times=idx).mean().where(mask)
-                         > BASE[c]*K[c]*kk).astype(int)
-                        .rolling(n, min_periods=n).sum() >= n).values for c in SIN])
-        aten = pd.Series((sl.sum(axis=0) >= 2) & mv, index=idx)
-        aten = RF.dur_min(aten, 60)          # sem refratario: e uma flag, nao um alarme
-        xa = A.avalia(aten[sel], alvo, m2)
-        eps_a = A.episodios(aten & sel)
-        eps_c = A.episodios(conf & sel)
-        # escalonamento: episodio de atencao que contem ou e seguido por confirmado em 48 h
-        escala = sum(1 for a, b in eps_a
-                     if any(x <= b + JAN and z >= a for x, z in eps_c))
-        # antecedencia extra por evento
-        extras = []
-        for t in alvo:
-            wa = aten.loc[t-JAN*3:t]; wc = conf.loc[t-JAN*3:t]
-            oa = wa[wa.fillna(False)]; oc = wc[wc.fillna(False)]
-            if len(oa) and len(oc):
-                extras.append(((oc.index[0]-oa.index[0]).total_seconds()/3600))
-        print(f"\nATENCAO  meia-vida {hl}, k x{kk}, sustentacao {sm} min")
-        print(f"   cobertura: {xa['det']}/8 eventos   lead {xa['lead_med']:.1f} h   "
-              f"duty {100*aten[sel].mean():.1f}% do tempo pontuavel")
-        print(f"   episodios de atencao: {len(eps_a)} ({len(eps_a)/meses:.2f}/mes)   "
-              f"escalam para confirmado: {escala} ({100*escala/max(len(eps_a),1):.0f}%)")
-        print(f"   antecedencia EXTRA sobre o confirmado, por evento: "
-              f"mediana {np.median(extras) if extras else float('nan'):.1f} h   "
-              f"min {min(extras) if extras else float('nan'):.1f}   "
-              f"max {max(extras) if extras else float('nan'):.1f}")
-        neg = sum(1 for e in extras if e <= 0)
-        print(f"   eventos em que a atencao NAO precede o confirmado: {neg}/{len(extras)}",
-              flush=True)
+def mede(al):
+    eps = AV.episodios(al)
+    banda, leads, ini = 0, [], 0
+    for t in alvo:
+        c = [a for a, _ in eps
+             if t - pd.Timedelta(hours=TMAX) <= a <= t - pd.Timedelta(hours=TMIN)]
+        if c:
+            banda += 1; leads.append((t - max(c)).total_seconds()/3600)
+        if any(t - pd.Timedelta(hours=TMAX) <= a <= t for a, _ in eps):
+            ini += 1
+    m = AV.avalia(al, alvo, mask)
+    cls = classifica_regra_c(eps, paradas)
+    nfp = sum(1 for _, _, k, _ in cls if k == "FP")
+    h = sum((b-a).total_seconds()/3600 for a, b, k, _ in cls if k == "FP")
+    return banda, ini, m["det"], nfp/meses, h/meses, (np.mean(leads) if leads else np.nan)
 
 
-if __name__ == "__main__":
-    main()
+LO = [0.6, 0.8, 1.0, 1.2, 1.4]
+HI = [1.4, 1.7, 2.0]
+KVs = [1.8, 2.2, 2.8]
+print(f"UNIAO DOS DOIS NIVEIS -- banda acionavel [{TMIN:.0f} h, {TMAX:.0f} h]")
+print("=" * 104)
+print(f"{'kb_lo':>6} {'kb_hi':>6} {'kv':>5} | {'banda':>7} {'inicio':>7} {'det':>6} "
+      f"{'FP/mes':>9} {'h/mes':>8} {'lead':>8}")
+print("-" * 104)
+res = []
+for lo, hi, kv in itertools.product(LO, HI, KVs):
+    if lo >= hi:
+        continue
+    A = canais(lo, kv); B = canais(hi, kv)
+    nsA = sum(A[c].astype(int) for c in SIN); nsB = sum(B[c].astype(int) for c in SIN)
+    vA = pd.Series(nsA >= 3, index=idx) & mask
+    vB = (pd.Series(nsB >= 2, index=idx) & mask & (B["sp"] | B["vb"]))
+    v = (vA | vB)
+    K = {"t": hi, "p": hi, "sp": hi, "vb": kv}
+    F = pd.concat([EW[c].where(mask)/(BASE[c]*K[c]) for c in SIN], axis=1).max(axis=1).to_numpy()
+    al = pos(pd.Series(corta_rearma(v.to_numpy(), F, 0.03), index=idx),
+             nsB, 72, DUR_MIN, False)
+    r = mede(al)
+    res.append((r[0], -r[3], lo, hi, kv) + r)
+res.sort(reverse=True)
+for _, _, lo, hi, kv, banda, ini, det, fp, h, lm in res[:14]:
+    marca = "  <<< bate o atual" if banda > 4 else ""
+    print(f"{lo:6.1f} {hi:6.1f} {kv:5.1f} | {banda:5d}/8 {ini:5d}/8 {det:5d}/8 "
+          f"{fp:9.3f} {h:8.1f} {lm:7.1f}h{marca}")
+print("-" * 104)
+print("  atual (um nivel, voto>=2, kb=1,7 kv=2,2): banda 4/8, inicio 6/8, det 8/8, "
+      "0,775 FP/mes, lead 14,4 h")
+print("  Diego: banda 7/8, lead 23,8 h, 2,88 FP/mes")
