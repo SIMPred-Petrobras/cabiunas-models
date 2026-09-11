@@ -174,8 +174,12 @@ perde exatamente esses dois.
 
 ## A régua
 
-Definida em `avalia.py` e igual à usada pela equipe do detector paralelo (conferida
-no código dos dois lados: `DETECTION_WINDOW = "48h"`, `EPISODE_GAP = "2h"`).
+Definida em `avalia.py`. **ATENÇÃO — esta seção foi corrigida em 06/09/2026.** As
+*constantes* são iguais às da equipe paralela (`DETECTION_WINDOW = "48h"`,
+`EPISODE_GAP = "2h"`), mas a **regra de associação evento↔episódio NÃO é**: a nossa
+credita detecção quando o alarme está *de pé* na janela; a deles exige que o *início*
+do episódio caia nela. Sob a régua deles o nosso 8/8 vira **4/8**. Ver
+`CONTEXTO_05-06_SET_2026.md` §1 — é o achado mais consequente do projeto.
 
 - **Detecção** — o alerta tem de estar de pé na janela de **48 h antes** do trip.
   Estritamente antecipatório: reagir depois não conta.
@@ -305,11 +309,15 @@ teto: o que separou foi o sinal e o limiar, não a arquitetura.
 
 ## Próximo passo
 
-Entrar com o canal `vb` como quinto sinal na varredura AutoML do detector paralelo,
-com a **grade de limiar estendida até ~p60** e `confirm ≥ 2` obrigatório, e medir se
-dá para manter os oito eventos com o custo de alarme daquela fronteira. A grade atual
-vai de p99 a p99,995; sem estendê-la para baixo o teste falha por um motivo que não
-tem relação com o sinal.
+**Esta seção está desatualizada — o experimento descrito abaixo já foi feito e deu
+negativo.** O `vb` como quinto sinal na varredura do detector paralelo dá o mesmo 6/8
+a 4× o custo (960 configurações, ver `sondagem_hibrido/RESULTADO.md`); e a nossa
+camada de decisão também não transfere para os canais do Diego (128 configurações,
+`wt-diego/testa_nossa_decisao.py`).
+
+**Para o estado atual e o que está pendente, ler `CONTEXTO_05-06_SET_2026.md`.**
+
+Registro do que era a proposta original:
 
 Aberto também: o miss de **24/11/2025** — parada de 43 h com anunciação de baixa
 pressão no header de óleo lubrificante (`PAL_6240339`, primeiro estágio da proteção),
