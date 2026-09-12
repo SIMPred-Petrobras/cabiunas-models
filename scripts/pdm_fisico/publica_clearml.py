@@ -44,9 +44,32 @@ KAPPA, H_CUSUM, CARGA = 0.75, 80, 0.25
 REFRAT_H, DUR_MIN = 48, 120
 ORC_FP = 1.15          # orcamento de FP/mes usado na selecao do LOEO aninhado
 
+# ---------------------------------------------------------------- ponto v2
+# Gatilho de DOIS NIVEIS, adotado em 11/09/2026. Vizinhanca confirmada em onze
+# parametros (`confirma_vizinhanca.py`). Melhor que o v1 em TODOS os eixos:
+#   regua de inicio  4/8 -> 6/8   |  banda acionavel [4h,48h]  3/8 -> 5/8
+#   FP/mes  0,517 -> 0,344        |  h/mes  7,1 -> 6,6  |  lead  12,5 -> 19,7 h
+#
+# POR QUE DOIS NIVEIS. Os quatro canais operam em percentis efetivos muito
+# diferentes (vb em ~p69, t em p87), entao disparam em momentos descoordenados.
+# Um nivel SENSIVEL (3 de 4 em limiar baixo) pega a deriva cedo mas so cobre 5/8;
+# um nivel ESPECIFICO (2 de 4 em limiar alto, com portao) cobre 8/8 mas tarde.
+# Medido: nenhum dos dois sozinho passa de 4/8 na banda; a UNIAO faz 5/8, e ao
+# custo do mais barato dos dois. Ver `decompoe_dois_niveis.py`.
+K_LO = {"t": 1.10, "p": 0.70, "sp": 0.90, "vb": 1.80}   # nivel sensivel, >=3 de 4
+VOTO_LO, VOTO_HI = 3, 2
+REFRAT_V2 = 72         # h -- plato 48-72 h; 84 h ja custa uma deteccao
+ESC_IDADE, ESC_ABS, ESC_DUR = 96, 20.0, 60   # escalada por idade: reanuncio de
+# alarme permanente quando a forca cruza ABS e o episodio ja tem ESC_IDADE horas.
+# Plato largo: idade 48-120 h, ABS 8-120. `superficie_idade_abs.py`.
+TMIN_BANDA = 4.0       # piso de acionabilidade, ver [[banda-de-acionabilidade]]
 
-def reproduz():
-    """Recalcula sinais -> EWMA -> degrau|CUSUM -> voto>=2 -> refratario -> duracao."""
+
+def reproduz(v2: bool = True):
+    """Recalcula sinais -> EWMA -> degrau|CUSUM -> voto -> refratario -> duracao.
+
+    v2=True  : gatilho de dois niveis + escalada por idade (ponto adotado em 11/09/2026)
+    v2=False : ponto v1, um nivel so (o que estava publicado)"""
     g = pd.read_parquet("grade2min.parquet")
     idx = g.index
     op = (g["RUNNING_A"] > 0.5).fillna(False)
@@ -81,23 +104,75 @@ def reproduz():
             S[i] = acc
         return S > H_CUSUM
 
-    ON = {}
-    for c in SIN:
-        thr = BASE[c] * K[c]
-        n = SUSTAIN
-        deg = ((E[c] > thr).astype(int).rolling(n, min_periods=n).sum() >= n)
-        ON[c] = (deg | pd.Series(cusum((E[c] / thr).clip(upper=20)), index=idx)) & mask
-    voto = pd.Series(sum(ON[c].astype(int) for c in SIN) >= 2, index=idx) & mask
+    def canais(KK):
+        out = {}
+        for c in SIN:
+            thr = BASE[c] * KK[c]
+            n = SUSTAIN
+            deg = ((E[c] > thr).astype(int).rolling(n, min_periods=n).sum() >= n)
+            out[c] = (deg | pd.Series(cusum((E[c] / thr).clip(upper=20)), index=idx)) & mask
+        return out
 
-    al = pd.Series(False, index=idx); bloq = None
+    ON = canais(K)
+    if not v2:
+        # COM o portao de mancal, que e o ponto de producao de fato (0,517 FP/mes
+        # pela regra C). A versao original desta funcao omitia o portao e dava
+        # 1,12 bruto / 0,603 regra C -- a diferenca esta documentada em
+        # `pos_processamento.py::mede(exige_mancal)`. Com o portao, v1 e v2 diferem
+        # so no que se quer comparar: um nivel contra dois.
+        voto = (pd.Series(sum(ON[c].astype(int) for c in SIN) >= 2, index=idx)
+                & mask & (ON["sp"] | ON["vb"]))
+        refrat, dur = REFRAT_H, DUR_MIN
+        forca = None
+    else:
+        A = canais(K_LO)
+        vA = pd.Series(sum(A[c].astype(int) for c in SIN) >= VOTO_LO, index=idx) & mask
+        vB = (pd.Series(sum(ON[c].astype(int) for c in SIN) >= VOTO_HI, index=idx)
+              & mask & (ON["sp"] | ON["vb"]))
+        voto = vA | vB
+        forca = pd.concat([E[c] / (BASE[c] * K[c]) for c in SIN], axis=1).max(axis=1)
+        refrat, dur = REFRAT_V2, DUR_MIN
+
+    # escalada por idade: reanuncio quando a forca cruza ESC_ABS dentro de um
+    # episodio que ja tem ESC_IDADE horas -- alarme permanente que se intensifica
+    # e evento novo, nao continuacao (ISA-18.2). So no v2.
+    if v2 and forca is not None:
+        f = forca.fillna(0.0).to_numpy(); v = voto.to_numpy().copy()
+        n_gap = int(pd.Timedelta(hours=AV.GAP_EP_H) / pd.Timedelta(GRID)) + 1
+        n_idade = int(ESC_IDADE * 30)          # horas -> amostras de 2 min
+        dentro, ini, ja = False, 0, False
+        for i in range(len(v)):
+            if not v[i]:
+                dentro, ja = False, False; continue
+            acima = f[i] > ESC_ABS
+            if not dentro:
+                dentro, ini, ja = True, i, acima; continue
+            if acima and not ja and (i - ini) >= n_idade:
+                v[max(ini + 1, i - n_gap):i] = False
+                ini = i
+            ja = acima
+        voto = pd.Series(v, index=idx)
+
+    al = pd.Series(False, index=idx); bloq = None; ini_bloq = None
+    fortes = []
     for a, b in AV.episodios(voto):
-        if bloq is not None and a <= bloq:
+        forte = bool(v2 and forca is not None and float(forca.loc[a:b].max()) > ESC_ABS)
+        # FURO DO REFRATARIO: um episodio bloqueado passa se for FORTE e o bloqueio
+        # ja for VELHO. E a outra metade da escalada por idade -- sem isto o
+        # reanuncio nunca chega a virar alarme.
+        velho = (ini_bloq is not None
+                 and (a - ini_bloq).total_seconds()/3600 >= ESC_IDADE)
+        if bloq is not None and a <= bloq and not (forte and velho):
             continue
         al.loc[a:b] = True
-        bloq = b + pd.Timedelta(hours=REFRAT_H)
+        bloq = b + pd.Timedelta(hours=refrat); ini_bloq = a
+        if forte:
+            fortes.append((a, b))
     fin = pd.Series(False, index=idx)
     for a, b in AV.episodios(al):
-        if (b - a).total_seconds() / 60 + 2 >= DUR_MIN:
+        d_min = (b - a).total_seconds() / 60 + 2
+        isento = any(x >= a and y <= b for x, y in fortes) and d_min >= ESC_DUR
+        if isento or d_min >= dur:
             fin.loc[a:b] = True
     return fin & sel, mask, alvo, ON, idx, sel
 
@@ -155,10 +230,11 @@ def loeo_aninhado(alvo):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true", help="so mede, nao publica")
-    ap.add_argument("--nome", default="detector-fisico::TC33003A_4sinais_v1")
+    ap.add_argument("--nome", default="detector-fisico::TC33003A_4sinais_v2")
+    ap.add_argument("--v1", action="store_true", help="publica o ponto antigo (um nivel)")
     args = ap.parse_args()
 
-    al, mask, alvo, ON, idx, sel = reproduz()
+    al, mask, alvo, ON, idx, sel = reproduz(v2=not args.v1)
     quente = mask & sel
     m = AV.avalia(al, alvo, quente)
     perm = AV.permuta(al, quente, m["det"], len(alvo))
@@ -180,10 +256,39 @@ def main():
                                 horas=round((b - a).total_seconds() / 3600 + 2 / 60, 2))
                            for a, b in fps]).sort_values("horas", ascending=False)
 
+    # regua de INICIO (a usada pelas outras equipes) e BANDA ACIONAVEL.
+    # A regua "de pe" credita deteccao quando o alarme esta ativo na janela; a de
+    # inicio exige que o EPISODIO NASCA nela. Sao numeros diferentes da mesma
+    # serie e os tres vao publicados juntos -- ver [[regra-associacao-de-pe-vs-inicio]].
+    JAN48 = pd.Timedelta(hours=48)
+    det_ini = sum(1 for t in alvo if any(t - JAN48 <= a <= t for a, _ in eps))
+    nasc_banda = [max([a for a, _ in eps
+                       if t - JAN48 <= a <= t - pd.Timedelta(hours=TMIN_BANDA)] or [None])
+                  for t in alvo]
+    det_banda = sum(1 for x in nasc_banda if x is not None)
+    leads_ini = [ (t - max([a for a, _ in eps if t - JAN48 <= a <= t])).total_seconds()/3600
+                  for t in alvo if any(t - JAN48 <= a <= t for a, _ in eps) ]
+
+    # REGRA C: episodio seguido de parada real (>= 2 h) em ate 48 h nao conta nem
+    # como acerto nem como erro -- o detector viu algo que a operacao tambem viu.
+    # E o numero de titulo; o `fp_por_mes_operacao` abaixo e o BRUTO.
+    from plota_estilo_francisco import paradas_reais_2h, classifica_regra_c
+    cls = classifica_regra_c(eps, paradas_reais_2h())
+    n_fp_c = sum(1 for _, _, k, _ in cls if k == "FP")
+    n_neutro = sum(1 for _, _, k, _ in cls if k == "NEUTRO")
+    h_fp_c = sum((b - a).total_seconds()/3600 for a, b, k, _ in cls if k == "FP")
+
     lo = loeo_aninhado(alvo)
     meses = m["horas_op"] / 730.0
     res = {
         "recall": f'{m["det"]}/{m["n_ev"]}',
+        "recall_regua_inicio": f'{det_ini}/{len(alvo)}',
+        "recall_banda_acionavel": f'{det_banda}/{len(alvo)}',
+        "banda_tau_min_h": TMIN_BANDA,
+        "lead_medio_inicio_h": round(float(np.mean(leads_ini)), 2) if leads_ini else None,
+        "fp_por_mes_regra_c": round(n_fp_c / max(m["horas_op"]/730.0, 1e-9), 3),
+        "horas_fp_por_mes_regra_c": round(h_fp_c / max(m["horas_op"]/730.0, 1e-9), 1),
+        "episodios_neutro": n_neutro,
         "recall_frac": m["det"] / m["n_ev"],
         "episodios": m["episodios"],
         "fp": m["fp"],
