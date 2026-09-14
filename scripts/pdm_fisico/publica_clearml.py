@@ -56,7 +56,45 @@ ORC_FP = 1.15          # orcamento de FP/mes usado na selecao do LOEO aninhado
 # um nivel ESPECIFICO (2 de 4 em limiar alto, com portao) cobre 8/8 mas tarde.
 # Medido: nenhum dos dois sozinho passa de 4/8 na banda; a UNIAO faz 5/8, e ao
 # custo do mais barato dos dois. Ver `decompoe_dois_niveis.py`.
-K_LO = {"t": 1.10, "p": 0.70, "sp": 0.90, "vb": 1.80}   # nivel sensivel, >=3 de 4
+# Limiares do nivel sensivel escolhidos por MARGEM A BORDA, nao por otimo.
+#
+# POR QUE MUDAR O CRITERIO. A validacao temporal (validacao_temporal.py) mostrou
+# que a ESTRUTURA de dois niveis generaliza -- 3/3 nos eventos nunca vistos contra
+# 2/3 do v1 -- mas que os limiares sao ajustados: uma selecao honesta, olhando so
+# o passado, escolhe outros valores e vai PIOR que o proprio v1 no futuro. Em
+# producao o detector so enfrenta evento futuro, entao o criterio nao e o numero
+# no ponto -- e o que acontece quando o dado se desloca.
+#
+# O QUE A VIZINHANCA MOSTROU (ponto_de_deploy.py, minimax sobre 560 configuracoes).
+# Dos 8 vizinhos a +-1 passo do ponto antigo {t:1,10 p:0,70 sp:0,90 vb:1,80},
+# exatamente UM desaba, e desaba feio:
+#
+#     p: 0,70 -> 0,60   banda 5/8 -> 4/8, inicio 6/8 -> 5/8, det 8/8 -> 7/8
+#
+# nao e ruido de medida: em 0,60 o duty do canal p sobe de 52% para 58%, o voto
+# >=3 volta a fundir episodios e um nascimento sai da janela de 48 h. O ponto
+# antigo estava a um unico passo dessa borda.
+#
+# O EIXO p E UM PLATO. Varrendo alem da grade (borda_p): 0,7 / 0,8 / 1,0 / 1,2 /
+# 2,0 / 3,0 dao TODOS banda 5/8, inicio 6/8, det 8/8, 0,344 FP/mes, 21 episodios.
+# O plato nao e o canal desligado -- em k=1,2 o p ainda e pivo do voto em 7,2% do
+# tempo; e o pos-processamento (refratario de 72 h + duracao) que absorve. Entao
+# a escolha dentro do plato nao compra desempenho: compra distancia da borda.
+#
+#     k_p      lead medio    margem ate a quebra (0,60)
+#     0,70        16,7 h        1,17x   <- o antigo
+#     0,80        16,3 h        1,33x
+#     1,20        15,7 h        2,00x   <- adotado
+#
+# CUSTO da troca: 1,0 h de lead medio, toda ela num unico evento que cai de 37,7
+# para 32,1 h -- muito acima de qualquer tau_min plausivel. A curva de banda
+# contra tau_min e IDENTICA nos dois pontos de 0 a 24 h (sens_tmin), e o holdout
+# temporal tambem: 3/3 e 0,504 FP/mes nos dois. Nao ha perda mensuravel.
+#
+# k_vb = 2,00 (contra 1,80) e o centro do plato do vb pelo mesmo criterio: e o
+# unico valor cujo pior vizinho fica em 0,431 em vez de 0,517 FP/mes.
+K_LO = {"t": 1.10, "p": 1.20, "sp": 0.90, "vb": 2.00}   # nivel sensivel, >=3 de 4
+K_LO_PONTO_OTIMO = {"t": 1.10, "p": 0.70, "sp": 0.90, "vb": 1.80}  # so para referencia
 VOTO_LO, VOTO_HI = 3, 2
 REFRAT_V2 = 72         # h -- plato 48-72 h; 84 h ja custa uma deteccao
 ESC_IDADE, ESC_ABS, ESC_DUR = 96, 20.0, 60   # escalada por idade: reanuncio de
