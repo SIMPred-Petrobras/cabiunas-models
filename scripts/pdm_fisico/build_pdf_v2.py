@@ -95,7 +95,15 @@ def converte(md: str) -> str:
             itens = []
             while i < len(linhas) and (re.match(r"^\s*[-*]\s+", linhas[i])
                                        or re.match(r"^\s*\d+\.\s+", linhas[i])):
-                itens.append(inline(re.sub(r"^\s*(?:[-*]|\d+\.)\s+", "", linhas[i]))); i += 1
+                # o item comeca aqui; as linhas seguintes que nao abrem outro bloco
+                # sao CONTINUACAO dele e tem de ficar dentro do <li> -- senao viram
+                # paragrafo solto fora do bullet. Junta o texto cru primeiro e so
+                # depois formata, ou um **negrito** partido na quebra vaza os `**`.
+                cru = [re.sub(r"^\s*(?:[-*]|\d+\.)\s+", "", linhas[i])]; i += 1
+                while i < len(linhas) and linhas[i].strip() and not re.match(
+                        r"^(#{1,4}\s|\||>|```|---+\s*$|\s*[-*]\s|\s*\d+\.\s)", linhas[i]):
+                    cru.append(linhas[i].strip()); i += 1
+                itens.append(inline(" ".join(cru)))
             out.append(f"<{tag}>" + "".join(f"<li>{x}</li>" for x in itens) + f"</{tag}>")
             continue
         if L.strip():
