@@ -334,7 +334,20 @@ def main():
         "ajuste_pca": "walk-forward mensal, FIT_POINTS=20000 amostras estaveis (666.7 h), PCA n_components=0.95, RobustScaler",
         "ewma_halflife": json.dumps(HL), "k_por_sinal": json.dumps(K),
         "cusum_kappa": KAPPA, "cusum_h": H_CUSUM, "cusum_carga_residual": CARGA,
-        "voto_minimo": 2, "refratario_h": REFRAT_H, "duracao_minima_min": DUR_MIN,
+        # o gatilho depende da versao -- publicar "voto_minimo: 2" no v2 seria
+        # descrever o modelo errado
+        **({"gatilho": "UM nivel: voto >= 2 de 4 + portao sp|vb",
+            "voto_minimo": 2, "k_por_sinal_unico": json.dumps(K)}
+           if args.v1 else
+           {"gatilho": "DOIS niveis em OU: A (sensivel) ou B (especifico)",
+            "nivel_A_sensivel": f"voto >= {VOTO_LO} de 4, limiares {json.dumps(K_LO)}",
+            "nivel_B_especifico": f"voto >= {VOTO_HI} de 4, limiares {json.dumps(K)}, portao sp|vb",
+            "escalada_por_idade": f"reanuncio quando a forca cruza {ESC_ABS}x dentro de "
+                                  f"episodio com >= {ESC_IDADE} h; piso de {ESC_DUR} min; "
+                                  f"furo do refratario quando forte e velho",
+            "religamento": "desligado (frac = 0,0) -- medido mais barato que 0,03"}),
+        "refratario_h": REFRAT_V2 if not args.v1 else REFRAT_H,
+        "duracao_minima_min": DUR_MIN,
         "sustain_min": SUSTAIN * 2, "blackout_pos_partida": BLACKOUT,
         "janela_deteccao_h": AV.JANELA_H, "gap_episodio_h": AV.GAP_EP_H,
         "denominador_fp": "mes de OPERACAO (730 h), nao de calendario",
@@ -346,6 +359,18 @@ def main():
     for k, v in res.items():
         if isinstance(v, (int, float)) and not isinstance(v, bool):
             lg.report_single_value(k, float(v))
+    if not args.v1:
+        lg.report_text(
+            "PONTO v2 -- gatilho de dois niveis. Vizinhanca confirmada em onze parametros, um a "
+            "um (confirma_vizinhanca.py). Melhor que o v1 em TODOS os eixos: regua de inicio "
+            "4/8 -> 6/8, banda acionavel 3/8 -> 5/8, FP/mes 0,517 -> 0,344, h/mes 7,1 -> 6,6, "
+            "lead de inicio 10,1 h -> 16,7 h, com a deteccao 8/8 mantida.\n"
+            "TRES REGUAS SAO PUBLICADAS JUNTAS e nao sao intercambiaveis: 'de pe' credita alarme "
+            "ATIVO na janela (inclui alarme levantado ha semanas); 'inicio' exige que o episodio "
+            "NASCA nela -- e a usada pelas outras equipes; 'banda acionavel' exige nascer com "
+            "pelo menos 4 h de antecedencia. Ao comparar com outro detector, declare a regua.\n"
+            "O parametro mais fragil e o limiar de temperatura do nivel sensivel (lo.t = 1,10): "
+            "plato de tres valores, margem de +-5%. Os demais tem margem larga.")
     lg.report_text(
         "Ponto de operacao confirmado por duas rotas independentes: ajuste em cascata e busca "
         "conjunta (2.187 configs, 693 com 8/8; o menor FP entre elas e este ponto).\n"
