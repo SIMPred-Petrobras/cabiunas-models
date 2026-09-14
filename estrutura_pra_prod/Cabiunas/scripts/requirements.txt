@@ -1,0 +1,13 @@
+# Dependências do pacote de inferência SIMPred / Cabiúnas — TC-33003A.
+# Versões testadas no ambiente de treino (Python 3.12).
+#
+# IMPORTANTE: os arquivos *_scaler.pkl e *_pca.pkl são pickles de
+# sklearn.preprocessing.RobustScaler e sklearn.decomposition.PCA, então a versão
+# do scikit-learn precisa ser compatível com a usada no treino (1.8.x).
+#
+# Não há torch: este detector não usa rede neural. São PCA e estatística robusta.
+
+numpy>=2.4,<3
+pandas>=3.0,<4
+scikit-learn>=1.8,<1.9
+pyarrow>=16            # só para constroi_bundle.py (lê o histórico em parquet)

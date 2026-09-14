@@ -1,0 +1,9 @@
+# So codigo vai para o repositorio. Dados, documentos e artefatos binarios ficam
+# no Drive: o pacote se reconstroi rodando scripts/constroi_bundle.py.
+dados/
+modelos/
+documentos/
+metadata.csv
+registro_trips.csv
+*_inferencia.csv
+__pycache__/
