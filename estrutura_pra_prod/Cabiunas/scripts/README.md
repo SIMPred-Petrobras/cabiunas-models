@@ -116,9 +116,9 @@ Os oito eventos têm antecedência idêntica ao centésimo de hora. A discordân
 residual é de **0,012%** dos pontos (um trecho de 1,33 h em 09/03/2025), sem
 efeito em nenhuma métrica.
 
-## Quatro coisas que quebram o detector em silêncio
+## Cinco coisas que quebram o detector em silêncio
 
-Nenhuma das quatro dá erro. Todas mudam o alarme. As três primeiras foram
+Nenhuma das cinco dá erro. Todas mudam o alarme. As três primeiras foram
 **defeitos reais deste pacote**, encontrados pela validação acima — cada uma
 parecia inofensiva e custava caro.
 
@@ -157,7 +157,25 @@ cai: `vb` médio de **3,56** onde o correto era **8,63**.
 O registro muda quando a máquina falha, não quando o modelo é retreinado.
 **Acrescente cada trip novo antes da execução seguinte.**
 
-### 4. Bundle com mais de 62 dias
+### 4. Mudar o dia do mês em que o retreino roda
+
+O baseline são os 20.000 pontos estáveis **anteriores ao corte**. Mover o corte
+muda *quais* 20.000, e o detector é extremamente sensível a isso — mais do que a
+qualquer outro parâmetro medido:
+
+| dia do retreino | banda | detecção | FP/mês | h/mês |
+|---|---|---|---|---|
+| **1** (o publicado) | **5/8** | **8/8** | **0,344** | **6,6** |
+| 8 | 3/8 | 5/8 | 0,947 | 77,3 |
+| 15 | 4/8 | 7/8 | 0,947 | **154,6** |
+| 22 | 5/8 | 7/8 | 0,689 | 76,9 |
+
+Vinte e três vezes as horas de alarme falso por uma escolha que ninguém
+consideraria um parâmetro. O `constroi_bundle.py --mes AAAA-MM` já corta sempre
+no dia 1, venha o operador a rodar quando vier. **Não trocar por data corrente
+nem por "últimos 30 dias".**
+
+### 5. Bundle com mais de 62 dias
 
 Os canais `t` e `p` são resíduo de PCA contra um baseline. PCA em baseline velho
 descola conforme o ponto de operação anda (campanha, carga, ambiente) e o

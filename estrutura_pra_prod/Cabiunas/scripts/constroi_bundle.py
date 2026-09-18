@@ -97,6 +97,19 @@ def main() -> int:
                     help="CSV com uma coluna `evento`: os trips JÁ OCORRIDOS")
     a = ap.parse_args()
 
+    # O CORTE E SEMPRE NO DIA 1, e isso NAO e convencao -- e requisito medido.
+    # O baseline sao os 20.000 pontos estaveis anteriores ao corte; mover o corte
+    # muda QUAIS 20.000, e o detector e extremamente sensivel a isso. Medido
+    # (drift_composicao.py), so deslocando o dia do retreino dentro do mes:
+    #
+    #     dia  1   banda 5/8  det 8/8  0,344 FP/mes    6,6 h/mes   <- o publicado
+    #     dia  8   banda 3/8  det 5/8  0,947 FP/mes   77,3 h/mes
+    #     dia 15   banda 4/8  det 7/8  0,947 FP/mes  154,6 h/mes
+    #     dia 22   banda 5/8  det 7/8  0,689 FP/mes   76,9 h/mes
+    #
+    # Vinte e tres vezes as horas de alarme falso por mudar o dia do mes em que o
+    # retreino roda. `--mes AAAA-MM` ja garante o dia 1 venha o operador a rodar
+    # quando vier -- NAO trocar por data corrente, nem por "ultimos 30 dias".
     corte = pd.Timestamp(a.mes + "-01", tz="UTC")
     g = pd.read_parquet(a.historico)
     op = (g["RUNNING_A"] > 0.5).fillna(False)
