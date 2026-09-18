@@ -20,6 +20,26 @@ atravessa regime, a diferenca entre as metades cresce com o tamanho.
 E a consequencia pratica e melhor do que monitorar o p99: o teste de homogeneidade
 roda no PROPRIO baseline, no momento do retreino, sem esperar o mes seguinte.
 
+RESULTADO: HIPOTESE NAO CONFIRMADA.
+
+    FIT_POINTS   ~dias   t: p90   p: p90   p: max
+       8.000       11     4,90     4,16     12,11
+      14.000       19     4,06     2,44      6,02
+      20.000       28     3,49     2,47     10,48   <- atual
+      30.000       42     2,27     2,64     28,28
+      45.000       62     2,93     5,41    135,57
+      70.000       97     2,87    27,37    160,13
+
+Nenhum baseline e homogeneo em tamanho nenhum -- a razao mediana entre as metades
+fica em ~1,4 em toda a faixa. E NAO HA MINIMO EM 20.000: os minimos caem em
+14.000 e 30.000, dependendo do canal e da estatistica.
+
+Confirma-se so a metade fraca: acima de ~45.000 pontos (62 dias) o baseline
+atravessa mudancas de regime severas (razao de 135 a 160 entre as metades), o que
+explica por que janelas grandes quebram. Mas o pico em 20.000 segue sem
+explicacao estrutural -- ver `drift_vizinhanca_fit.py`, que testa a terceira
+hipotese (coincidencia) e a confirma.
+
 Uso:  PYTHONPATH=. python drift_coerencia.py
 """
 from __future__ import annotations
