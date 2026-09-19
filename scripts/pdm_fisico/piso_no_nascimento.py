@@ -46,6 +46,32 @@ E SOBREVIVE AO TESTE TEMPORAL, que e o criterio duro:
     v2 publicado      banda 3/3  inicio 3/3  FP 4  (0,504/mes)
     v2 + piso >= 10   banda 3/3  inicio 3/3  FP 2  (0,252/mes)
 
+*** NAO APLICADO. CANDIDATA, NAO RESULTADO. ***
+
+Revisao critica derrubou as tres evidencias que pareciam sustentar a regra:
+
+1. O TESTE TEMPORAL NAO VALE AQUI. Os quatro falsos positivos (23/08/2025,
+   09/01, 16/01 e 08/04/2026) sao TODOS posteriores ao corte de 01/07/2025. A
+   regra foi construida olhando exatamente os FP que depois serviriam para
+   "valida-la" -- nao ha holdout nenhum, e o mesmo dado foi usado duas vezes.
+
+2. O "PLATO DE 8 A 25" E O VAZIO ENTRE DUAS OBSERVACOES. As forcas no nivel B sao
+   3,5 / 6,2 / 29,2 / 146,8. Entre 6,2 e 29,2 nao existe episodio algum, entao
+   qualquer limiar ali da o mesmo resultado -- por ausencia de dado, nao por
+   robustez.
+
+3. A ASSIMETRIA A/B NAO E SIGNIFICATIVA. Tabela so-B x resto contra FP x TP =
+   [[3,1],[2,6]]; teste exato de Fisher da p = 0,222.
+
+O QUE SOBREVIVE: o mecanismo fisico e plausivel -- o nivel B existe para evento
+forte, e disparar com forca 3,5 contradiz seu papel. E a implementacao errada
+(filtro instante a instante) falhou NA DIRECAO PREVISTA, o que sugere efeito real.
+Mas isso e hipotese razoavel, nao resultado demonstrado.
+
+QUANDO RETOMAR: quando houver falsos positivos NOVOS, gerados em producao e nao
+usados na construcao da regra. Ai o teste e de verdade. Ate la o ponto de operacao
+publicado fica como esta.
+
 Uso:  PYTHONPATH=. python piso_no_nascimento.py
 """
 import sys; sys.path.insert(0, ".")
