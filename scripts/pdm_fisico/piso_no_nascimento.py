@@ -46,7 +46,32 @@ E SOBREVIVE AO TESTE TEMPORAL, que e o criterio duro:
     v2 publicado      banda 3/3  inicio 3/3  FP 4  (0,504/mes)
     v2 + piso >= 10   banda 3/3  inicio 3/3  FP 2  (0,252/mes)
 
-*** NAO APLICADO. CANDIDATA, NAO RESULTADO. ***
+*** NAO APLICADO -- E A PREMISSA ESTAVA ERRADA. ***
+
+A auditoria (`auditoria_testes.py`) achou o erro na origem: a pericia contou o
+nivel A como "tres canais acenderam em algum momento da primeira hora", quando o
+voto exige tres canais SIMULTANEOS. Com o criterio certo a tabela muda --
+
+    entrada    FP   TP        (antes eu reportei so B = 3 FP, 2 TP)
+    so A        0    3
+    so B        3    3
+    A+B         1    4
+
+-- e aparece um TP que a contagem errada escondia:
+
+    forcas de quem nasce so por B
+    FP:  170,6 ·   6,2 ·  3,5
+    TP:   29,2 · 146,8 ·  1,2   <-- 26/04/2025
+
+O TP de 26/04 nasce com forca 1,2, MENOR que os dois FP que o piso pretendia
+matar. NAO EXISTE janela que separe os grupos. A "separacao entre 6,2 e 29,2" que
+motivou esta regra era artefato da contagem, e e por isso que o teste removia o
+episodio de 26/04 -- o que eu atribui a "acerto nao acionavel" era na verdade o
+sintoma de que a regra nao discrimina o que dizia discriminar.
+
+O resto do arquivo fica como registro do caminho. As ressalvas estatisticas
+abaixo continuam valendo e agora sao secundarias: o problema nao e so falta de
+poder, e que a premissa nao se sustenta.
 
 Revisao critica derrubou as tres evidencias que pareciam sustentar a regra:
 
