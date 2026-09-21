@@ -9,7 +9,9 @@ Cabiunas/
 ├── metadata.csv                      catálogo de tags (já existente)
 ├── registro_trips.csv                trips já ocorridos — ATUALIZAR a cada trip
 ├── documentos/                       (já existente)
-├── dados/                            histórico por período
+├── dados/
+│   └── <ano_ini>_<ano_fim>/
+│       └── data_<ini>_<fim>_raw.csv    entrada; >= 60 d de histórico
 ├── modelos/
 │   └── model_<ini>_<fim>_PCA4SINAIS/  um por MÊS; guardar os antigos (8 KB cada)
 │       ├── temperatura_scaler.pkl     RobustScaler (sklearn puro)
@@ -61,8 +63,9 @@ CSV
 python3 constroi_bundle.py --historico <grade_2min.parquet> \
         --trips ../registro_trips.csv --mes 2026-04
 
-# 3. os dados de entrada em dados/data_tc33003a_raw.csv
+# 3. os dados de entrada em dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv
 #    (1ª coluna de timestamp UTC; as demais são as tags do metadata.csv)
+#    Havendo vários períodos, o script usa o mais recente pelo nome.
 ```
 
 ## Como rodar

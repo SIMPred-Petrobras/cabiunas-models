@@ -66,14 +66,23 @@ def carregar_dados(csv_path) -> pd.DataFrame:
     return df.sort_index()
 
 
-def achar_csv(dados_dir, nome) -> Path:
+def achar_csv(dados_dir, padrao: str = "data_*_raw.csv") -> Path:
+    """O CSV de entrada mais recente em dados/.
+
+    O nome segue a convenção das outras frentes do SIMPred —
+    `dados/<ano_ini>_<ano_fim>/data_<ini>_<fim>_raw.csv` — e como a data de
+    início vem logo depois do prefixo, ordenar por nome ordena por período.
+    Com vários períodos na pasta, vale o último.
+
+    NÃO cai para `*.csv` qualquer. A pasta também recebe recorte de análise e
+    planilha exportada, e pegar o arquivo errado não levanta erro: levanta
+    resultado. Quem quiser apontar outro arquivo usa `--csv`."""
     d = Path(dados_dir)
-    p = d / nome
-    if p.exists():
-        return p
-    achados = sorted(d.rglob(nome)) or sorted(d.rglob("*.csv"))
+    achados = sorted(d.rglob(padrao))
     if not achados:
-        raise FileNotFoundError(f"nenhum CSV em {d}")
+        raise FileNotFoundError(
+            f"nenhum {padrao} em {d}. Esperado: "
+            f"dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv")
     return achados[-1]
 
 

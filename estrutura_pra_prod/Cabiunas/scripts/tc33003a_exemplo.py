@@ -25,7 +25,7 @@ EQUIP = "TC-33003A"
 EQUIP_DIR = Path(__file__).resolve().parent.parent      # .../Cabiunas
 DADOS_DIR = EQUIP_DIR / "dados"
 MODELOS_DIR = EQUIP_DIR / "modelos"
-CSV_NOME = "data_tc33003a_raw.csv"
+CSV_PADRAO = "data_*_raw.csv"          # dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv
 TRIPS = EQUIP_DIR / "registro_trips.csv"     # atualizar a cada trip novo
 
 
@@ -39,7 +39,7 @@ def main() -> int:
     a = ap.parse_args()
 
     print(f"[{EQUIP}] 1/4 carregando dados...")
-    csv = Path(a.csv) if a.csv else ci.achar_csv(DADOS_DIR, CSV_NOME)
+    csv = Path(a.csv) if a.csv else ci.achar_csv(DADOS_DIR, CSV_PADRAO)
     df = ci.carregar_dados(csv)
     print(f"        {len(df)} linhas  |  {df.index[0]:%Y-%m-%d} .. {df.index[-1]:%Y-%m-%d}"
           f"  ({(df.index[-1]-df.index[0]).days} d)")
