@@ -315,6 +315,7 @@ def main():
     n_fp_c = sum(1 for _, _, k, _ in cls if k == "FP")
     n_neutro = sum(1 for _, _, k, _ in cls if k == "NEUTRO")
     h_fp_c = sum((b - a).total_seconds()/3600 for a, b, k, _ in cls if k == "FP")
+    h_neutro = sum((b - a).total_seconds()/3600 for a, b, k, _ in cls if k == "NEUTRO")
 
     lo = loeo_aninhado(alvo)
     meses = m["horas_op"] / 730.0
@@ -327,6 +328,15 @@ def main():
         "fp_por_mes_regra_c": round(n_fp_c / max(m["horas_op"]/730.0, 1e-9), 3),
         "horas_fp_por_mes_regra_c": round(h_fp_c / max(m["horas_op"]/730.0, 1e-9), 1),
         "episodios_neutro": n_neutro,
+
+        # CARGA OPERACIONAL -- o que a sala de controle ve aceso, e o unico numero
+        # que nao depende de onde se corta o perdao da Regra C. As horas de FP
+        # sozinhas subestimam: a Regra C nao conta as horas dos episodios que
+        # precedem parada real, e nao ha teto de duracao para esse perdao -- ha
+        # quatro episodios acima de 48 h no historico, o maior com 153,8 h.
+        # Medido: 6,6 h/mes de FP contra 48,9 h/mes de carga, sete vezes mais.
+        # Ver `regra_c_com_teto.py`.
+        "carga_h_por_mes": round((h_fp_c + h_neutro) / max(m["horas_op"]/730.0, 1e-9), 1),
         "recall_frac": m["det"] / m["n_ev"],
         "episodios": m["episodios"],
         "fp": m["fp"],

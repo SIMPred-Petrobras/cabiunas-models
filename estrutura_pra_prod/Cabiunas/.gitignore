@@ -1,7 +1,8 @@
-# So codigo vai para o repositorio. Dados, documentos e artefatos binarios ficam
-# no Drive: o pacote se reconstroi rodando scripts/constroi_bundle.py.
+# Dados e documentos ficam no Drive. Os BUNDLES sao versionados: sao 580 KB no
+# total (o maior arquivo tem 1,8 KB) e sem eles o pacote nao roda -- quem clonar
+# teria de regerar os 16 bundles com constroi_bundle.py, o que exige acesso ao
+# historico completo. Versionados, a engenharia clona e executa.
 dados/
-modelos/
 documentos/
 metadata.csv
 registro_trips.csv

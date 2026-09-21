@@ -1,0 +1,12 @@
+{
+  "equipamento": "TC-33003A",
+  "arquitetura": "PCA4SINAIS",
+  "versao_detector": "v2 (gatilho de dois n\u00edveis) + ponto de deploy",
+  "mes_servido": "2025-04",
+  "baseline_inicio": "2025-03-01T10:54:00+0000",
+  "baseline_fim": "2025-03-31T23:58:00+0000",
+  "baseline_pontos": 20000,
+  "validade_dias": 62,
+  "cadencia_retreino": "mensal (obrigat\u00f3ria; congelar custa 2 detec\u00e7\u00f5es e 15x as horas de FP)",
+  "gerado_por": "constroi_bundle.py"
+}

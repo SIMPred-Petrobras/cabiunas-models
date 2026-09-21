@@ -1,0 +1,11 @@
+{
+  "tag_alvo": "954005_624_TI_0305",
+  "tags_irmaos": [
+    "954005_624_TI_0301",
+    "954005_624_TI_0303",
+    "954005_624_TI_0307"
+  ],
+  "mediana": 7.454307556152344,
+  "mad_robusto": 0.398546593093872,
+  "comentario": "z = |(spread - mediana) / mad|; o abs vai no z, nunca no spread"
+}

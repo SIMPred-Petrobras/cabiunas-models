@@ -1,0 +1,67 @@
+{
+  "sinais": [
+    "t",
+    "p",
+    "sp",
+    "vb"
+  ],
+  "halflife": {
+    "t": "1h",
+    "p": "1h",
+    "sp": "30min",
+    "vb": "30min"
+  },
+  "base": {
+    "t": 2.0,
+    "p": 2.0,
+    "sp": 3.0,
+    "vb": 3.0
+  },
+  "k_nivel_a": {
+    "t": 1.1,
+    "p": 1.2,
+    "sp": 0.9,
+    "vb": 2.0
+  },
+  "voto_nivel_a": 3,
+  "k_nivel_b": {
+    "t": 1.7,
+    "p": 1.7,
+    "sp": 1.7,
+    "vb": 2.2
+  },
+  "voto_nivel_b": 2,
+  "kappa": 0.75,
+  "h_cusum": 80,
+  "carga_reset": 0.25,
+  "refratario_h": 72,
+  "duracao_min": 120,
+  "duracao_min_forte": 60,
+  "escalada_idade_h": 96,
+  "escalada_abs": 20.0,
+  "tags_vibracao": [
+    "TV_351X_A",
+    "TV_351Y_A",
+    "TV_352X_A",
+    "TV_352Y_A",
+    "TV_353X_A",
+    "TV_353Y_A",
+    "TV_354X_A",
+    "TV_354Y_A",
+    "TV_355X_A",
+    "TV_355Y_A"
+  ],
+  "vb_exclusao_dias": 7.0,
+  "trips_conhecidos": [
+    "2024-01-16T09:10:00+00:00",
+    "2025-02-27T08:38:00+00:00",
+    "2025-03-17T18:16:00+00:00",
+    "2025-04-07T21:18:00+00:00",
+    "2025-04-11T17:02:00+00:00",
+    "2025-04-29T03:04:00+00:00",
+    "2025-11-04T06:22:00+00:00"
+  ],
+  "janela_entrada_dias": 60,
+  "_nota_k_nivel_a": "escolhidos por margem à borda, não por ótimo nos 8 eventos. O ponto ótimo {t:1,10 p:0,70 sp:0,90 vb:1,80} empata em tudo que se mede mas fica a um passo de grade de p=0,60, onde a detecção cai de 8/8 para 7/8. Em 1,20 a margem até essa borda é 2,00x.",
+  "_nota_janela": "60 d não é folga arbitrária: medido contra o histórico completo em 61 execuções semanais, 45 d reproduz bit a bit e 30 d diverge em até 17,1% dos pontos. Janela curta não dá erro, dá alarme diferente."
+}
