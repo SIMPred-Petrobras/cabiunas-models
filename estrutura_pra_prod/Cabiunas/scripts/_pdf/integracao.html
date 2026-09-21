@@ -1,0 +1,438 @@
+<title>Integração TC-33003A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root{
+<style>
+:root{
+  --ground:#F5F7FA; --surface:#FFFFFF; --surface-2:#EDF1F6; --sunken:#E6ECF3;
+  --ink:#16202E; --ink-2:#425468; --muted:#6D7F96;
+  --hairline:#D6DFE9; --hairline-2:#C3D0DE;
+  --accent:#0E5A78; --accent-soft:#DFEDF3; --accent-line:#8FBDD0;
+  --ok:#2C6B50; --ok-soft:#DFEDE5;
+  --warn:#8F5D0C; --warn-soft:#F6EBD6;
+  --crit:#A03728; --crit-soft:#F6E2DE;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E131A; --surface:#151C26; --surface-2:#1B2430; --sunken:#111821;
+    --ink:#DEE6F0; --ink-2:#A7B6C8; --muted:#7B8CA3;
+    --hairline:#222C39; --hairline-2:#2D3947;
+    --accent:#5FB0CE; --accent-soft:#12303D; --accent-line:#2C5C70;
+    --ok:#74C096; --ok-soft:#163024;
+    --warn:#D6A44F; --warn-soft:#332714;
+    --crit:#DE8574; --crit-soft:#361F1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E131A; --surface:#151C26; --surface-2:#1B2430; --sunken:#111821;
+  --ink:#DEE6F0; --ink-2:#A7B6C8; --muted:#7B8CA3;
+  --hairline:#222C39; --hairline-2:#2D3947;
+  --accent:#5FB0CE; --accent-soft:#12303D; --accent-line:#2C5C70;
+  --ok:#74C096; --ok-soft:#163024;
+  --warn:#D6A44F; --warn-soft:#332714;
+  --crit:#DE8574; --crit-soft:#361F1B;
+}
+
+*{box-sizing:border-box}
+body{margin:0; background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-size:16px; line-height:1.62; -webkit-font-smoothing:antialiased}
+.wrap{max-width:1000px; margin:0 auto; padding-inline:20px; padding-block:0 90px}
+.col{max-width:700px}
+h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif; text-wrap:balance}
+h1{font-size:clamp(1.9rem,1.3rem + 2.4vw,2.8rem); line-height:1.08; font-weight:700;
+  letter-spacing:-.015em; margin:0}
+h2{font-size:clamp(1.3rem,1.1rem + .8vw,1.65rem); font-weight:600; line-height:1.2;
+  margin:0 0 4px; letter-spacing:-.008em}
+h3{font-size:1.02rem; font-weight:600; margin:0 0 6px}
+p{margin:0 0 14px}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.85em;
+  background:var(--surface-2); padding:.1em .38em; border-radius:3px; color:var(--ink-2)}
+strong{font-weight:600; color:var(--ink)}
+.eyebrow{font-family:"IBM Plex Mono",monospace; font-size:.7rem; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+
+header{border-bottom:1px solid var(--hairline); background:var(--surface); margin-bottom:42px}
+.hd{max-width:1000px; margin:0 auto; padding-inline:20px; padding-block:32px 28px}
+.hd .eyebrow{display:block; margin-bottom:12px}
+.sub{color:var(--ink-2); font-size:1.04rem; max-width:60ch; margin:14px 0 0}
+.chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+.chip{font-family:"IBM Plex Mono",monospace; font-size:.73rem; padding:4px 10px;
+  border-radius:2px; border:1px solid var(--hairline-2); color:var(--ink-2)}
+.chip.on{border-color:var(--ok); color:var(--ok); background:var(--ok-soft)}
+.chip.hold{border-color:var(--crit); color:var(--crit); background:var(--crit-soft)}
+
+section{margin-bottom:50px}
+.shead{display:flex; align-items:baseline; gap:14px; margin-bottom:18px;
+  padding-bottom:10px; border-bottom:1px solid var(--hairline)}
+
+.tw{overflow-x:auto; border:1px solid var(--hairline); border-radius:4px; background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-size:.9rem}
+th,td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--hairline); vertical-align:top}
+thead th{font-family:"IBM Plex Mono",monospace; font-size:.67rem; font-weight:500;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+  background:var(--surface-2); border-bottom:1px solid var(--hairline-2); white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+tr.destaque td{background:var(--accent-soft); font-weight:500}
+
+.placar{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+  background:var(--hairline); border:1px solid var(--hairline); border-radius:4px; overflow:hidden}
+.placar div{background:var(--surface); padding:15px 16px}
+.placar .v{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:1.6rem;
+  font-weight:700; line-height:1.05; font-variant-numeric:tabular-nums}
+.placar .k{font-family:"IBM Plex Mono",monospace; font-size:.63rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); margin-top:5px}
+.placar .n{font-size:.75rem; color:var(--ink-2); margin-top:3px; line-height:1.4}
+
+.check{display:flex; flex-direction:column; gap:0; border:1px solid var(--hairline);
+  border-radius:4px; background:var(--surface); overflow:hidden}
+.item{display:grid; grid-template-columns:30px 1fr auto; gap:14px; align-items:start;
+  padding:14px 16px; border-bottom:1px solid var(--hairline)}
+.item:last-child{border-bottom:none}
+.item .mk{font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:1rem; line-height:1.5}
+.item.ok .mk{color:var(--ok)} .item.no .mk{color:var(--crit)} .item.wt .mk{color:var(--warn)}
+.item .t{font-weight:600; font-size:.95rem}
+.item .d{font-size:.85rem; color:var(--ink-2); margin-top:2px}
+.item .q{font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--muted); white-space:nowrap; padding-top:3px}
+
+.aviso{border-left:3px solid var(--crit); background:var(--crit-soft); padding:14px 16px;
+  border-radius:0 3px 3px 0; margin-bottom:12px}
+.aviso h3{color:var(--crit); font-size:.94rem; margin-bottom:4px}
+.aviso p{font-size:.87rem; color:var(--ink-2); margin:0}
+.aviso p + p{margin-top:7px}
+.nota{border-left:3px solid var(--accent-line); background:var(--surface); padding:14px 16px;
+  border-radius:0 3px 3px 0; font-size:.89rem; color:var(--ink-2); margin-bottom:14px}
+.nota strong{color:var(--ink)}
+
+footer{border-top:1px solid var(--hairline); margin-top:10px; padding-top:18px;
+  font-size:.8rem; color:var(--muted)}
+@media (max-width:560px){ .item{grid-template-columns:24px 1fr; gap:10px} .item .q{grid-column:2} }
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<style>
+pre{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.78rem; line-height:1.55;
+  background:var(--sunken); border:1px solid var(--hairline); border-left:3px solid var(--accent-line);
+  border-radius:0 3px 3px 0; padding:13px 16px; overflow-x:auto; margin:0 0 14px; color:var(--ink-2)}
+pre b{color:var(--ink); font-weight:600}
+ul{margin:0 0 14px; padding-left:20px} li{margin-bottom:5px}
+.duas{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+@media(max-width:620px){.duas{grid-template-columns:1fr}}
+.tw + p, .tw + .nota{margin-top:12px}
+h3{margin-top:22px}
+section > h3:first-of-type{margin-top:0}
+</style>
+
+<header>
+  <div class="hd">
+    <span class="eyebrow">Petrobras · UTGCA Cabiúnas · SIMPred · 21/09/2026</span>
+    <h1>Integração com o dashboard<br>Detector de trip do TC-33003A</h1>
+    <p class="sub">O que já existe no pacote, o contrato entre o detector e a tela,
+      e os sete itens que ainda faltam para a integração fechar.</p>
+    <div class="chips">
+      <span class="chip on">modelo 100% JSON</span>
+      <span class="chip on">roda ponta a ponta</span>
+      <span class="chip hold">7 itens abertos</span>
+      <span class="chip">v2 · ponto de deploy</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <div class="shead"><span class="eyebrow">Resumo</span><h2>Em uma página</h2></div>
+  <p class="col">Turbocompressor TC-33003A. Detector físico de quatro sinais não
+    supervisionados com gatilho de dois níveis. O pacote <strong>roda ponta a ponta
+    hoje</strong>, com os dados que já estão nele, e o modelo <strong>não tem código
+    fechado</strong>: é JSON legível, a aritmética está escrita à vista, e a inferência
+    depende só de numpy e pandas.</p>
+
+  <div class="placar">
+    <div><div class="v">16</div><div class="k">bundles</div>
+      <div class="n">716 KB · 100% JSON</div></div>
+    <div><div class="v">2</div><div class="k">dependências</div>
+      <div class="n">numpy e pandas</div></div>
+    <div><div class="v">9,5 s</div><div class="k">inferência</div>
+      <div class="n">484 dias de entrada</div></div>
+    <div><div class="v">7</div><div class="k">itens abertos</div>
+      <div class="n">3 nossos · 3 engenharia · 1 operação</div></div>
+  </div>
+
+  <p class="col" style="margin-top:18px">A recomendação do SIMPred é não entregar modelo
+    em código fechado. Este documento registra o que foi feito para cumprir isso, o
+    contrato que a tela consome, e três campos que o painel não pode omitir sem
+    <strong>mentir por omissão</strong>.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Inventário</span><h2>O que existe</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>Item</th><th>Onde</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Módulo de inferência</td><td><code>scripts/cabiunas_inference.py</code></td><td>pronto — autocontido</td></tr>
+      <tr><td>Script de exemplo (4 passos)</td><td><code>scripts/tc33003a_exemplo.py</code></td><td>pronto — padrão SIMPred</td></tr>
+      <tr><td>Retreino mensal</td><td><code>scripts/constroi_bundle.py</code></td><td>pronto — determinístico, ~1,5 s</td></tr>
+      <tr><td>Migração pickle → JSON</td><td><code>scripts/migra_bundle_json.py</code></td><td>executado nos 16 bundles</td></tr>
+      <tr><td>Bundles</td><td><code>modelos/model_*_PCA4SINAIS/</code></td><td>16 · 716 KB · 100% JSON</td></tr>
+      <tr><td>Dados</td><td><code>dados/2025_2026/data_…_raw.csv</code></td><td>349.200 linhas · 484 d · 134,7 MB</td></tr>
+      <tr><td>Registro de trips</td><td><code>registro_trips.csv</code></td><td>9 eventos</td></tr>
+      <tr><td>Contrato do dashboard</td><td><code>contrato_dashboard()</code> · <code>--json</code></td><td>novo</td></tr>
+      <tr><td>Diagnóstico da entrada</td><td><code>diagnostico_entrada()</code></td><td>novo</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Código aberto</span><h2>O modelo não é mais uma caixa-preta</h2></div>
+  <p class="col">O bundle guardava <code>RobustScaler</code> e <code>PCA</code> em pickle.
+    Mesmo sendo sklearn puro — já melhor que a v1 da Transpetro, cujos pickles
+    referenciavam classes internas — pickle continua fechado: não se lê num diff, não se
+    audita, exige a versão certa da biblioteca e <strong>executa código ao carregar</strong>.
+    O dashboard roda em outro time.</p>
+
+  <p class="col">O que os pickles guardavam são quatro vetores por família. A aritmética
+    inteira está publicada em <code>&lt;família&gt;_transformacao.json</code>:</p>
+
+<pre><b>Xs  = (X - center) / scale</b>          RobustScaler.transform
+<b>Z   = Xs @ componentsᵀ - mean_proj</b>   PCA.transform
+<b>rec = Z @ components + mean</b>          PCA.inverse_transform</pre>
+
+  <p class="col">São <strong>56 números</strong> na temperatura e <strong>84</strong> na
+    pressão. Qualquer linguagem lê — o dashboard não precisa de Python nem de sklearn.</p>
+
+  <div class="aviso">
+    <h3>A ordem das operações importa</h3>
+    <p>O sklearn centraliza <em>depois</em> de projetar (<code>decomposition/_base.py</code>:
+      “Apply the centering after the projection”). Escrever <code>(Xs − mean) @ Cᵀ</code> é
+      algebricamente igual e difere em <strong>5,7·10⁻¹⁴</strong>.</p>
+    <p>Por isso o bundle publica <code>mean_proj = mean @ Cᵀ</code> já calculado: bate bit a
+      bit e dá menos conta para o consumidor fazer. Sem isso, uma reimplementação honesta em
+      outra linguagem produziria números ligeiramente diferentes dos nossos — e ninguém
+      saberia dizer qual está certo.</p>
+  </div>
+
+  <div class="check">
+    <div class="item ok"><span class="mk">✓</span>
+      <div><div class="t">Os 32 JSON reproduzem os 16 pares de pickle</div>
+        <div class="d">bit a bit, conferido por teste no próprio migrador</div></div>
+      <span class="q">verificado</span></div>
+    <div class="item ok"><span class="mk">✓</span>
+      <div><div class="t">A saída do detector é idêntica</div>
+        <div class="d">43.921 instantes, 10 colunas, max|dif| = 0</div></div>
+      <span class="q">verificado</span></div>
+    <div class="item ok"><span class="mk">✓</span>
+      <div><div class="t">sklearn sai do caminho de inferência</div>
+        <div class="d">sobram numpy e pandas; não há torch — o detector não usa rede neural</div></div>
+      <span class="q">verificado</span></div>
+    <div class="item wt"><span class="mk">·</span>
+      <div><div class="t">Os <code>.pkl</code> continuam na pasta</div>
+        <div class="d"><code>migra_bundle_json.py --remover-pkl</code> apaga depois do aceite</div></div>
+      <span class="q">aguarda</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Contrato</span><h2>Entrada</h2></div>
+  <p class="col">CSV com a 1ª coluna de timestamp UTC e as tags nas demais, grade de 2 min,
+    em <code>dados/&lt;ano_ini&gt;_&lt;ano_fim&gt;/data_&lt;ini&gt;_&lt;fim&gt;_raw.csv</code>.
+    São <strong>36 tags obrigatórias</strong> (14 de temperatura, 12 de pressão, 10 de
+    vibração; mancal e máscara reusam algumas), mais <code>RUNNING_A</code> e
+    <code>T5_AVG_A</code>.</p>
+
+  <div class="nota"><strong>Para reportar N dias, alimente N + 30.</strong> Os primeiros
+    30 dias de qualquer entrada são aquecimento da referência rolante de 400 h.</div>
+
+  <div class="tw"><table>
+    <thead><tr><th>Dia desde o início da entrada</th><th class="n">Canal <code>vb</code> difere em</th></tr></thead>
+    <tbody>
+      <tr><td>0 – 21</td><td class="n">100,0 %</td></tr>
+      <tr><td>21 – 30</td><td class="n">44,9 %</td></tr>
+      <tr class="destaque"><td>30 +</td><td class="n">0,0 %</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="col" style="margin-top:14px">A causa é a referência precisar de 400 h
+    <strong>estáveis</strong>, e a máquina ficar de pé ~60 % do tempo: 400 h estáveis custam
+    ~28 dias de calendário. Depois do dia 30 o resultado é idêntico, venha de 60 ou de 484
+    dias. <code>corte_valido()</code> recua o corte sozinho e avisa, em vez de devolver
+    número errado em silêncio.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Contrato</span><h2>Saída</h2></div>
+  <p class="col">Duas peças, geradas na mesma execução:</p>
+<pre>python3 tc33003a_exemplo.py --dias 7 --json estado.json</pre>
+
+  <h3><code>tc33003a_inferencia.csv</code> — a série</h3>
+  <div class="tw"><table>
+    <thead><tr><th>Coluna</th><th>Significado</th></tr></thead>
+    <tbody>
+      <tr><td><code>t</code> <code>p</code> <code>sp</code> <code>vb</code></td><td>os 4 canais (z robusto acumulado por CUSUM)</td></tr>
+      <tr><td><code>a_t</code>…<code>a_vb</code> · <code>b_t</code>…<code>b_vb</code></td><td>qual canal acendeu, por nível</td></tr>
+      <tr><td><code>canais_nivel_a/b</code></td><td>a contagem</td></tr>
+      <tr><td><code>forca</code></td><td>quantas vezes o limiar específico</td></tr>
+      <tr><td><code>vigiado</code></td><td>o detector estava enxergando</td></tr>
+      <tr><td><code>is_anomaly</code> · <code>severity</code></td><td><code>normal</code> / <code>atencao</code> / <code>alarme</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><code>estado.json</code> — o que a tela consome</h3>
+  <p class="col">Limiares (para desenhar a linha junto da curva), observabilidade, validade
+    do bundle, estado atual e episódios com os canais que participaram.</p>
+<pre>{
+  "schema": "simpred.cabiunas.tc33003a/1",
+  "bundle": { "vence_em": "…", "dias_restantes": 29, "vencido": false },
+  "observabilidade": {
+      "fracao_vigiada": 0.5912,
+      "criterio": "RUNNING_A &gt; 0.5 e T5_AVG_A &gt; 300 °C",
+      "entrada": { "veredito": "ok", "tags_mortas": [] }
+  },
+  "estado_atual": { "severity": "normal", "vigiado": false,
+                    "canais_nivel_a_acesos": [] },
+  "episodios": [
+      { "inicio": "…", "horas": 52.4, "forca_max": 2.87,
+        "canais": ["t","p","sp","vb"] }
+  ]
+}</pre>
+
+  <div class="nota"><strong>O detector não guarda estado entre execuções.</strong> Cada
+    execução recalcula tudo a partir da janela — refratário e CUSUM inclusive. Não há banco,
+    checkpoint nem ordem obrigatória: mesma entrada, mesma saída. O preço é reprocessar 60+
+    dias toda vez, e isso custa 9,5 s para 484 dias.</div>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Requisito</span><h2>O que a tela tem de mostrar</h2></div>
+  <p class="col">Três campos que não são enfeite. Um painel de preditiva que os omite mente
+    por omissão, e esse é o erro mais caro que um painel comete.</p>
+
+  <h3>1 · <code>observabilidade.fracao_vigiada</code></h3>
+  <p class="col">O detector só enxerga a máquina de pé e em regime. Na janela de
+    março–abril/2026 ela ficou <strong>59 % do tempo</strong> vigiada. Mostrar “normal” sem
+    dizer que o detector está cego nos outros 41 % é afirmar saúde onde houve ausência de
+    medição.</p>
+
+  <h3>2 · <code>observabilidade.entrada.veredito</code></h3>
+  <p class="col">Perder tag não levantava erro. Medido nos 484 dias, apagando uma tag por vez:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Tag removida</th><th>Canal</th><th class="n">Episódios</th><th>Efeito</th></tr></thead>
+    <tbody>
+      <tr><td>1 de 14 termorresistências</td><td><code>t</code></td><td class="n">20 → 22</td><td>canal morto 100 % do tempo</td></tr>
+      <tr><td>1 de 12 tomadas de pressão</td><td><code>p</code></td><td class="n">20 → 15</td><td><strong>5 episódios perdidos</strong></td></tr>
+      <tr><td>1 de 10 sondas de vibração</td><td><code>vb</code></td><td class="n">20 → 20</td><td>tolera (indisponível em 3,8 %)</td></tr>
+      <tr class="destaque"><td><code>RUNNING_A</code></td><td>máscara</td><td class="n">20 → 0</td><td><strong>cego, reportando “normal” para sempre</strong></td></tr>
+    </tbody>
+  </table></div>
+  <p class="col" style="margin-top:14px">A vibração aguenta porque <code>vb</code> é o
+    <em>máximo</em> entre sondas. Temperatura e pressão não aguentam porque são reconstrução
+    conjunta: <code>_recon_pca</code> exige todas as colunas da família no instante.
+    <code>diagnostico_entrada()</code> classifica em <code>ok</code> / <code>degradado</code> /
+    <code>cego</code>, e <strong>cego para a execução com código de saída 3</strong>.</p>
+
+  <h3>3 · <code>bundle.dias_restantes</code></h3>
+  <p class="col">O bundle vale 62 dias após o fim do baseline. Vencido, o script recusa
+    rodar — de propósito.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Cadência de retreino</th><th class="n">Detecção</th><th class="n">h/mês de falso positivo</th></tr></thead>
+    <tbody>
+      <tr class="destaque"><td>Mensal</td><td class="n">8/8</td><td class="n">7,15</td></tr>
+      <tr><td>Trimestral</td><td class="n">7/8</td><td class="n">4,48</td></tr>
+      <tr><td>Semestral</td><td class="n">6/8</td><td class="n">16,94</td></tr>
+      <tr><td>Congelado</td><td class="n">6/8</td><td class="n"><strong>108,19</strong></td></tr>
+    </tbody>
+  </table></div>
+  <p class="col" style="margin-top:14px">Congelar o modelo custa duas detecções e
+    <strong>quinze vezes</strong> as horas de alarme falso. O dashboard deve alertar a partir
+    de ~15 dias restantes.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Pendências</span><h2>O que falta</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th class="n">#</th><th>Item</th><th>Por que trava</th><th>Dono</th></tr></thead>
+    <tbody>
+      <tr><td class="n">1</td><td><code>prepara_dados.py</code></td><td>converte o <code>.xlsx</code> do portal da integridade no CSV; sem ele ninguém reproduz a entrada quando chegar dado novo</td><td>nós</td></tr>
+      <tr><td class="n">2</td><td><code>README.md</code> na raiz do equipamento</td><td>quem abre a pasta no Drive não tem por onde começar; hoje o README está em <code>scripts/</code></td><td>nós</td></tr>
+      <tr><td class="n">3</td><td>Bundles do período corrente</td><td>os 16 vão até 29/03/2026; faltam os meses seguintes quando o dado chegar</td><td>nós</td></tr>
+      <tr><td class="n">4</td><td>Agendamento</td><td>hoje é execução manual; precisa de job de inferência e de retreino no dia 1</td><td>engenharia</td></tr>
+      <tr><td class="n">5</td><td>Destino da saída</td><td>o CSV e o JSON caem em disco; a tela precisa de um lugar combinado ou um endpoint</td><td>engenharia</td></tr>
+      <tr><td class="n">6</td><td>Fuso</td><td>tudo em UTC no contrato; a tela mostra BRT (UTC−3)</td><td>engenharia</td></tr>
+      <tr><td class="n">7</td><td>Atualização do <code>registro_trips.csv</code></td><td>a cada trip alguém acrescenta a linha; sem isso a referência de vibração degrada</td><td>operação</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Sobre o item 1</h3>
+  <p class="col">É o elo mais arriscado, e onde já erramos uma vez: usar o export
+    <code>*_recorded.xlsx</code> em vez do <code>*_interpolated.xlsx</code> dá 7 valores por
+    dia e o MAD sai exatamente zero, <strong>sem nenhuma mensagem de erro</strong>. O script
+    precisa validar taxa de variação, não só cobertura.</p>
+
+  <h3>Sobre o item 4</h3>
+  <p class="col">O retreino é <strong>sempre com corte no dia 1</strong>, nunca “últimos 30
+    dias”. Mudar o dia do mês custa caro:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Dia do corte</th><th class="n">h/mês de falso positivo</th></tr></thead>
+    <tbody>
+      <tr class="destaque"><td>1</td><td class="n">6,6</td></tr>
+      <tr><td>8</td><td class="n">77,3</td></tr>
+      <tr><td>15</td><td class="n">154,6</td></tr>
+      <tr><td>22</td><td class="n">76,9</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col" style="margin-top:14px">O parâmetro <code>--mes AAAA-MM</code> já garante o
+    dia 1, venha o operador a rodar quando vier.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Operação</span><h2>Como rodar</h2></div>
+<pre>pip install -r requirements.txt      <i># numpy, pandas (sklearn só para retreinar)</i>
+
+<b># inferência</b>
+python3 tc33003a_exemplo.py --dias 7 --json estado.json
+
+<b># retreino do mês (dia 1 de cada mês)</b>
+python3 constroi_bundle.py \
+    --historico ../dados/2025_2026/data_2025-01-01_2026-04-30_raw.csv \
+    --trips ../registro_trips.csv \
+    --mes 2026-05</pre>
+  <p class="col">Códigos de saída: <code>0</code> ok · <code>2</code> bundle vencido ·
+    <code>3</code> entrada cega.</p>
+</section>
+
+<section>
+  <div class="shead"><span class="eyebrow">Leitura</span><h2>O que o número significa</h2></div>
+  <p class="col">O detector acha <strong>8 de 8</strong> eventos-alvo (trips de 2º estágio,
+    janela a partir de 01/02/2024), com lead médio de 29,0 h — média, não mediana: 4 dos 8
+    estão censurados em 48 h e o mínimo é 2,8 h.</p>
+
+  <p class="col">O custo publicado é <strong>0,344 falso positivo por mês</strong> e
+    <strong>6,6 h/mês</strong>. Duas ressalvas que pertencem à integração, não ao rodapé:</p>
+
+  <div class="check">
+    <div class="item wt"><span class="mk">!</span>
+      <div><div class="t">6,6 h/mês é o mínimo de uma distribuição, não a expectativa</div>
+        <div class="d">variando o tamanho do baseline em ±10 %, a faixa vai de 6,6 a 68,1 h/mês</div></div>
+      <span class="q">ressalva</span></div>
+    <div class="item wt"><span class="mk">!</span>
+      <div><div class="t">A carga real sobre a operação é 48,9 h/mês</div>
+        <div class="d">somando alarme e os episódios que a régua de avaliação classifica como neutros</div></div>
+      <span class="q">ressalva</span></div>
+  </div>
+
+  <p class="col" style="margin-top:16px"><strong>Dimensione a tela e o plantão pela carga,
+    não pelo mínimo.</strong></p>
+</section>
+
+<footer>
+  Petrobras · UTGCA Cabiúnas · Projeto SIMPred · TC-33003A · 21/09/2026<br>
+  Detector v2 (gatilho de dois níveis) no ponto de deploy · bundles até 29/03/2026 ·
+  dados até 30/04/2026
+</footer>
+
+</div>
