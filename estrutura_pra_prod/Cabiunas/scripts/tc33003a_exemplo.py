@@ -82,6 +82,17 @@ def main() -> int:
     else:
         print(f"        {len(trips)} trip(s) no registro, último "
               f"{max(trips):%Y-%m-%d}")
+    # Entrada incompleta não levanta erro: tira uma família do ar e o detector
+    # segue alarmando pelos outros canais. Ver `diagnostico_entrada` no módulo.
+    diag = ci.diagnostico_entrada(modelos, df)
+    if diag["veredito"] == "cego":
+        print(f"\nERRO: {diag['mensagem']}")
+        print(f"       tags mortas: {', '.join(diag['tags_mortas']) or '(nenhuma)'}")
+        return 3
+    if diag["veredito"] == "degradado":
+        print(f"        AVISO: {diag['mensagem']}")
+        print(f"               tags mortas: {', '.join(diag['tags_mortas'])}")
+
     proc = ci.preprocessar(modelos, df, trips=trips)
     n_vig = int(proc["mask"].sum())
     print(f"        {len(proc)} instantes de 2 min  |  {n_vig} vigiados "
@@ -122,7 +133,8 @@ def main() -> int:
     if a.json:
         alvo = Path(a.json)
         alvo.write_text(json.dumps(
-            ci.contrato_dashboard(modelos, saida, proc=proc, series=a.json_series),
+            ci.contrato_dashboard(modelos, saida, proc=proc, series=a.json_series,
+                                  diagnostico=diag),
             indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"        contrato do dashboard: {alvo.name}")
     return 0

@@ -619,6 +619,78 @@ def resumo_episodios(res: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
+# ══════════════════════════════════════════════════ 5b. diagnóstico da entrada
+TAGS_MASCARA = ("RUNNING_A", "T5_AVG_A")
+
+
+def tags_exigidas(modelos: list[dict]) -> dict[str, list[str]]:
+    """Que colunas o bundle corrente precisa, por família."""
+    m = modelos[-1]
+    n, sp, det = m["normalizacao"], m["spread_mancal"], m["detector"]
+    return {
+        "temperatura": list(n["temperatura"]["cols"]),
+        "pressao": list(n["pressao"]["cols"]),
+        "mancal": [sp["tag_alvo"], *sp["tags_irmaos"]],
+        "vibracao": list(det["tags_vibracao"]),
+        "mascara": list(TAGS_MASCARA),
+    }
+
+
+def diagnostico_entrada(modelos: list[dict], df: pd.DataFrame) -> dict:
+    """A entrada dá para confiar? Medido, porque perder tag não levanta erro.
+
+    `_recon_pca` exige TODAS as colunas da família no instante (`notna().all`).
+    Uma tag de catorze fora tira a família inteira do ar — e o detector segue
+    alarmando pelos outros canais, com o resultado mudado e nenhuma mensagem.
+    Medido nos 484 d de 2025-2026, apagando uma tag por vez:
+
+        1 de 14 termorresistências  ->  canal t morto 100% do tempo, 20 -> 22 episódios
+        1 de 12 tomadas de pressão  ->  canal p morto 100% do tempo, 20 -> 15 episódios
+        1 de 10 sondas de vibração  ->  vb indisponível em 3,8%,     20 -> 20 episódios
+        RUNNING_A                   ->  20 -> 0 episódios: CEGO, reportando "normal"
+
+    A vibração aguenta porque o `vb` é o MÁXIMO entre as sondas; temperatura e
+    pressão não aguentam porque são reconstrução conjunta. E a máscara é o pior
+    caso: sem ela nada é vigiado e a tela fica verde para sempre.
+
+    Veredito: "ok" | "degradado" | "cego". `cego` tem de parar a execução."""
+    exig = tags_exigidas(modelos)
+    familias, ausentes_todas = {}, []
+    for fam, cols in exig.items():
+        ausentes = [c for c in cols if c not in df.columns]
+        vazias = [c for c in cols if c in df.columns and not df[c].notna().any()]
+        mortas = sorted(set(ausentes) | set(vazias))
+        ausentes_todas += mortas
+        cobertura = {c: round(float(df[c].notna().mean()), 4)
+                     for c in cols if c in df.columns}
+        # a vibração tolera perda parcial (o vb é máximo entre sondas); as demais não
+        tolerante = fam == "vibracao"
+        familias[fam] = {
+            "tags": len(cols),
+            "tags_mortas": mortas,
+            "tolerante_a_perda": tolerante,
+            "cobertura_minima": round(min(cobertura.values()), 4) if cobertura else 0.0,
+            "pior_tag": min(cobertura, key=cobertura.get) if cobertura else None,
+            "operante": (len(mortas) < len(cols)) if tolerante else (not mortas),
+        }
+
+    cego = not familias["mascara"]["operante"] or all(
+        not familias[f]["operante"] for f in ("temperatura", "pressao", "mancal", "vibracao"))
+    degradado = any(not familias[f]["operante"] for f in familias)
+    return {
+        "veredito": "cego" if cego else ("degradado" if degradado else "ok"),
+        "tags_mortas": sorted(set(ausentes_todas)),
+        "familias": familias,
+        "mensagem": (
+            "ENTRADA CEGA: a máscara de operação ou todos os canais estão fora. "
+            "O detector reportaria 'normal' para sempre — não é resultado, é ausência de medição."
+            if cego else
+            "Entrada degradada: há família sem todas as tags. O detector segue "
+            "alarmando pelos canais restantes, com resultado diferente do validado."
+            if degradado else "Entrada completa.")
+    }
+
+
 # ══════════════════════════════════════════════════ 6. contrato do dashboard
 SINAIS_DESCRICAO = {
     "t": ("Resíduo PCA — temperatura",
@@ -634,7 +706,8 @@ SINAIS_DESCRICAO = {
 
 def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
                        proc: pd.DataFrame | None = None,
-                       series: bool = False) -> dict:
+                       series: bool = False,
+                       diagnostico: dict | None = None) -> dict:
     """O que o dashboard consome: um dicionário JSON-serializável.
 
     Não é o CSV com outro nome. O CSV é a série; isto é o que a tela precisa
@@ -730,6 +803,8 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
             "criterio": "RUNNING_A > 0.5 e T5_AVG_A > 300 °C (máquina de pé e em regime)",
             "aquecimento_dias": AQUECIMENTO_DIAS,
             "instantes_sem_sinal": fora,
+            # Perder uma tag não levanta erro; ver `diagnostico_entrada`.
+            "entrada": diagnostico or {"veredito": "nao_avaliado"},
         },
 
         "estado_atual": {
