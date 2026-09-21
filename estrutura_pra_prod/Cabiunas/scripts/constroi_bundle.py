@@ -175,11 +175,38 @@ def main() -> int:
     dest = saida / f"model_{ini:%Y-%m-%d}_{fim:%Y-%m-%d}_PCA4SINAIS"
     dest.mkdir(parents=True, exist_ok=True)
 
+    # A transformação vai em JSON, não em pickle. Pickle é código fechado: não se
+    # lê, não se compara, exige a versão certa do sklearn e executa código ao
+    # abrir. Os objetos guardavam só estes quatro vetores — conferido:
+    # with_centering/with_scaling=True, unit_variance=False, whiten=False.
+    #     Xs  = (X - center) / scale
+    #     Z   = Xs @ componentsᵀ - mean_proj      (mean_proj = mean @ componentsᵀ)
+    #     rec = Z @ components + mean
+    # A ordem é a do sklearn, que centraliza DEPOIS de projetar; por isso o
+    # mean_proj vai pronto. Inverter isso muda o resultado em ~6e-14.
+    # Assim o bundle é 100% JSON e o dashboard reimplementa em qualquer linguagem.
     for nome, f in (("temperatura", ft), ("pressao", fp)):
-        with open(dest / f"{nome}_scaler.pkl", "wb") as fh:
-            pickle.dump(f["scaler"], fh)
-        with open(dest / f"{nome}_pca.pkl", "wb") as fh:
-            pickle.dump(f["pca"], fh)
+        s, pc = f["scaler"], f["pca"]
+        assert s.with_centering and s.with_scaling and not s.unit_variance
+        assert not pc.whiten, "PCA com whiten=True mudaria a aritmética publicada"
+        (dest / f"{nome}_transformacao.json").write_text(json.dumps({
+            "formato": "robustscaler+pca, explicito",
+            "aritmetica": [
+                "Xs = (X - center) / scale",
+                "Z  = Xs @ components.T - mean_proj",
+                "rec = Z @ components + mean",
+                "ORDEM IMPORTA: o sklearn centraliza DEPOIS de projetar, e por isso",
+                "mean_proj = mean @ components.T ja vem calculado. Escrever",
+                "(Xs - mean) @ components.T e algebricamente igual mas difere em",
+                "~6e-14 -- suficiente para uma discussao de numero divergente."
+            ],
+            "cols": f["cols"],
+            "center": [float(v) for v in s.center_],
+            "scale": [float(v) for v in s.scale_],
+            "mean": [float(v) for v in pc.mean_],
+            "mean_proj": [float(v) for v in (np.reshape(pc.mean_, (1, -1)) @ pc.components_.T)[0]],
+            "components": [[float(v) for v in linha] for linha in pc.components_],
+        }, indent=2), encoding="utf-8")
 
     (dest / "normalizacao.json").write_text(json.dumps({
         "phi": PHI, "n_components": N_COMPONENTS,

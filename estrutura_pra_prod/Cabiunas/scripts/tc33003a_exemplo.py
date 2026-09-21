@@ -13,6 +13,7 @@ A janela de entrada é de 60 dias e só os últimos `--dias` são o resultado: o
 resto é aquecimento, e não é opcional — ver o cabeçalho do módulo.
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -34,6 +35,10 @@ def main() -> int:
     ap.add_argument("--csv", default=None, help="CSV de entrada (padrão: procura em dados/)")
     ap.add_argument("--modelos", default=None, help="pasta modelos/ (padrão: ../modelos)")
     ap.add_argument("--dias", type=int, default=7, help="dias finais a reportar")
+    ap.add_argument("--json", default=None, metavar="ARQ",
+                    help="também escreve o contrato do dashboard em JSON")
+    ap.add_argument("--json-series", action="store_true",
+                    help="inclui a série inteira no JSON (janelas longas: prefira o CSV)")
     ap.add_argument("--ignorar-validade", action="store_true",
                     help="roda mesmo com bundle vencido (só para reprocessar histórico)")
     a = ap.parse_args()
@@ -113,6 +118,13 @@ def main() -> int:
     destino = Path(__file__).parent / nome
     saida.to_csv(destino)
     print(f"\n        resultado salvo em: {destino.name}")
+
+    if a.json:
+        alvo = Path(a.json)
+        alvo.write_text(json.dumps(
+            ci.contrato_dashboard(modelos, saida, proc=proc, series=a.json_series),
+            indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"        contrato do dashboard: {alvo.name}")
     return 0
 
 

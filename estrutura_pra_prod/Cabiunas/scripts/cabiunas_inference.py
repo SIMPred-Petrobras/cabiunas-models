@@ -33,7 +33,6 @@ Só os últimos dias da janela são resultado; o começo é aquecimento.
 from __future__ import annotations
 
 import json
-import pickle
 from pathlib import Path
 
 import numpy as np
@@ -120,17 +119,60 @@ def achar_csv(dados_dir, padrao: str = "data_*_raw.csv") -> Path:
 
 
 # ══════════════════════════════════════════════════ 2. carregar modelo
+def _transformacao(b: Path, fam: str) -> dict:
+    """Os quatro vetores que definem a transformação da família, sem pickle.
+
+    O bundle guardava `RobustScaler` e `PCA` em pickle. Mesmo sendo sklearn
+    puro, pickle é código fechado: não se lê, não se compara entre versões, não
+    se audita, exige a versão certa do sklearn (`InconsistentVersionWarning`) e
+    executa código ao abrir. A recomendação do SIMPred é entregar modelo aberto.
+
+    O que os dois objetos guardavam é isto e só isto — medido, não suposto:
+    `with_centering=True`, `with_scaling=True`, `unit_variance=False`,
+    `whiten=False`. Ou seja, quatro vetores e três linhas de aritmética:
+
+        Xs  = (X - center) / scale               RobustScaler.transform
+        Z   = Xs @ componentsᵀ - mean_proj       PCA.transform
+        rec = Z @ components + mean              PCA.inverse_transform
+
+    A ordem é a do sklearn, que centraliza DEPOIS de projetar; por isso o bundle
+    traz `mean_proj = mean @ componentsᵀ` pronto. `(Xs - mean) @ componentsᵀ` dá
+    o mesmo na álgebra e difere em ~6e-14 no ponto flutuante.
+
+    São 56 números na temperatura e 84 na pressão. Em JSON, qualquer linguagem
+    lê — o dashboard não precisa de Python nem de sklearn para reimplementar.
+
+    O `.pkl` continua aceito para os bundles antigos, com aviso."""
+    j = b / f"{fam}_transformacao.json"
+    if j.exists():
+        d = json.loads(j.read_text(encoding="utf-8"))
+        return {k: np.asarray(d[k], dtype="float64")
+                for k in ("center", "scale", "mean", "mean_proj", "components")}
+    import pickle, warnings   # só no caminho legado; a inferência não usa pickle
+    warnings.warn(
+        f"{b.name}/{fam}: caindo para pickle ({fam}_scaler.pkl / {fam}_pca.pkl). "
+        f"Rode scripts/migra_bundle_json.py para gerar {fam}_transformacao.json.",
+        stacklevel=2)
+    with open(b / f"{fam}_scaler.pkl", "rb") as fh:
+        s = pickle.load(fh)
+    with open(b / f"{fam}_pca.pkl", "rb") as fh:
+        pc = pickle.load(fh)
+    C = np.asarray(pc.components_, dtype="float64")
+    M = np.asarray(pc.mean_, dtype="float64")
+    return {"center": np.asarray(s.center_, dtype="float64"),
+            "scale": np.asarray(s.scale_, dtype="float64"),
+            "mean": M, "mean_proj": (np.reshape(M, (1, -1)) @ C.T)[0],
+            "components": C}
+
+
 def carregar_modelo(bundle_dir) -> dict:
-    """Abre o bundle. Só pickles de sklearn puro e JSON — nada de classe nossa."""
+    """Abre o bundle. Só JSON — nenhum pickle, nenhuma classe nossa."""
     b = Path(bundle_dir)
     m = {"dir": b}
     for nome in ("normalizacao", "spread_mancal", "modelo", "detector"):
         m[nome] = json.loads((b / f"{nome}.json").read_text(encoding="utf-8"))
     for fam in ("temperatura", "pressao"):
-        with open(b / f"{fam}_scaler.pkl", "rb") as fh:
-            m[f"{fam}_scaler"] = pickle.load(fh)
-        with open(b / f"{fam}_pca.pkl", "rb") as fh:
-            m[f"{fam}_pca"] = pickle.load(fh)
+        m[f"{fam}_transformacao"] = _transformacao(b, fam)
     return m
 
 
@@ -255,7 +297,11 @@ def _recon_pca(modelo: dict, fam: str, X: pd.DataFrame) -> np.ndarray:
 
     É a aritmética que a classe `ScorerMax` fazia; escrita aqui para que o
     bundle não precise dela. Máximo, não média: uma falha que aparece em um
-    sensor só some na média de catorze."""
+    sensor só some na média de catorze.
+
+    O scaler e o PCA também estão escritos à vista, a partir dos vetores do
+    `<fam>_transformacao.json` — ver `_transformacao`. Nada aqui depende de
+    sklearn em tempo de inferência."""
     cfg = modelo["normalizacao"][fam]
     cols = cfg["cols"]
     sens = np.asarray(cfg["sens_p99"], dtype="float64")
@@ -263,9 +309,12 @@ def _recon_pca(modelo: dict, fam: str, X: pd.DataFrame) -> np.ndarray:
     ok = Xc.notna().all(axis=1).to_numpy()
     out = np.full(len(Xc), np.nan)
     if ok.any():
-        Xs = modelo[f"{fam}_scaler"].transform(Xc[ok].astype("float64"))
-        pca = modelo[f"{fam}_pca"]
-        err = (Xs - pca.inverse_transform(pca.transform(Xs))) ** 2
+        tr = modelo[f"{fam}_transformacao"]
+        Xs = (Xc[ok].astype("float64").to_numpy() - tr["center"]) / tr["scale"]
+        Z = Xs @ tr["components"].T                         # PCA.transform:
+        Z = Z - tr["mean_proj"]                             #   centraliza DEPOIS
+        rec = Z @ tr["components"] + tr["mean"]             # PCA.inverse_transform
+        err = (Xs - rec) ** 2
         out[ok] = np.max(err / sens, axis=1)
     return out / cfg["recon_p99"]
 
@@ -542,6 +591,14 @@ def prever(modelos, proc: pd.DataFrame) -> pd.DataFrame:
     for c in sinais:
         res[c] = proc[c]
     res["forca"] = forca
+    # Os flags POR CANAL, não só a contagem. Sem eles a tela mostra "3 canais"
+    # e não diz quais — e quem está de plantão precisa saber se o que acendeu
+    # foi vibração (mecânico, urgente) ou resíduo de pressão (pode ser processo).
+    # Vêm de A[c]/B[c], que já respeitam a máscara: recalcular o limiar por fora
+    # daria canal aceso com a máquina parada, que é contradição na mesma tela.
+    for c in sinais:
+        res[f"a_{c}"] = A[c].to_numpy()
+        res[f"b_{c}"] = B[c].to_numpy()
     res["canais_nivel_a"] = sum(A[c].astype(int) for c in sinais)
     res["canais_nivel_b"] = sum(B[c].astype(int) for c in sinais)
     res["vigiado"] = mask
@@ -560,3 +617,162 @@ def resumo_episodios(res: pd.DataFrame) -> pd.DataFrame:
                            forca_max=round(float(res["forca"].loc[a:b].max()), 2),
                            canais_max=int(res["canais_nivel_a"].loc[a:b].max())))
     return pd.DataFrame(linhas)
+
+
+# ══════════════════════════════════════════════════ 6. contrato do dashboard
+SINAIS_DESCRICAO = {
+    "t": ("Resíduo PCA — temperatura",
+          "Erro de reconstrução das 14 termorresistências contra o baseline do mês."),
+    "p": ("Resíduo PCA — pressão",
+          "Erro de reconstrução das 12 tomadas de pressão contra o baseline do mês."),
+    "sp": ("Spread do mancal",
+           "z robusto do TI_0305 (radial LNA) contra os três mancais irmãos."),
+    "vb": ("Vibração",
+           "Maior z robusto entre as 10 sondas TV_* contra referência rolante de 400 h."),
+}
+
+
+def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
+                       proc: pd.DataFrame | None = None,
+                       series: bool = False) -> dict:
+    """O que o dashboard consome: um dicionário JSON-serializável.
+
+    Não é o CSV com outro nome. O CSV é a série; isto é o que a tela precisa
+    para ser honesta sem reimplementar o detector:
+
+      · os LIMIARES, para desenhar a linha junto da curva. Sem eles o dashboard
+        chuta uma escala e a curva deixa de significar algo;
+      · a OBSERVABILIDADE. O detector só enxerga a máquina de pé e em regime —
+        aqui ela ficou 58% do tempo. Uma tela que mostra "normal" quando o
+        detector está cego mente por omissão, e esse é o erro mais caro que um
+        painel de preditiva comete;
+      · a VALIDADE do bundle. Vencido, o número na tela não vale;
+      · os EPISÓDIOS, que é como a operação lê — um alarme por linha, não ponto
+        a ponto.
+
+    `series=True` inclui a série inteira; para janelas longas prefira o CSV."""
+    m = modelos[-1]
+    det, mod = m["detector"], m["modelo"]
+    sinais = det["sinais"]
+    fim_dado = res.index[-1]
+
+    base_fim = pd.Timestamp(mod["baseline_fim"])
+    validade = int(mod.get("validade_dias", 62))
+    vence_em = base_fim + pd.Timedelta(days=validade)
+
+    sev = res["severity"]
+    atual = str(sev.iloc[-1])
+    # desde quando o estado atual não muda
+    troca = (sev != sev.shift()).to_numpy().nonzero()[0]
+    desde = res.index[troca[-1]] if len(troca) else res.index[0]
+
+    eps = resumo_episodios(res)
+    horas_alarme = float(eps["horas"].sum()) if len(eps) else 0.0
+    horas_janela = (res.index[-1] - res.index[0]).total_seconds() / 3600 + 2 / 60
+
+    fora = {}
+    if proc is not None:
+        for c in sinais:
+            if c in proc:
+                fora[c] = int(pd.isna(proc[c]).sum())
+
+    out = {
+        "schema": "simpred.cabiunas.tc33003a/1",
+        "equipamento": mod["equipamento"],
+        "gerado_em": pd.Timestamp.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+
+        "detector": {
+            "versao": mod["versao_detector"],
+            "arquitetura": mod["arquitetura"],
+            "regra": (f"Nível A: >= {det['voto_nivel_a']} dos {len(sinais)} canais "
+                      f"acima do limiar sensível. Nível B: >= {det['voto_nivel_b']} "
+                      f"acima do limiar específico, com portão sp|vb. Alarme = "
+                      f"A ou B, sustentado {SUSTAIN * 2} min, duração mínima "
+                      f"{det['duracao_min']} min ({det['duracao_min_forte']} se forte), "
+                      f"refratário {det['refratario_h']} h."),
+            "sinais": [{
+                "id": c,
+                "nome": SINAIS_DESCRICAO[c][0],
+                "descricao": SINAIS_DESCRICAO[c][1],
+                "unidade": "adimensional (z robusto acumulado por CUSUM)",
+                "limiar_nivel_a": det["k_nivel_a"][c],
+                "limiar_nivel_b": det["k_nivel_b"][c],
+            } for c in sinais],
+            "voto_nivel_a": det["voto_nivel_a"],
+            "voto_nivel_b": det["voto_nivel_b"],
+        },
+
+        "bundle": {
+            "nome": m["dir"].name,
+            "baseline_inicio": mod["baseline_inicio"],
+            "baseline_fim": mod["baseline_fim"],
+            "baseline_pontos": mod["baseline_pontos"],
+            "validade_dias": validade,
+            "vence_em": vence_em.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "dias_restantes": int((vence_em - fim_dado).days),
+            "vencido": bool(checa_validade(m, fim_dado) is not None),
+            "bundles_carregados": len(modelos),
+            "cadencia_retreino": mod["cadencia_retreino"],
+        },
+
+        "janela": {
+            "inicio": res.index[0].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "fim": fim_dado.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "instantes": int(len(res)),
+            "passo_segundos": 120,
+            "horas": round(horas_janela, 1),
+        },
+
+        # A tela TEM de mostrar isto. "normal" com o detector cego é mentira.
+        "observabilidade": {
+            "instantes_vigiados": int(res["vigiado"].sum()),
+            "fracao_vigiada": round(float(res["vigiado"].mean()), 4),
+            "criterio": "RUNNING_A > 0.5 e T5_AVG_A > 300 °C (máquina de pé e em regime)",
+            "aquecimento_dias": AQUECIMENTO_DIAS,
+            "instantes_sem_sinal": fora,
+        },
+
+        "estado_atual": {
+            "severity": atual,
+            "desde": desde.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "vigiado": bool(res["vigiado"].iloc[-1]),
+            "forca": (None if pd.isna(res["forca"].iloc[-1])
+                      else round(float(res["forca"].iloc[-1]), 2)),
+            "canais_nivel_a": int(res["canais_nivel_a"].iloc[-1]),
+            "canais_nivel_b": int(res["canais_nivel_b"].iloc[-1]),
+            # De a_<c>, que o detector calculou com a máscara aplicada. Comparar
+            # o sinal cru ao limiar aqui daria canal aceso com a máquina parada.
+            "canais_nivel_a_acesos": [c for c in sinais if bool(res[f"a_{c}"].iloc[-1])],
+            "canais_nivel_b_acesos": [c for c in sinais if bool(res[f"b_{c}"].iloc[-1])],
+        },
+
+        "resumo": {
+            "episodios": int(len(eps)),
+            "instantes_alarme": int((sev == "alarme").sum()),
+            "instantes_atencao": int((sev == "atencao").sum()),
+            "horas_alarme": round(horas_alarme, 2),
+            "horas_alarme_por_mes": round(horas_alarme / max(horas_janela / 730.0, 1e-9), 2),
+        },
+
+        "episodios": [{
+            "inicio": r.inicio.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "fim": r.fim.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "horas": float(r.horas),
+            "forca_max": float(r.forca_max),
+            "canais_max": int(r.canais_max),
+            # quais canais participaram em algum momento do episódio
+            "canais": [c for c in sinais
+                       if bool(res[f"a_{c}"].loc[r.inicio:r.fim].any())],
+        } for r in eps.itertuples()],
+    }
+
+    if series:
+        out["series"] = {
+            "ts": [i.strftime("%Y-%m-%dT%H:%M:%SZ") for i in res.index],
+            **{c: [None if pd.isna(v) else round(float(v), 4)
+                   for v in res[c]] for c in sinais},
+            "severity": [str(v) for v in sev],
+            "vigiado": [bool(v) for v in res["vigiado"]],
+            **{f"a_{c}": [bool(v) for v in res[f"a_{c}"]] for c in sinais},
+        }
+    return out
