@@ -86,13 +86,19 @@ def main() -> int:
     res = ci.prever(modelos, proc)
 
     # ── Só os últimos --dias são resultado; o resto foi aquecimento ──
-    corte = res.index[-1] - pd.Timedelta(days=a.dias)
+    # O corte nunca entra nos 30 d iniciais: ali a referência de 400 h do vb
+    # ainda está truncada e o canal difere em 100% dos instantes. Ver
+    # `corte_valido` no módulo.
+    corte, aviso = ci.corte_valido(res, a.dias)
+    if aviso:
+        print(f"        AVISO: {aviso}")
     saida = res.loc[res.index >= corte]
     eps = ci.resumo_episodios(saida)
 
     n_al = int((saida["severity"] == "alarme").sum())
     n_at = int((saida["severity"] == "atencao").sum())
-    print(f"\n{EQUIP}: últimos {a.dias} d  |  {len(saida)} instantes  |  "
+    dias_rep = (saida.index[-1] - saida.index[0]).total_seconds() / 86400.0
+    print(f"\n{EQUIP}: últimos {dias_rep:.0f} d  |  {len(saida)} instantes  |  "
           f"{n_at} atenção  |  {n_al} alarme")
     if len(eps):
         print(f"\n{len(eps)} episódio(s) de alarme:")

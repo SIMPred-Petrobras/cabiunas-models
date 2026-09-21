@@ -54,6 +54,39 @@ VB_PASSO_H = 6.0       # a referência é reavaliada a cada 6 h
 EPOCA = pd.Timestamp("2024-01-01", tz="UTC")   # âncora dos blocos da referência
 VB_FRACAO_BASE_MIN = 0.25   # fração mínima da base de 400 h para a sonda opinar
 
+# Cabeça de aquecimento: quanto do INÍCIO de qualquer entrada é descartável.
+# Não é margem de segurança, é medição. Pontuando 2026-03-01..2026-04-30 com 60 d
+# de entrada e de novo com 484 d, comparei instante a instante:
+#
+#     dia  0-21 da entrada : vb difere em 100,0% dos instantes
+#     dia 21-30            : vb difere em  44,9%
+#     dia 30-61            : vb difere em   0,0%   (t e p, idem: 2,8% -> 0,0%)
+#
+# A causa é a referência rolante de 400 h: ela precisa de 400 h ESTÁVEIS, e a
+# máquina fica de pé ~60% do tempo, então 400 h estáveis custam ~28 dias de
+# calendário. Antes disso a sonda opina com base truncada (VB_FRACAO_BASE_MIN).
+# Depois do dia 30 o resultado é idêntico, venha de 60 ou de 484 dias de entrada.
+AQUECIMENTO_DIAS = 30
+
+
+def corte_valido(df, dias_pedidos: int):
+    """Onde a saída pode começar, e o aviso se o pedido invadiu o aquecimento.
+
+    Devolve (corte, aviso|None). Reportar dentro dos primeiros AQUECIMENTO_DIAS
+    não levanta erro — levanta número errado, que é pior. O `--dias 61` sobre um
+    arquivo de 61 d cai inteiro na cabeça."""
+    fim = df.index[-1]
+    pedido = fim - pd.Timedelta(days=dias_pedidos)
+    minimo = df.index[0] + pd.Timedelta(days=AQUECIMENTO_DIAS)
+    if pedido >= minimo:
+        return pedido, None
+    dias_uteis = max((fim - minimo).total_seconds() / 86400.0, 0.0)
+    return minimo, (
+        f"pedidos {dias_pedidos} d, mas os primeiros {AQUECIMENTO_DIAS} d da "
+        f"entrada são aquecimento da referência de 400 h. Reportando "
+        f"{dias_uteis:.1f} d, a partir de {minimo:%Y-%m-%d %H:%M}. Para reportar "
+        f"{dias_pedidos} d, alimente {dias_pedidos + AQUECIMENTO_DIAS} d de entrada.")
+
 
 # ══════════════════════════════════════════════════ 1. carregar dados
 def carregar_dados(csv_path) -> pd.DataFrame:

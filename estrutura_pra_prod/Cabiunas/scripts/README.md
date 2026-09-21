@@ -11,7 +11,7 @@ Cabiunas/
 ├── documentos/                       (já existente)
 ├── dados/
 │   └── <ano_ini>_<ano_fim>/
-│       └── data_<ini>_<fim>_raw.csv    entrada; >= 60 d de histórico
+│       └── data_<ini>_<fim>_raw.csv    entrada; 30 d de aquecimento + a janela a reportar
 ├── modelos/
 │   └── model_<ini>_<fim>_PCA4SINAIS/  um por MÊS; guardar os antigos (8 KB cada)
 │       ├── temperatura_scaler.pkl     RobustScaler (sklearn puro)
@@ -74,6 +74,25 @@ python3 constroi_bundle.py --historico <grade_2min.parquet> \
 python3 tc33003a_exemplo.py                      # bundle mais recente, últimos 7 d
 python3 tc33003a_exemplo.py --csv dados.csv --dias 3
 ```
+
+### Os primeiros 30 dias da entrada não são resultado
+
+A referência do `vb` é rolante de 400 h **estáveis**, e a máquina fica de pé
+~60% do tempo: 400 h estáveis custam ~28 dias de calendário. Antes disso a
+sonda opina com base truncada.
+
+Medido — a mesma janela (2026-03-01..2026-04-30) pontuada com 60 d e com 484 d
+de entrada, comparada instante a instante:
+
+| dia desde o início da entrada | `vb` difere em |
+|---|---|
+| 0–21  | **100,0 %** |
+| 21–30 | 44,9 % |
+| 30–61 | **0,0 %** |
+
+Depois do dia 30 o resultado é idêntico, venha de 60 ou de 484 dias. Por isso
+`corte_valido` recua o corte sozinho e avisa em vez de devolver número errado
+em silêncio. **Para reportar N dias, alimente N + 30.**
 
 Imprime os episódios de alarme da janela reportada e salva o resultado completo
 em `tc33003a_inferencia.csv`.
