@@ -29,6 +29,7 @@ retreino mensal falhar, o detector degrada em silêncio — por isso o
 
 Uso:
     python3 constroi_bundle.py --historico grade2min.parquet --mes 2026-04
+    python3 constroi_bundle.py --historico ../dados/2025_2026/data_*_raw.csv --mes 2026-04
 """
 from __future__ import annotations
 import argparse, json, pickle
@@ -87,10 +88,37 @@ def ajusta_familia(base: pd.DataFrame, cols: list[str]) -> dict:
                 n_fit=int(len(X)), n_componentes=int(pca.n_components_))
 
 
+def _ler_historico(caminho) -> pd.DataFrame:
+    """A grade de 2 min, de parquet ou do CSV que vai no Drive.
+
+    O parquet é o formato do ambiente de treino. O CSV é o que a pasta do
+    equipamento entrega (`dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv`), e sem
+    aceitá-lo este script não roda para quem só tem a pasta — que é justamente
+    quem precisa retreinar todo mês.
+
+    Conferido: bundle gerado do CSV é idêntico byte a byte ao gerado do parquet
+    (sha256 dos 8 artefatos, pickles inclusive)."""
+    c = Path(caminho)
+    if not c.exists():
+        raise FileNotFoundError(f"histórico não encontrado: {c}")
+    if c.suffix.lower() in (".parquet", ".pq"):
+        g = pd.read_parquet(c)
+    elif c.suffix.lower() == ".csv":
+        g = pd.read_csv(c, index_col=0, parse_dates=[0])
+    else:
+        raise ValueError(f"formato não suportado: {c.suffix} (use .parquet ou .csv)")
+    if g.index.tz is None:
+        g.index = g.index.tz_localize("UTC")
+    else:
+        g.index = g.index.tz_convert("UTC")
+    # float32 como o parquet: o CSV volta em float64 e mudaria os pickles.
+    return g.astype("float32").sort_index()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--historico", default="grade2min.parquet",
-                    help="grade de 2 min com todas as tags (índice de timestamp UTC)")
+                    help="grade de 2 min, .parquet ou .csv (índice de timestamp UTC)")
     ap.add_argument("--mes", required=True, help="mês a servir, YYYY-MM")
     ap.add_argument("--saida", default=None, help="pasta modelos/ (padrão: ../modelos)")
     ap.add_argument("--trips", default="falhas.csv",
@@ -111,7 +139,7 @@ def main() -> int:
     # retreino roda. `--mes AAAA-MM` ja garante o dia 1 venha o operador a rodar
     # quando vier -- NAO trocar por data corrente, nem por "ultimos 30 dias".
     corte = pd.Timestamp(a.mes + "-01", tz="UTC")
-    g = pd.read_parquet(a.historico)
+    g = _ler_historico(a.historico)
     op = (g["RUNNING_A"] > 0.5).fillna(False)
     estavel = op & (g["T5_AVG_A"] > 300)
 

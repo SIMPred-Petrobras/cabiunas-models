@@ -60,7 +60,9 @@ evento
 CSV
 
 # 2. um bundle por mês, do mais antigo ao corrente
-python3 constroi_bundle.py --historico <grade_2min.parquet> \
+#    O histórico pode ser o parquet do ambiente de treino OU o próprio CSV
+#    que vai em dados/ — o bundle sai idêntico byte a byte dos dois.
+python3 constroi_bundle.py --historico ../dados/2025_2026/data_2025-01-01_2026-04-30_raw.csv \
         --trips ../registro_trips.csv --mes 2026-04
 
 # 3. os dados de entrada em dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv
@@ -93,6 +95,26 @@ de entrada, comparada instante a instante:
 Depois do dia 30 o resultado é idêntico, venha de 60 ou de 484 dias. Por isso
 `corte_valido` recua o corte sozinho e avisa em vez de devolver número errado
 em silêncio. **Para reportar N dias, alimente N + 30.**
+
+## Retreino mensal
+
+```bash
+python3 constroi_bundle.py \
+    --historico ../dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv \
+    --trips ../registro_trips.csv \
+    --mes 2026-05                       # o mês a SERVIR; o corte é sempre o dia 1
+```
+
+Roda em ~1,5 s e escreve `modelos/model_<ini>_<fim>_PCA4SINAIS/`. Não apagar os
+bundles antigos: cada trecho é pontuado pelo bundle que vigia nele.
+
+O baseline são os **20.000 pontos estáveis anteriores ao dia 1** do mês servido
+— com ~60% de disponibilidade isso são ~35 dias de calendário. Então o histórico
+precisa cobrir pelo menos **dois meses antes** do mês a servir.
+
+É determinístico: rodar duas vezes com a mesma entrada dá os 8 artefatos
+idênticos no sha256, pickles inclusive. Não há semente nem relógio — tudo sai do
+dado. Corolário: o bundle não registra *quando* foi gerado, só o mês que serve.
 
 Imprime os episódios de alarme da janela reportada e salva o resultado completo
 em `tc33003a_inferencia.csv`.

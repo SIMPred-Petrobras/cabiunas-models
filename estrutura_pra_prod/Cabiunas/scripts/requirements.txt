@@ -10,4 +10,5 @@
 numpy>=2.4,<3
 pandas>=3.0,<4
 scikit-learn>=1.8,<1.9
-pyarrow>=16            # só para constroi_bundle.py (lê o histórico em parquet)
+pyarrow>=16            # OPCIONAL: só se o histórico vier em parquet.
+                       # Com o CSV de dados/ o constroi_bundle.py dispensa.
