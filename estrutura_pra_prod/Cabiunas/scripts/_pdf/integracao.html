@@ -133,7 +133,7 @@ section > h3:first-of-type{margin-top:0}
     <span class="eyebrow">Petrobras · UTGCA Cabiúnas · SIMPred · 21/09/2026</span>
     <h1>Integração com o dashboard<br>Detector de trip do TC-33003A</h1>
     <p class="sub">O que já existe no pacote, o contrato entre o detector e a tela,
-      e os sete itens que ainda faltam para a integração fechar.</p>
+      como a integração deve ser feita, e os sete itens que ainda faltam.</p>
     <div class="chips">
       <span class="chip on">modelo 100% JSON</span>
       <span class="chip on">roda ponta a ponta</span>
@@ -166,8 +166,8 @@ section > h3:first-of-type{margin-top:0}
 
   <p class="col" style="margin-top:18px">A recomendação do SIMPred é não entregar modelo
     em código fechado. Este documento registra o que foi feito para cumprir isso, o
-    contrato que a tela consome, e três campos que o painel não pode omitir sem
-    <strong>mentir por omissão</strong>.</p>
+    contrato que a tela consome, três campos que o painel não pode omitir sem
+    <strong>mentir por omissão</strong>, e o desenho recomendado da integração.</p>
 </section>
 
 <section>
@@ -353,6 +353,171 @@ section > h3:first-of-type{margin-top:0}
 </section>
 
 <section>
+  <div class="shead"><span class="eyebrow">Arquitetura</span><h2>Como a integração deve ser feita</h2></div>
+  <p class="col">Esta seção é recomendação, não contrato. É o desenho que eu
+    defenderia numa revisão de projeto, com o motivo de cada escolha.</p>
+
+  <h3>Um job em lote, não um serviço</h3>
+  <p class="col">A tentação é expor o detector como API e chamar a cada leitura nova.
+    Não faça. O detector <strong>não guarda estado</strong>: cada execução repontua a
+    janela inteira, e é isso que o torna reproduzível e auditável. Um serviço com estado
+    interno introduz a única classe de bug que hoje não existe — divergência entre o que
+    a tela mostra e o que o modelo calcularia se rodasse de novo.</p>
+  <p class="col">Um job em lote que lê o historiador, roda o script e grava o resultado
+    é o suficiente, e custa quase nada:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Janela de entrada</th><th class="n">Linhas</th><th class="n">Tempo</th><th class="n">Memória</th></tr></thead>
+    <tbody>
+      <tr><td>45 dias</td><td class="n">32.401</td><td class="n">0,31 s</td><td class="n">10 MB</td></tr>
+      <tr><td>60 dias</td><td class="n">43.201</td><td class="n">0,41 s</td><td class="n">13 MB</td></tr>
+      <tr class="destaque"><td>90 dias (recomendado)</td><td class="n">64.801</td><td class="n">0,74 s</td><td class="n">20 MB</td></tr>
+      <tr><td>484 dias</td><td class="n">348.481</td><td class="n">4,52 s</td><td class="n">109 MB</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col" style="margin-top:14px">Sem GPU, sem serviço dedicado, sem fila. Cabe
+    num contêiner de 256 MB.</p>
+
+  <h3>Quantos dias alimentar: 90</h3>
+  <p class="col">A referência do <code>vb</code> precisa de 400 h <strong>estáveis</strong>,
+    e a máquina não fica de pé o tempo todo. Contei, ao longo de 2025–2026, quantas horas
+    estáveis cabem na janela anterior a cada instante:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Janela de entrada</th><th class="n">Mínimo de horas estáveis</th><th class="n">Tempo abaixo das 400 h exigidas</th></tr></thead>
+    <tbody>
+      <tr><td>35 dias</td><td class="n">218 h</td><td class="n"><strong>10,9 %</strong></td></tr>
+      <tr><td>60 dias</td><td class="n">518 h</td><td class="n">0,0 %</td></tr>
+      <tr class="destaque"><td>90 dias</td><td class="n">1.152 h</td><td class="n">0,0 %</td></tr>
+      <tr><td>120 dias</td><td class="n">1.794 h</td><td class="n">0,0 %</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col" style="margin-top:14px">Uma entrada de 35 dias deixaria a referência
+    truncada <strong>um dia em cada nove</strong>. Conferido no pior ponto da série
+    (22/05/2025, 218 h estáveis nos 35 dias anteriores): com 35 dias o <code>vb</code>
+    erra por 1,54; de 45 dias em diante o resultado é exato. <strong>60 dias é o piso que
+    nunca falhou historicamente; 90 dá 2,9× de margem</strong> e custa 0,33 s a mais.</p>
+
+  <h3>De quanto em quanto tempo: 15 minutos</h3>
+  <p class="col">O limite não é computação — é quão rápido o alarme pode mudar. Um
+    episódio precisa de <strong>120 min sustentados</strong> para nascer (60 se for forte),
+    então rodar a cada 2 min não antecipa nada. Do outro lado, a menor antecedência já
+    observada foi <strong>2,8 h</strong>: uma cadência horária gastaria 36 % dela só
+    esperando a próxima execução. Quinze minutos custa 0,74 s e gasta 9 %.</p>
+  <div class="nota">Alinhe o disparo à grade de 2 min do historiador. Execuções fora da
+    grade produzem a mesma resposta, mas a borda da janela anda, e isso dificulta comparar
+    duas execuções quando alguém for investigar.</div>
+
+  <h3>Deduplicação: pela chave, nunca pela posição</h3>
+  <div class="aviso">
+    <h3>O erro que derruba a integração</h3>
+    <p>Como o detector repontua tudo a cada execução, <strong>o mesmo episódio volta em
+      toda resposta</strong>. Uma integração que trate cada resposta como novidade emite
+      ~96 notificações por dia para um único evento.</p>
+    <p>Pior: se a janela reportada for recortada antes de achar os episódios, todo episódio
+      mais velho que ela ganha um <em>início falso</em> — a borda do recorte — e passa a
+      parecer um episódio novo de verdade, com duração congelada. Isso estava acontecendo
+      e foi corrigido: o contrato agora traz <code>id</code>, estável entre execuções.</p>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Execução</th><th><code>id</code> devolvido</th><th class="n">Duração</th></tr></thead>
+    <tbody>
+      <tr><td>02/04 08:00</td><td><code>TC-33003A:20260402T043200Z</code></td><td class="n">3,50 h</td></tr>
+      <tr><td>03/04 00:00</td><td><code>TC-33003A:20260402T043200Z</code></td><td class="n">19,50 h</td></tr>
+      <tr><td>03/04 16:00</td><td><code>TC-33003A:20260402T043200Z</code></td><td class="n">35,50 h</td></tr>
+      <tr><td>04/04 08:00</td><td><code>TC-33003A:20260402T043200Z</code></td><td class="n">51,50 h</td></tr>
+    </tbody>
+  </table></div>
+  <p class="col" style="margin-top:14px">A regra é curta: <strong><code>id</code> novo =
+    notificar; <code>id</code> conhecido = atualizar</strong> (duração, força, canais,
+    <code>em_curso</code>). Nunca notificar de novo pelo mesmo <code>id</code>.</p>
+
+  <h3>O que fazer quando o job falha</h3>
+  <p class="col">Os três códigos de saída pedem donos diferentes. Nenhum deles é
+    “tentar de novo e seguir”:</p>
+  <div class="check">
+    <div class="item ok"><span class="mk">0</span>
+      <div><div class="t">Resultado válido</div>
+        <div class="d">grave o JSON e o CSV; atualize a tela</div></div>
+      <span class="q">normal</span></div>
+    <div class="item wt"><span class="mk">2</span>
+      <div><div class="t">Bundle vencido</div>
+        <div class="d">o retreino mensal não rodou. Chame quem cuida do modelo. A tela
+          deve marcar o detector como <strong>indisponível</strong>, não como “normal”.
+          Há ~30 dias de folga: um mês perdido se recupera, dois não</div></div>
+      <span class="q">time de modelo</span></div>
+    <div class="item no"><span class="mk">3</span>
+      <div><div class="t">Entrada cega</div>
+        <div class="d">falta tag obrigatória ou a máscara de operação. Chame quem cuida
+          do historiador. <strong>Nunca</strong> siga com o último resultado bom: a
+          máquina pode ter mudado de estado desde então</div></div>
+      <span class="q">time de dados</span></div>
+  </div>
+  <div class="nota" style="margin-top:14px"><strong>Silêncio não é saúde.</strong> Se o job
+    não rodar, a tela tem de dizer isso. Um painel que mostra o último resultado bom sem
+    carimbo de hora é pior que um painel apagado — ele afirma normalidade sobre dado velho.
+    Mostre sempre a hora da última execução bem-sucedida.</div>
+
+  <h3>Um alarme, não dois níveis</h3>
+  <p class="col">O contrato traz <code>atencao</code> e <code>alarme</code>. Só o
+    <code>alarme</code> deve gerar notificação. Testamos ordenar gravidade e
+    <strong>não funciona</strong>: o episódio mais grave pela métrica interna é um falso
+    positivo. A banda de atenção serve como contexto na tela — a curva subindo antes do
+    alarme —, nunca como um segundo canal de aviso.</p>
+
+  <h3>O retreino é outro job</h3>
+  <p class="col">Dia 1 de cada mês, <code>constroi_bundle.py --mes AAAA-MM</code>. Ele
+    escreve um bundle novo em <code>modelos/</code> e <strong>não apaga os antigos</strong>
+    — cada trecho é pontuado pelo bundle que vigia nele. São 8 KB por mês.</p>
+  <p class="col">Se esse job falhar, o de inferência começa a devolver código 2 quando o
+    bundle passar de 62 dias. Trate a falha do retreino como incidente no dia em que
+    acontece, não quando a inferência parar.</p>
+
+  <h3>O que não construir</h3>
+  <div class="check">
+    <div class="item no"><span class="mk">×</span>
+      <div><div class="t">Reimplementar o detector na tela</div>
+        <div class="d">os limiares vêm no JSON justamente para a tela desenhar a linha sem
+          recalcular nada</div></div>
+      <span class="q">evitar</span></div>
+    <div class="item no"><span class="mk">×</span>
+      <div><div class="t">Limiar próprio sobre os canais</div>
+        <div class="d">o ponto de operação foi calibrado em conjunto; mexer num canal só
+          desfaz a calibração dos quatro</div></div>
+      <span class="q">evitar</span></div>
+    <div class="item no"><span class="mk">×</span>
+      <div><div class="t">Cache do escore entre execuções</div>
+        <div class="d">repontuar custa 0,74 s; cache introduz divergência entre a tela e
+          o modelo</div></div>
+      <span class="q">evitar</span></div>
+    <div class="item no"><span class="mk">×</span>
+      <div><div class="t">Converter o fuso nos dados</div>
+        <div class="d">o contrato é UTC de ponta a ponta; converta só na renderização
+          (BRT, UTC−3)</div></div>
+      <span class="q">evitar</span></div>
+  </div>
+
+  <h3>O fluxo, inteiro</h3>
+<pre>a cada 15 min                          dia 1 de cada mes
+-----------------------------------    -----------------------------------
+historiador                            historico completo
+   | 90 dias, grade de 2 min              | >= 2 meses antes do mes servido
+   v                                      v
+<b>tc33003a_exemplo.py --json</b>             <b>constroi_bundle.py --mes</b>
+   |                                      |
+   +-- codigo 0 -> estado.json            +-- modelos/model_..._PCA4SINAIS/
+   |               + inferencia.csv       |   (8 KB; NAO apaga os antigos)
+   +-- codigo 2 -> time de modelo         |
+   +-- codigo 3 -> time de dados          +-- falhou? incidente HOJE
+   v
+deduplica por <b>id</b>
+   |
+   +-- id novo      -> notifica plantao
+   +-- id conhecido -> atualiza duracao/forca/canais
+   v
+tela: estado + carimbo da ultima execucao boa
+      + fracao vigiada + veredito da entrada + dias do bundle</pre>
+</section>
+
+<section>
   <div class="shead"><span class="eyebrow">Pendências</span><h2>O que falta</h2></div>
   <div class="tw"><table>
     <thead><tr><th class="n">#</th><th>Item</th><th>Por que trava</th><th>Dono</th></tr></thead>
@@ -360,8 +525,8 @@ section > h3:first-of-type{margin-top:0}
       <tr><td class="n">1</td><td><code>prepara_dados.py</code></td><td>converte o <code>.xlsx</code> do portal da integridade no CSV; sem ele ninguém reproduz a entrada quando chegar dado novo</td><td>nós</td></tr>
       <tr><td class="n">2</td><td><code>README.md</code> na raiz do equipamento</td><td>quem abre a pasta no Drive não tem por onde começar; hoje o README está em <code>scripts/</code></td><td>nós</td></tr>
       <tr><td class="n">3</td><td>Bundles do período corrente</td><td>os 16 vão até 29/03/2026; faltam os meses seguintes quando o dado chegar</td><td>nós</td></tr>
-      <tr><td class="n">4</td><td>Agendamento</td><td>hoje é execução manual; precisa de job de inferência e de retreino no dia 1</td><td>engenharia</td></tr>
-      <tr><td class="n">5</td><td>Destino da saída</td><td>o CSV e o JSON caem em disco; a tela precisa de um lugar combinado ou um endpoint</td><td>engenharia</td></tr>
+      <tr><td class="n">4</td><td>Agendamento</td><td>hoje é execução manual; o desenho está na seção anterior — falta implantar</td><td>engenharia</td></tr>
+      <tr><td class="n">5</td><td>Destino da saída</td><td>o CSV e o JSON caem em disco; falta combinar onde ficam e quem lê</td><td>engenharia</td></tr>
       <tr><td class="n">6</td><td>Fuso</td><td>tudo em UTC no contrato; a tela mostra BRT (UTC−3)</td><td>engenharia</td></tr>
       <tr><td class="n">7</td><td>Atualização do <code>registro_trips.csv</code></td><td>a cada trip alguém acrescenta a linha; sem isso a referência de vibração degrada</td><td>operação</td></tr>
     </tbody>
