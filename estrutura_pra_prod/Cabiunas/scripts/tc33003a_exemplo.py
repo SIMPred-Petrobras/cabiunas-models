@@ -109,7 +109,10 @@ def main() -> int:
     if aviso:
         print(f"        AVISO: {aviso}")
     saida = res.loc[res.index >= corte]
-    eps = ci.resumo_episodios(saida)
+    # Os episódios saem da série INTEIRA, filtrados pelo corte — não da fatia.
+    # Recortar antes daria início falso a todo episódio mais velho que a janela.
+    # Ver `resumo_episodios` no módulo.
+    eps = ci.resumo_episodios(res, desde=corte)
 
     n_al = int((saida["severity"] == "alarme").sum())
     n_at = int((saida["severity"] == "atencao").sum())
@@ -133,8 +136,8 @@ def main() -> int:
     if a.json:
         alvo = Path(a.json)
         alvo.write_text(json.dumps(
-            ci.contrato_dashboard(modelos, saida, proc=proc, series=a.json_series,
-                                  diagnostico=diag),
+            ci.contrato_dashboard(modelos, res, desde=corte, proc=proc,
+                                  series=a.json_series, diagnostico=diag),
             indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"        contrato do dashboard: {alvo.name}")
     return 0

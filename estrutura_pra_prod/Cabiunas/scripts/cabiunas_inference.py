@@ -608,10 +608,31 @@ def prever(modelos, proc: pd.DataFrame) -> pd.DataFrame:
     return res
 
 
-def resumo_episodios(res: pd.DataFrame) -> pd.DataFrame:
-    """Um alarme por linha — é assim que a operação lê, não ponto a ponto."""
+def resumo_episodios(res: pd.DataFrame, desde: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Um alarme por linha — é assim que a operação lê, não ponto a ponto.
+
+    `res` tem de ser a série INTEIRA. `desde` filtra quais episódios sair, sem
+    mexer no início nem na duração deles.
+
+    POR QUÊ ISSO IMPORTA. O detector não guarda estado: cada execução repontua a
+    janela do zero. Se a janela for recortada ANTES de achar os episódios, todo
+    episódio mais velho que ela ganha um início falso — a borda do recorte.
+    Medido, num episódio real de 02/04 04:32 que durou 52,4 h, reportando as
+    últimas 24 h de hora em hora:
+
+        execução 03/04 00:00  ->  inicio 02/04 04:32   19,50 h   (certo)
+        execução 03/04 08:00  ->  inicio 02/04 08:00   24,03 h   (falso)
+        execução 03/04 16:00  ->  inicio 02/04 16:00   24,03 h   (falso)
+        execução 04/04 00:00  ->  inicio 03/04 00:00   24,03 h   (falso)
+
+    Quem identifica episódio pelo início vê um alarme NOVO a cada execução —
+    cinquenta notificações para um evento — e a duração congela nas 24 h, então
+    o operador nunca vê que já dura dois dias. É o erro clássico de integrar
+    detector sem estado, e não aparece em teste: só em produção."""
     linhas = []
     for a, b in _episodios(res["is_anomaly"]):
+        if desde is not None and b < desde:
+            continue
         linhas.append(dict(inicio=a, fim=b,
                            horas=round((b - a).total_seconds() / 3600 + 2 / 60, 2),
                            forca_max=round(float(res["forca"].loc[a:b].max()), 2),
@@ -705,6 +726,7 @@ SINAIS_DESCRICAO = {
 
 
 def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
+                       desde: pd.Timestamp | None = None,
                        proc: pd.DataFrame | None = None,
                        series: bool = False,
                        diagnostico: dict | None = None) -> dict:
@@ -733,15 +755,22 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
     validade = int(mod.get("validade_dias", 62))
     vence_em = base_fim + pd.Timedelta(days=validade)
 
-    sev = res["severity"]
+    # `res` é a série inteira; `desde` é onde começa o que se reporta. Os
+    # episódios saem da série inteira (ver `resumo_episodios`); as contagens,
+    # da fatia.
+    if desde is None:
+        desde = res.index[0]
+    fatia = res.loc[res.index >= desde]
+    sev = fatia["severity"]
     atual = str(sev.iloc[-1])
     # desde quando o estado atual não muda
-    troca = (sev != sev.shift()).to_numpy().nonzero()[0]
-    desde = res.index[troca[-1]] if len(troca) else res.index[0]
+    sev_td = res["severity"]
+    troca = (sev_td != sev_td.shift()).to_numpy().nonzero()[0]
+    desde_estado = res.index[troca[-1]] if len(troca) else res.index[0]
 
-    eps = resumo_episodios(res)
+    eps = resumo_episodios(res, desde=desde)
     horas_alarme = float(eps["horas"].sum()) if len(eps) else 0.0
-    horas_janela = (res.index[-1] - res.index[0]).total_seconds() / 3600 + 2 / 60
+    horas_janela = (fatia.index[-1] - fatia.index[0]).total_seconds() / 3600 + 2 / 60
 
     fora = {}
     if proc is not None:
@@ -789,17 +818,18 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
         },
 
         "janela": {
-            "inicio": res.index[0].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "inicio": fatia.index[0].strftime("%Y-%m-%dT%H:%M:%SZ"),
             "fim": fim_dado.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "instantes": int(len(res)),
+            "instantes": int(len(fatia)),
+            "entrada_desde": res.index[0].strftime("%Y-%m-%dT%H:%M:%SZ"),
             "passo_segundos": 120,
             "horas": round(horas_janela, 1),
         },
 
         # A tela TEM de mostrar isto. "normal" com o detector cego é mentira.
         "observabilidade": {
-            "instantes_vigiados": int(res["vigiado"].sum()),
-            "fracao_vigiada": round(float(res["vigiado"].mean()), 4),
+            "instantes_vigiados": int(fatia["vigiado"].sum()),
+            "fracao_vigiada": round(float(fatia["vigiado"].mean()), 4),
             "criterio": "RUNNING_A > 0.5 e T5_AVG_A > 300 °C (máquina de pé e em regime)",
             "aquecimento_dias": AQUECIMENTO_DIAS,
             "instantes_sem_sinal": fora,
@@ -809,7 +839,7 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
 
         "estado_atual": {
             "severity": atual,
-            "desde": desde.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "desde": desde_estado.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "vigiado": bool(res["vigiado"].iloc[-1]),
             "forca": (None if pd.isna(res["forca"].iloc[-1])
                       else round(float(res["forca"].iloc[-1]), 2)),
@@ -830,6 +860,11 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
         },
 
         "episodios": [{
+            # CHAVE ESTÁVEL. Duas execuções que veem o mesmo episódio devolvem
+            # o mesmo `id` — é por ele que a integração deduplica, nunca por
+            # posição na lista nem por hora de geração.
+            "id": f"{mod['equipamento']}:{r.inicio:%Y%m%dT%H%M%SZ}",
+            "em_curso": bool(r.fim >= res.index[-1] - pd.Timedelta(minutes=2)),
             "inicio": r.inicio.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "fim": r.fim.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "horas": float(r.horas),
