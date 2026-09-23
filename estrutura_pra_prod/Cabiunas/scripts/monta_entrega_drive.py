@@ -13,7 +13,10 @@ O QUE ELE FAZ. Copia para uma pasta nova, deixando a original intacta:
   · modelos/ — os bundles, SEM os .pkl (ver abaixo)
   · documentos/ — os relatórios da entrega + a documentação de integração
   · scripts/ — o módulo, o exemplo, o retreino e a manutenção
-  · README.md na raiz
+  · README.md na raiz do equipamento
+
+A cópia sai em `<destino>/Cabiunas/TC-33003A/`, com o nível do equipamento que a
+convenção exige e a nossa pasta de trabalho não tem.
 
 OS .pkl FICAM DE FORA. A recomendação do SIMPred é não entregar modelo em
 código fechado, e pickle é fechado mesmo sendo sklearn puro: não se lê num
@@ -26,7 +29,7 @@ O QUE NÃO VAI. __pycache__, _pdf/ (fonte de diagramação), os xlsx brutos, e o
 relatórios anteriores ao detector v2 — citar número velho numa pasta de entrega
 é pior que não ter o documento.
 
-    python3 monta_entrega_drive.py                    # ../../_upload_drive/Cabiunas
+    python3 monta_entrega_drive.py                    # <repo>/../_upload_drive/
     python3 monta_entrega_drive.py --destino /tmp/x   # outro lugar
 """
 from __future__ import annotations
@@ -35,6 +38,13 @@ from pathlib import Path
 
 EQUIP_DIR = Path(__file__).resolve().parent.parent          # .../Cabiunas
 REPO = EQUIP_DIR.parents[1]                                 # .../cabiunas-models
+
+# A convenção do SIMPred tem DOIS níveis: frente / equipamento. A nossa pasta de
+# trabalho tem só um -- `Cabiunas/` faz o papel do equipamento -- e subir assim
+# deixaria tudo um nível acima do que a Transpetro e a Constellation usam, sem
+# lugar para o próximo turbocompressor de Cabiúnas. A cópia repõe o nível.
+FRENTE = "Cabiunas"
+EQUIPAMENTO = "TC-33003A"        # como está no metadata.csv e nos 16 bundles
 
 # Relatórios que descrevem O QUE ESTÁ SENDO ENTREGUE. Os de agosto ficam fora:
 # são anteriores ao gatilho de dois níveis e citam outro ponto de operação.
@@ -64,18 +74,20 @@ def mb(p: Path) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--destino", default=None,
-                    help="pasta a criar (padrão: <repo>/../_upload_drive/Cabiunas)")
+                    help="onde criar <frente>/<equipamento> (padrão: <repo>/../_upload_drive)")
     ap.add_argument("--com-pkl", action="store_true",
                     help="inclui os .pkl dos bundles (padrão: só os JSON)")
     ap.add_argument("--forcar", action="store_true", help="sobrescreve o destino")
     a = ap.parse_args()
 
-    dest = Path(a.destino) if a.destino else REPO.parent / "_upload_drive" / "Cabiunas"
-    if dest.exists():
+    raiz = Path(a.destino) if a.destino else REPO.parent / "_upload_drive"
+    frente = raiz / FRENTE
+    dest = frente / EQUIPAMENTO
+    if frente.exists():
         if not a.forcar:
-            print(f"ERRO: {dest} já existe. Use --forcar para sobrescrever.")
+            print(f"ERRO: {frente} já existe. Use --forcar para sobrescrever.")
             return 2
-        shutil.rmtree(dest)
+        shutil.rmtree(frente)
     dest.mkdir(parents=True)
 
     avisos: list[str] = []
@@ -149,7 +161,8 @@ def main() -> int:
             avisos.append(f"script ausente: {nome}")
 
     # ── relatório ───────────────────────────────────────────────────────────
-    print(f"-> {dest}\n")
+    print(f"-> {frente}   (suba a pasta {FRENTE}/ inteira)\n")
+    print(f"   {FRENTE}/{EQUIPAMENTO}/")
     for sub in ("README.md", "metadata.csv", "registro_trips.csv",
                 "dados", "modelos", "documentos", "scripts"):
         p = dest / sub
