@@ -48,6 +48,12 @@ def main() -> int:
     df = ci.carregar_dados(csv)
     print(f"        {len(df)} linhas  |  {df.index[0]:%Y-%m-%d} .. {df.index[-1]:%Y-%m-%d}"
           f"  ({(df.index[-1]-df.index[0]).days} d)")
+    # A grade de 2 min do treino (mediana, faixa física, texto -> NaN) é montada UMA vez
+    # aqui. Cada função abaixo chama `preparar_grade` por dentro, e sobre uma grade já
+    # pronta ela é quase de graça e devolve o mesmo dado; sobre o export de 30 s cru ela
+    # custa ~1,1 s por chamada, e eram três (diagnóstico, drift e preprocessar).
+    # Medido com 90 dias de 30 s: 5,6 s -> 2,5 s, resultado idêntico.
+    df = ci.preparar_grade(df)
 
     print(f"[{EQUIP}] 2/4 carregando modelo...")
     # TODOS os bundles, não só o mais recente: cada mês da janela de aquecimento

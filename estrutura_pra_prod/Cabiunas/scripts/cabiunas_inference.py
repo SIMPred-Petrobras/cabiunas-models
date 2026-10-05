@@ -275,6 +275,82 @@ def _regrade(df: pd.DataFrame) -> pd.DataFrame:
                       tolerance=pd.Timedelta(GRID) / 2 - pd.Timedelta("1s"))
 
 
+def _faixa(tag: str) -> tuple[float, float]:
+    """Faixa física por tipo de sensor. Fora dela é sentinela ou defeito, não
+    medição -- o termopar aberto lê exatamente -40,5 °C. A mesma do treino."""
+    if tag.startswith("TC382") or tag.startswith("T5"):
+        return (-15.0, 900.0)                 # termopares de exaustão e média T5, °C
+    if "_TI_" in tag or tag.startswith("TI_"):
+        return (-15.0, 900.0)                 # termorresistências, °C
+    if tag.startswith("TV_"):
+        return (0.0, 200.0)                   # vibração
+    if "_PDI" in tag or tag.startswith("PDI"):
+        return (-5.0, 200.0)                  # pressão diferencial (PDI e PDIT)
+    if "_PI_" in tag or tag.startswith("PI_"):
+        return (-1.5, 200.0)                  # pressão manométrica
+    return (-np.inf, np.inf)
+
+
+def preparar_grade(df: pd.DataFrame) -> pd.DataFrame:
+    """Dado do historiador -> a grade de 2 min em que os bundles foram treinados.
+
+    NÃO é limpeza opcional: é PARTE DO MODELO. Todo bundle foi ajustado, e todo
+    número publicado foi medido, sobre uma grade montada assim a partir do export
+    de 30 s do PI. Medido com este módulo, mesmo período e mesmos bundles
+    (`scripts/pdm_fisico/paridade_entrada.py` no repositório de pesquisa):
+
+        grade de 2 min montada como no treino    0,344 FP/mês   48,9 h/mês
+        uma leitura de 30 s por ponto de 2 min   0,603 FP/mês   67,2 h/mês
+        idem, sem o corte de faixa                0,603 FP/mês   95,7 h/mês
+
+    A detecção é a mesma nos três -- nada denuncia a diferença, só o FP. O erro do
+    PCA é elevado ao quadrado leitura a leitura: uma leitura ruim de 30 s (o
+    PDI_0302 lendo -0,187 no meio de 1,379) pesa ~100x mais no canal `p` se for
+    ela a escolhida para representar a janela.
+
+    Três passos, na ordem do treino:
+      1. texto do PI ("No Data", "Out of Serv"...) -> NaN;
+      2. fora da faixa física do tipo de sensor (`_faixa`) -> NaN;
+      3. se a entrada for mais fina que 2 min, MEDIANA de cada janela [t, t+2min),
+         rotulada em t; e RUNNING_A como a FRAÇÃO da janela com a máquina ligada
+         (média). A mediana de 4 leituras descarta a leitura isolada ruim; uma
+         leitura só ou a média, não. Em float32, como o treino.
+
+    IDEMPOTENTE: aplicada a uma grade já preparada devolve o mesmo dado e custa pouco
+    (0,02 s em 90 dias de 2 min, contra ~1,1 s para reduzir o export de 30 s). Quem
+    chama `diagnostico_entrada`, `monitor_drift` e `preprocessar` em seguida deve preparar
+    UMA vez e passar o resultado às três.
+
+    Entrada JÁ em 2 min passa pelos passos 1 e 2 e segue como veio: o pacote não
+    tem como saber se ela foi montada pela mediana. Por isso o export de 30 s é a
+    entrada preferida -- com ele a grade sai daqui, igual à do treino. Entrada mais
+    grossa que 2 min é recusada: o detector conta amostras de 2 min."""
+    X = df.apply(pd.to_numeric, errors="coerce")
+    for c in X.columns:
+        if c != "RUNNING_A":
+            lo, hi = _faixa(c)
+            if np.isfinite(lo) or np.isfinite(hi):
+                X[c] = X[c].where((X[c] >= lo) & (X[c] <= hi))
+    # a mediana dos intervalos, em Timedelta: `index.asi8` muda de unidade entre versões
+    # do pandas (ns no 2.x, us no 3.x) e leria 2 min como 0,12 s
+    passo = X.index.to_series().diff().median() if len(X) > 1 else pd.Timedelta(GRID)
+    if passo > pd.Timedelta(GRID):
+        raise ValueError(f"entrada com passo de {passo}, mais grossa que {GRID}: o detector "
+                         f"conta amostras de {GRID}. Use o export de 30 s do PI.")
+    if passo == pd.Timedelta(GRID):
+        return X
+    X = X.astype("float32")
+    g = X.resample(GRID).median()
+    if "RUNNING_A" in X:
+        g["RUNNING_A"] = X["RUNNING_A"].resample(GRID).mean()
+    return g.astype("float32")
+
+
+def _grade(df: pd.DataFrame) -> pd.DataFrame:
+    """A entrada do historiador na grade de 2 min do treino, sem buraco preenchido."""
+    return _regrade(preparar_grade(df))
+
+
 def _mascara(g: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     """Onde o detector tem direito de opinar.
 
@@ -395,7 +471,7 @@ def preprocessar(modelos, df: pd.DataFrame, trips=None) -> pd.DataFrame:
     pontuado pelo PCA do mês corrente, que é o defeito que essa lista corrige."""
     if isinstance(modelos, dict):
         modelos = [modelos]
-    g = _regrade(df)
+    g = _grade(df)          # a grade do treino -- ver `preparar_grade`
     mask, estavel, partida, op = _mascara(g)
     det = modelos[-1]["detector"]
 
@@ -674,7 +750,11 @@ def diagnostico_entrada(modelos: list[dict], df: pd.DataFrame) -> dict:
     pressão não aguentam porque são reconstrução conjunta. E a máscara é o pior
     caso: sem ela nada é vigiado e a tela fica verde para sempre.
 
-    Veredito: "ok" | "degradado" | "cego". `cego` tem de parar a execução."""
+    Veredito: "ok" | "degradado" | "cego". `cego` tem de parar a execução.
+
+    Mede sobre a grade preparada (`preparar_grade`): uma tag que só traz texto do
+    PI ("No Data") tem valor em toda linha do CSV e nenhuma medição."""
+    df = preparar_grade(df)
     exig = tags_exigidas(modelos)
     familias, ausentes_todas = {}, []
     for fam, cols in exig.items():

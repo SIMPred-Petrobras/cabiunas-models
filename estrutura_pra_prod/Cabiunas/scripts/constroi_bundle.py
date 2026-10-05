@@ -89,7 +89,7 @@ def ajusta_familia(base: pd.DataFrame, cols: list[str]) -> dict:
 
 
 def _ler_historico(caminho) -> pd.DataFrame:
-    """A grade de 2 min, de parquet ou do CSV que vai no Drive.
+    """A grade de 2 min, de parquet, do CSV que vai no Drive ou do export de 30 s.
 
     O parquet é o formato do ambiente de treino. O CSV é o que a pasta do
     equipamento entrega (`dados/<ini>_<fim>/data_<ini>_<fim>_raw.csv`), e sem
@@ -111,14 +111,19 @@ def _ler_historico(caminho) -> pd.DataFrame:
         g.index = g.index.tz_localize("UTC")
     else:
         g.index = g.index.tz_convert("UTC")
+    # A MESMA grade que a inferência monta (`cabiunas_inference.preparar_grade`):
+    # texto do PI -> NaN, faixa física, e o export de 30 s reduzido à mediana de
+    # 2 min. Treinar sobre uma grade e servir sobre outra custa 0,344 -> 0,603
+    # FP/mês sem mudar a detecção. Uma função só, nos dois lados.
+    from cabiunas_inference import preparar_grade
     # float32 como o parquet: o CSV volta em float64 e mudaria os pickles.
-    return g.astype("float32").sort_index()
+    return preparar_grade(g.sort_index()).astype("float32")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--historico", default="grade2min.parquet",
-                    help="grade de 2 min, .parquet ou .csv (índice de timestamp UTC)")
+                    help="grade de 2 min (.parquet ou .csv) ou o export de 30 s do PI (.csv); índice de timestamp UTC")
     ap.add_argument("--mes", required=True, help="mês a servir, YYYY-MM")
     ap.add_argument("--saida", default=None, help="pasta modelos/ (padrão: ../modelos)")
     ap.add_argument("--trips", default="falhas.csv",
