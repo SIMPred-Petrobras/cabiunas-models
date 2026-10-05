@@ -224,14 +224,26 @@ def carregar_modelos(modelos_dir) -> list[dict]:
 
 
 def vigencia(modelos: list[dict], quando: pd.Timestamp) -> dict:
-    """O bundle que vale num instante: o de baseline mais recente que já terminou.
+    """O bundle que vale num instante: o do MÊS SERVIDO que contém o instante.
 
-    É o mesmo critério do walk-forward: o mês é pontuado pelo ajuste feito com
-    dado ANTERIOR a ele. Olhar para um baseline que termina depois seria usar o
-    futuro."""
-    validos = [m for m in modelos
-               if pd.Timestamp(m["modelo"]["baseline_fim"]) < quando]
-    return validos[-1] if validos else modelos[0]
+    É o critério do walk-forward: o mês é pontuado pelo ajuste feito com dado
+    ANTERIOR a ele, e o bundle de um mês só existe a partir do dia 1 desse mês.
+
+    Uma versão anterior escolhia "o último bundle cujo baseline terminou antes do
+    instante". No primeiro instante do mês as duas regras coincidem -- e é aí que
+    `preprocessar` pergunta --, mas nos últimos dias do mês a regra antiga pegava o
+    bundle do mês SEGUINTE, cujo baseline às vezes termina no dia 27 ou 29. Ao vivo
+    isso não acontece (o bundle seguinte ainda não existe); ao reprocessar
+    histórico com todos os bundles na pasta, são 9,8 dias pontuados com um modelo
+    do futuro. Achado em 30/09/2026 pelo monitor de drift, que pergunta no fim do
+    mês."""
+    def inicio(m):
+        ms = m["modelo"].get("mes_servido")
+        return (pd.Timestamp(ms + "-01", tz="UTC") if ms
+                else pd.Timestamp(m["modelo"]["baseline_fim"]))
+    ordem = sorted(modelos, key=inicio)
+    validos = [m for m in ordem if inicio(m) <= quando]
+    return validos[-1] if validos else ordem[0]
 
 
 def checa_validade(modelo: dict, agora: pd.Timestamp) -> str | None:
@@ -792,6 +804,188 @@ def diagnostico_entrada(modelos: list[dict], df: pd.DataFrame) -> dict:
     }
 
 
+# ══════════════════════════════════════════════════ 5c. monitor de drift nos dados
+DRIFT_LIMIAR_SIGMA = 10.0     # desvio de uma tag contra o baseline do bundle em vigor
+DRIFT_JANELA_DIAS = 7
+MANUTENCAO_MIN_H = 24.0       # HSX_6240001A ligado por pelo menos isso = manutenção
+TRAVADO_FRACAO = 0.10         # IQR semanal abaixo desta fração do típico do PRÓPRIO sensor
+TRAVADO_SEMANAS = 3           # ... por tantas semanas seguidas
+TRAVADO_REF_MIN = 4           # semanas anteriores com dado para saber o "típico"
+# Sensores cuja dispersão semanal tem mais de um modo POR NATUREZA: não são avaliados para
+# "travado". O PI_0319 (gás do motor de partida) é pressurizado em ciclo de ~7 h em operação,
+# e semanas com a linha despressurizada têm IQR ~0,006 contra ~0,3 a ~45 nas demais. A regra
+# relativa o acusava em 8 das 10 semanas em que acionou no histórico (57 semanas, abr/2025 a
+# abr/2026) -- todas falsas. O PDI_0301, parado em -0,401 desde nov/2025, é o único caso real e
+# continua sendo acusado (12/23 e 12/30). Uma variante estatística (excluir quem já teve semanas
+# baixas na referência) mata o falso e o verdadeiro juntos, e há um só caso real para calibrar:
+# por isso a exceção é uma lista explícita, com o motivo físico, e não um parâmetro ajustado.
+SENSORES_DE_ESTADO = ("954005_624_PI_0319",)
+
+
+def _manutencoes(g: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Trechos com o modo de manutenção (HSX_6240001A) ligado >= 24 h; trechos a
+    menos de 24 h um do outro são fundidos. Lista vazia se a tag não vier."""
+    if "HSX_6240001A" not in g:
+        return []
+    h = (g["HSX_6240001A"].fillna(0) > 0.5).to_numpy()
+    d = np.diff(np.concatenate(([0], h.astype(int), [0])))
+    ini, fim = np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1
+    tr = []
+    for a, b in zip(g.index[ini], g.index[fim]):
+        if tr and a - tr[-1][1] <= pd.Timedelta(hours=MANUTENCAO_MIN_H):
+            tr[-1][1] = b
+        else:
+            tr.append([a, b])
+    return [(a, b) for a, b in tr if b - a >= pd.Timedelta(hours=MANUTENCAO_MIN_H)]
+
+
+def _sensores_travados(g: pd.DataFrame, mask: pd.Series, cols: list[str]) -> list[dict]:
+    """Sensores cujo espalhamento caiu muito abaixo do PRÓPRIO normal e ficou lá.
+
+    Compara o IQR de cada uma das últimas TRAVADO_SEMANAS semanas com a mediana do
+    IQR semanal das semanas anteriores da janela de entrada. Um sensor que por
+    natureza varia pouco não é punido por isso; só alerta quem cai a menos de 10%
+    do próprio típico e fica lá.
+
+    Por que não outras formas, testadas em `ks_drift.py`: a razão contra o IQR do
+    baseline dispara em 15 de 62 semanas, puxada por sensores que variam pouco por
+    natureza; e contar valores repetidos não funciona numa grade interpolada, onde
+    até sensor travado muda um pouco a cada amostra. Esta regra dispara em 6 de 59
+    semanas, só em dois sensores e só depois da manutenção de nov/2025: o
+    diferencial do filtro de gás de selagem (PDI_0301) e o gás do motor de partida
+    (PI_0319)."""
+    fim = g.index[-1]
+    iqr = []
+    for k in range(13):
+        a, b = fim - pd.Timedelta(days=7 * (k + 1)), fim - pd.Timedelta(days=7 * k)
+        s = mask & (g.index > a) & (g.index <= b)
+        if s.sum() < 2 * 720:
+            iqr.append(None); continue
+        X = g.loc[s, cols]
+        iqr.append((X.quantile(0.75) - X.quantile(0.25)))
+    rec = iqr[:TRAVADO_SEMANAS]
+    ref = [x for x in iqr[TRAVADO_SEMANAS:] if x is not None]
+    if any(x is None for x in rec) or len(ref) < TRAVADO_REF_MIN:
+        return []
+    tip = pd.concat(ref, axis=1).median(axis=1)
+    out = []
+    for c in cols:
+        if c in SENSORES_DE_ESTADO or not np.isfinite(tip[c]) or tip[c] <= 0:
+            continue
+        r = [float(x[c] / tip[c]) for x in rec]
+        if all(v < TRAVADO_FRACAO for v in r):
+            out.append(dict(tag=c, razao_iqr=round(r[0], 3), semanas=TRAVADO_SEMANAS))
+    return out
+
+
+def monitor_drift(modelos: list[dict], df: pd.DataFrame) -> dict:
+    """O baseline do bundle em vigor ainda representa os sensores? Não muda alarme.
+
+    POR QUÊ (`scripts/pdm_fisico/drift_eventos.py` no repositório de pesquisa). A
+    máquina volta de cada manutenção com um "normal" novo em muitos sensores de uma
+    vez -- nas semanas com manutenção, 14 tags saltam > 3 sigma juntas (mediana),
+    contra 4 nas demais. O retreino é mensal e leva até um mês para absorver. Em
+    nov/2025 o diferencial do filtro de gás de selagem (PDI_0301) foi de +0,245
+    para -0,400 kgf/cm² depois da manutenção de 05-15/11 -- instrumento rezerado
+    ou trocado --, e o canal p ficou aceso 96% do mês.
+
+    O QUE SE MEDE. Para cada tag de t e p, e para o spread do mancal: a mediana da
+    última semana vigiada e da anterior, em sigmas do baseline do bundle em vigor
+    (centro e IQR gravados no próprio bundle; sigma = IQR/1,349). A vibração fica de
+    fora: o vb já tem referência móvel.
+
+    O QUE ALERTA, calibrado em 62 semanas de 2025-2026:
+      degrau_persistente  uma tag >= 10 sigma nas DUAS semanas, mesmo sinal: mudança
+                          de nível -- instrumento, regime ou a própria máquina. A
+                          persistência NÃO separa instrumento de máquina (a excursão do
+                          mancal de out/2025 durou duas semanas). 10 sigma numa semana
+                          só acontece em 11% das semanas.
+      sensor_travado      o IQR das últimas 3 semanas abaixo de 10% do típico do
+                          próprio sensor (`_sensores_travados`).
+      atencao             >= 10 sigma só na última semana. Pode ser a própria
+                          máquina (em 29/10/2025 o TI_0305 chegou a 37 sigma).
+
+    O KS FOI TESTADO E FICOU DE FORA (`ks_drift.py`): o p-valor dá < 0,05 em 99,9%
+    das comparações (autocorrelação), e o D satura -- o limiar calibrado cai em
+    1,000, o máximo, então não sobra escala. Das duas semanas que só ele pegava, uma
+    é saturação num sensor quantizado e a outra já tinha "atencao" pela mediana.
+      ok                  nenhum dos dois.
+
+    O QUE NÃO FAZ. Não recentra nem retreina sozinho: recentrar depois de manutenção
+    foi testado e reprovado (`recentragem.py`) -- o bundle do mês seguinte, treinado
+    com dado de antes e depois, já absorve o salto. O alerta serve para a equipe
+    confirmar com a instrumentação e saber que o mês corrente está com baseline
+    desatualizado nessas tags."""
+    g = _grade(df)
+    mask, *_ = _mascara(g)
+    fim = g.index[-1]
+    m = vigencia(modelos, fim)
+    w1 = mask & (g.index > fim - pd.Timedelta(days=DRIFT_JANELA_DIAS))
+    w0 = mask & (g.index <= fim - pd.Timedelta(days=DRIFT_JANELA_DIAS)) & \
+        (g.index > fim - pd.Timedelta(days=2 * DRIFT_JANELA_DIAS))
+    man = _manutencoes(g)
+    ult = man[-1][1] if man else None
+    manut = dict(ultima_manutencao_fim=(ult.strftime("%Y-%m-%dT%H:%M:%SZ") if ult is not None else None),
+                 dias_desde_manutencao=(round((fim - ult).total_seconds() / 86400, 1)
+                                        if ult is not None else None))
+    if w1.sum() < 720:
+        return dict(veredito="sem_dado", mensagem="menos de 1 dia vigiado na última semana",
+                    bundle=m["dir"].name, limiar_sigma=DRIFT_LIMIAR_SIGMA,
+                    janela_dias=DRIFT_JANELA_DIAS, tags_persistentes=[], tags_recentes=[],
+                    sensores_travados=[], tags_acima_3sigma=0, maiores_desvios=[], **manut)
+    desvio = {}
+    for fam in ("temperatura", "pressao"):
+        tr = m[f"{fam}_transformacao"]; cols = m["normalizacao"][fam]["cols"]
+        sig = tr["scale"] / 1.349
+        for j, c in enumerate(cols):
+            if c not in g or not np.isfinite(sig[j]) or sig[j] <= 0:
+                continue
+            d1 = (g.loc[w1, c].median() - tr["center"][j]) / sig[j]
+            d0 = ((g.loc[w0, c].median() - tr["center"][j]) / sig[j]) if w0.sum() >= 720 else np.nan
+            desvio[c] = (float(d0), float(d1))
+    sp = m["spread_mancal"]
+    if all(c in g for c in [sp["tag_alvo"], *sp["tags_irmaos"]]):
+        # MEDIANA dos irmãos, como no bundle (`spread_mancal`) e na inferência; com a média o
+        # desvio saía viesado em ~0,6 sigma na mediana (a média dos irmãos fica ~0,8 °C acima)
+        b = g[sp["tag_alvo"]] - g[sp["tags_irmaos"]].median(axis=1)
+        d1 = (b[w1].median() - sp["mediana"]) / sp["mad_robusto"]
+        d0 = ((b[w0].median() - sp["mediana"]) / sp["mad_robusto"]) if w0.sum() >= 720 else np.nan
+        desvio["spread_mancal"] = (float(d0), float(d1))
+    cols_trav = [c for fam in ("temperatura", "pressao")
+                 for c in m["normalizacao"][fam]["cols"] if c in g]
+    travados = _sensores_travados(g, mask, cols_trav)
+    L = DRIFT_LIMIAR_SIGMA
+    persist = [c for c, (a, b) in desvio.items()
+               if np.isfinite(a) and abs(a) >= L and abs(b) >= L and np.sign(a) == np.sign(b)]
+    recente = [c for c, (a, b) in desvio.items() if abs(b) >= L and c not in persist]
+    if persist:
+        ver = "degrau_persistente"
+        msg = (f"nível novo em {', '.join(persist)} há >= 2 semanas contra o baseline do bundle "
+               f"-- troca/rezero de instrumento, mudança de regime ou a própria máquina (em "
+               f"out/2025 uma excursão do mancal durou duas semanas). Confirmar com a operação "
+               f"e a instrumentação; o retreino do mês seguinte absorve o que for nível novo.")
+    elif travados:
+        ver = "sensor_travado"
+        msg = (f"espalhamento abaixo de {TRAVADO_FRACAO:.0%} do próprio normal há "
+               f"{TRAVADO_SEMANAS} semanas em {', '.join(x['tag'] for x in travados)} -- "
+               f"instrumento possivelmente isolado, travado ou em falha. Confirmar com a "
+               f"instrumentação: enquanto isso, o que ele mede não está sendo vigiado.")
+    elif recente:
+        ver = "atencao"
+        msg = (f"desvio forte na última semana em {', '.join(recente)} -- pode ser a máquina "
+               f"(é o que o detector vigia) ou instrumento. Se persistir, vira degrau.")
+    else:
+        ver, msg = "ok", "baseline do bundle representa os sensores"
+    top = sorted(desvio.items(), key=lambda kv: -abs(kv[1][1]))[:5]
+    return dict(veredito=ver, mensagem=msg, bundle=m["dir"].name,
+                limiar_sigma=L, janela_dias=DRIFT_JANELA_DIAS,
+                tags_persistentes=persist, tags_recentes=recente, sensores_travados=travados,
+                tags_acima_3sigma=int(sum(abs(b) >= 3 for _, b in desvio.values())),
+                maiores_desvios=[dict(tag=c, semana_anterior=round(a, 1) if np.isfinite(a) else None,
+                                      ultima_semana=round(b, 1)) for c, (a, b) in top],
+                **manut)
+
+
 # ══════════════════════════════════════════════════ 6. contrato do dashboard
 SINAIS_DESCRICAO = {
     "t": ("Resíduo PCA — temperatura",
@@ -809,7 +1003,8 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
                        desde: pd.Timestamp | None = None,
                        proc: pd.DataFrame | None = None,
                        series: bool = False,
-                       diagnostico: dict | None = None) -> dict:
+                       diagnostico: dict | None = None,
+                       drift: dict | None = None) -> dict:
     """O que o dashboard consome: um dicionário JSON-serializável.
 
     Não é o CSV com outro nome. O CSV é a série; isto é o que a tela precisa
@@ -915,6 +1110,8 @@ def contrato_dashboard(modelos: list[dict], res: pd.DataFrame,
             "instantes_sem_sinal": fora,
             # Perder uma tag não levanta erro; ver `diagnostico_entrada`.
             "entrada": diagnostico or {"veredito": "nao_avaliado"},
+            # O baseline ainda representa os sensores? Não muda alarme; ver `monitor_drift`.
+            "drift_dados": drift or {"veredito": "nao_avaliado"},
         },
 
         "estado_atual": {

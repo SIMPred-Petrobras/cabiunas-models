@@ -99,6 +99,12 @@ def main() -> int:
         print(f"        AVISO: {diag['mensagem']}")
         print(f"               tags mortas: {', '.join(diag['tags_mortas'])}")
 
+    # O baseline ainda representa os sensores? Não muda alarme; avisa a equipe.
+    # Ver `monitor_drift` no módulo.
+    drift = ci.monitor_drift(modelos, df)
+    if drift["veredito"] != "ok":
+        print(f"        DRIFT ({drift['veredito']}): {drift['mensagem']}")
+
     proc = ci.preprocessar(modelos, df, trips=trips)
     n_vig = int(proc["mask"].sum())
     print(f"        {len(proc)} instantes de 2 min  |  {n_vig} vigiados "
@@ -143,7 +149,8 @@ def main() -> int:
         alvo = Path(a.json)
         alvo.write_text(json.dumps(
             ci.contrato_dashboard(modelos, res, desde=corte, proc=proc,
-                                  series=a.json_series, diagnostico=diag),
+                                  series=a.json_series, diagnostico=diag,
+                                  drift=drift),
             indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"        contrato do dashboard: {alvo.name}")
     return 0

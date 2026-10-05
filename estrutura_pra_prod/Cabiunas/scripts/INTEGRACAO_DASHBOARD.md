@@ -183,6 +183,37 @@ O dashboard deve alertar a partir de ~15 dias restantes.
 
 ---
 
+### 4º campo: `observabilidade.drift_dados`
+
+Diz se a referência de "normal" do modelo em vigor ainda representa os sensores.
+**Não muda nenhum alarme**; avisa a equipe.
+
+| veredito | significa | o que fazer |
+|---|---|---|
+| `ok` | o baseline representa os sensores | nada |
+| `atencao` | uma tag passou de 10σ na última semana | acompanhar; pode ser a própria máquina |
+| `degrau_persistente` | uma tag está acima de 10σ há duas semanas, no mesmo sentido | confirmar com operação e instrumentação: troca, rezero, regime novo **ou a própria máquina** |
+| `sensor_travado` | o espalhamento de uma tag está abaixo de 10 % do próprio normal há 3 semanas | confirmar com a instrumentação: instrumento isolado, travado ou em falha — o que ele mede não está sendo vigiado |
+| `sem_dado` | menos de 1 dia vigiado na última semana | nada |
+
+Por que existe: a máquina volta de cada manutenção com um "normal" novo em muitos
+sensores de uma vez, e o retreino mensal leva até um mês para absorver. Em nov/2025
+o diferencial do filtro de gás de selagem foi de +0,245 para −0,400 kgf/cm² depois
+da manutenção, e o canal `p` ficou aceso 96 % do mês. O monitor teria dado
+`degrau_persistente` em 26/11. O campo traz também a data da última manutenção
+(modo manutenção ligado ≥ 24 h, lido da tag `HSX_6240001A`).
+
+Calibrado em 62 semanas de 2025–2026: 10σ numa semana só acontece em 11 % delas.
+A persistência **não** separa instrumento de máquina: a excursão do mancal de
+out/2025 durou duas semanas e dá `degrau_persistente`. O `sensor_travado` dispara
+em 6 de 59 semanas, só em dois sensores e só depois da manutenção de nov/2025 — o
+diferencial do filtro de gás de selagem e o gás do motor de partida, que pararam de
+variar e ficaram assim.
+
+O teste de Kolmogorov–Smirnov foi avaliado para este monitor e ficou de fora: o
+p-valor dá < 0,05 em 99,9 % das semanas (a série é autocorrelacionada) e o D satura
+em 1 nas mudanças que importam, sem acrescentar alerta que as duas regras não deem.
+
 ## 4. Como a integração deve ser feita
 
 Recomendação, não contrato — o desenho que eu defenderia numa revisão de projeto,
