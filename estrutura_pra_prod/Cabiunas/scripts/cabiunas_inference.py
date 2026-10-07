@@ -530,7 +530,14 @@ def preprocessar(modelos, df: pd.DataFrame, trips=None) -> pd.DataFrame:
 
     out = pd.DataFrame(index=g.index)
     for c, hl in det["halflife"].items():
-        out[c] = cru[c].ewm(halflife=pd.Timedelta(hl), times=g.index).mean()
+        # O EWMA do pandas CARREGA o último valor por cima de um buraco: com uma tag fora por
+        # 24 h, o `t` ficava congelado no último valor e o canal aceso (e o CUSUM somando) sem
+        # leitura nenhuma. Onde o sinal cru não existe, o EWMA também não. O estado interno do
+        # filtro NÃO muda -- ele segue carregado, como na validação, que atravessa parada e
+        # blackout -- só o VALOR exposto nos instantes sem medição. No histórico isso toca 0,1 h
+        # vigiada: o alarme de 2024-11 a 2026-04 é idêntico (`paridade_pacote.py`).
+        out[c] = (cru[c].ewm(halflife=pd.Timedelta(hl), times=g.index).mean()
+                  .where(cru[c].notna()))
     out["mask"] = mask
     out["reset"] = (~mask) | partida
     out["operando"] = op
