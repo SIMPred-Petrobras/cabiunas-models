@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Estado do pacote de produção do TC-33003A e recomendação para o Drive</title>
+<style>
+@page { size: A4; margin: 16mm 15mm 17mm; }
+:root { --ink:#16202E; --muted:#64768C; --line:#D2DCE6; --acc:#0E5A78; --accsoft:#E4F0F5; --warn:#8F5D0C; --warnsoft:#F7EEDD;
+        --crit:#A03728; --critsoft:#F8E7E3; --ok:#2C6B50; --oksoft:#E4F0E9; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+body { font: 10pt/1.5 "DejaVu Sans", "Helvetica Neue", Arial, sans-serif; color: var(--ink); background:#fff; margin:0; }
+h1 { font-size: 19pt; line-height:1.2; margin: 0 0 4px; }
+h2 { font-size: 13pt; margin: 22px 0 6px; padding-bottom: 3px; border-bottom: 2px solid var(--acc); color: var(--acc); break-after: avoid; }
+h3 { font-size: 10.5pt; margin: 14px 0 4px; break-after: avoid; }
+p { margin: 5px 0; }
+.sub { color: var(--muted); font-size: 9.5pt; margin-bottom: 14px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.8pt; break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 3.5px 6px; text-align: left; vertical-align: top; }
+th { background: var(--accsoft); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.6pt; background:#F4F7FA; padding: 0 3px; }
+.box { border-left: 4px solid var(--acc); background: var(--accsoft); padding: 7px 11px; margin: 10px 0; break-inside: avoid; }
+.box.w { border-color: var(--warn); background: var(--warnsoft); }
+.box.c { border-color: var(--crit); background: var(--critsoft); }
+.box.o { border-color: var(--ok); background: var(--oksoft); }
+ul, ol { margin: 4px 0 4px 18px; padding: 0; } li { margin: 2px 0; }
+.fim { margin-top: 20px; font-size: 8.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; }
+</style></head><body>
+
+<h1>Estado do pacote de produção do TC-33003A e recomendação para o Drive</h1>
+<div class="sub">Petrobras · UTGCA Cabiúnas · projeto SIMPred · detector de precursores de trip · posição em 07/10/2026 · para aprovação do Diego</div>
+
+<div class="box o"><b>Recomendação.</b> Subir ao Drive o <b>código</b> do pacote consolidado (branch <code>feat/pacote-consolidado</code>), <b>como piloto em modo sombra</b> e <b>só depois de três condições</b>: (1) regerar o <code>README</code> e os PDFs da entrega, hoje com os números do melhor caso e sem as ressalvas medidas depois; (2) entregar o <code>registro_trips.csv</code> junto, com a instrução de mantê-lo; (3) a sua aprovação. <b>Não</b> subir a pasta de entrega atual (30/09): ela não lê o export de 30 s, que é a entrada que recomendamos, e o README promete "8 de 8, 0,344 FP/mês", que é a composição mais favorável, não o desempenho esperado.</div>
+
+<h2>1. Por que a pasta atual do Drive não deve ficar como está</h2>
+<table>
+<tr><th style="width:26%">Problema</th><th>Evidência</th><th style="width:22%">Resolvido na consolidada</th></tr>
+<tr><td><b>Quebra com o export de 30 s</b></td><td>O PI grava células de texto (<code>Comm Fail</code>, <code>No Data</code>) nas colunas dos sensores; o pacote entregue falha com <code>could not convert string to float</code>. 3 das 9 execuções no worker do Cica falharam por isso. Os PDFs da entrega recomendam justamente o export de 30 s.</td><td>Sim (<code>5608f35</code>)</td></tr>
+<tr><td><b>README com o melhor caso</b></td><td>"Acha 8 de 8 … 0,344 alarme falso por mês, antecedência média de 29 h". É o retreino do dia 1, a melhor das 8 composições. A mediana das composições é 6,5/8, 0,86 FP/mês, ≈133 h de alarme por mês. A "antecedência de 29 h" é média, com 4 dos 8 eventos censurados em 48 h (mínimo 2,8 h).</td><td>Não: é texto, ver seção 7</td></tr>
+<tr><td><b>PDFs de 01 a 21/09</b></td><td>Anteriores à latência de notificação (+2 h), à prova de paridade da grade, à análise de sobreajuste e às medições de consumo.</td><td>Não: regerar</td></tr>
+<tr><td><b>Registro de trips fora do git</b></td><td><code>registro_trips.csv</code> está no <code>.gitignore</code>. Quem clona a branch roda sem ele e o canal de vibração deixa de excluir os trips conhecidos: no mesmo CSV de 2 min, 3 episódios sem o registro contra 2 com ele. O script só avisa, não para.</td><td>Documentar; ver seções 6 e 7</td></tr>
+<tr><td><b>Portão de baseline fraco</b></td><td>O <code>constroi_bundle</code> do Drive só recusa abaixo de 5.000 pontos estáveis; o validado é 20.000.</td><td>Sim (<code>b988138</code>)</td></tr>
+</table>
+
+<h2>2. O que a branch consolidada contém</h2>
+<p>Parte da <code>exp/regua-inicio-e-banda</code> (a base do pacote entregue) e soma 4 commits, cada um revisável sozinho. O pacote resultante é <b>byte a byte igual</b> ao da branch de pesquisa, então as provas feitas lá valem aqui.</p>
+<table>
+<tr><th style="width:11%">Commit</th><th>O que faz</th><th style="width:27%">Muda o alarme?</th></tr>
+<tr><td><code>5608f35</code></td><td><b>Grade de 2 min a partir do export de 30 s</b> (<code>preparar_grade</code>): texto vira NaN, valor fora da faixa física vira NaN, cada janela de 2 min vira a mediana de 4 leituras. Usada na inferência, no diagnóstico de entrada e no retreino, para treino e serviço verem o mesmo dado. Recusa entrada mais grossa que 2 min.</td><td>Não para entrada de 2 min (JSON do dashboard idêntico). Para 30 s, é o que reproduz o publicado.</td></tr>
+<tr><td><code>9951b21</code></td><td><b>Monitor de drift</b>: diz se o baseline ainda representa os sensores (<code>ok</code>, <code>atencao</code>, <code>degrau_persistente</code>, <code>sensor_travado</code>, <code>sem_dado</code>). Inclui a correção de <code>vigencia()</code> (bundle do mês servido).</td><td>Não. Diagnóstico para humano; não entra no voto nem dispara retreino.</td></tr>
+<tr><td><code>197bff5</code></td><td><b>EWMA não carrega o último valor sobre dado faltante</b>: com uma tag fora por 24 h o canal ficava congelado e aceso sem leitura.</td><td>Toca 0,1 h vigiada no histórico; alarme de 2024-11 a 2026-04 idêntico.</td></tr>
+<tr><td><code>b988138</code></td><td><b>Portões do retreino</b>: recusa baseline com menos de 20.000 pontos (código 1) ou fora da faixa física (código 4); grava span e folga do baseline e alertas (span &gt; 70 d ou folga &gt; 7 d).</td><td>Não. Só impede ou avisa na geração do bundle.</td></tr>
+</table>
+<p>Códigos de saída: <code>constroi_bundle</code> 0 / 1 (baseline insuficiente) / 4 (fora da faixa); <code>tc33003a_exemplo</code> 0 / 2 (bundle vencido) / 3 (entrada cega).</p>
+
+<h2>3. O que foi verificado, e como</h2>
+<table>
+<tr><th style="width:30%">Verificação</th><th>Resultado</th></tr>
+<tr><td>Pacote da consolidada = pacote da branch de pesquisa</td><td><code>git diff</code> vazio em <code>estrutura_pra_prod</code>.</td></tr>
+<tr><td>Paridade da entrada (4 itens, <code>paridade_pacote.py</code>, reexecutada sobre este pacote)</td><td><b>Passou nos quatro.</b> (1) Grade: <code>preparar_grade</code> sobre o export de 30 s contra a grade de 2 min da pesquisa, 612.630 instantes × 38 colunas, 0 células diferentes. (2) Regressão: quem já entrega 2 min recebe o mesmo alarme (49.049 instantes), o mesmo diagnóstico de entrada e o mesmo monitor. (3) Inferência a partir do export de 30 s: detecção 8, início 6, banda 5, 0,344 FP/mês, 48,9 h/mês, 21 episódios, idêntico instante a instante ao da pesquisa. (4) Bundle de 2026-03: os 6 JSON com o mesmo sha256 a partir do export de 30 s, do parquet e da versão anterior. <b>Atenção:</b> isso prova a paridade da entrada e reproduz o <i>dia 1</i> publicado (0,344); não é desempenho esperado (seção 4). A grade de 2 min montada com uma leitura por janela segue dando 0,603 FP/mês e 67,2 h/mês sem aviso.</td></tr>
+<tr><td>Entrada de 2 min: pacote com a grade contra o original</td><td>JSON do dashboard idêntico (sem <code>gerado_em</code>), 3 episódios nos dois, mesmos <code>modelos</code>.</td></tr>
+<tr><td>Export de 30 s, antes quebrava</td><td>Roda: inferência de 90 d em 5,2 s; retreino de 240 d em 9,8 s (notebook).</td></tr>
+<tr><td>Portões do retreino</td><td>Histórico curto: recusa, código 1 ("só 0 pontos estáveis antes de 2026-03; o validado é 20000"). Histórico completo: código 0, <code>baseline_span_dias</code> 28, folga 0, sem alertas.</td></tr>
+<tr><td>Monitor de drift nos casos que o motivaram</td><td>30/11/2025 <code>degrau_persistente</code> (PDI_0301); 20/12/2025 <code>sensor_travado</code>; 15/01/2026 <code>ok</code>. <b>São os casos de calibração, portanto em amostra.</b></td></tr>
+<tr><td>Consumo de recursos</td><td>Seção 5; 3 execuções por cenário em worker do ClearML do Cica e no notebook.</td></tr>
+</table>
+
+<h2>4. Desempenho esperado, sem o melhor caso</h2>
+<table>
+<tr><th>Medida (oito composições, retreino mensal)</th><th class="n">Dia 1 (publicado)</th><th class="n">Mediana das 8</th></tr>
+<tr><td>Detecção de trips (de 8)</td><td class="n">8</td><td class="n">6,5</td></tr>
+<tr><td>Detecção na banda acionável [T−48 h, T−4 h] (de 8)</td><td class="n">5</td><td class="n">4,5</td></tr>
+<tr><td>Falso positivo por mês</td><td class="n">0,344</td><td class="n">0,86</td></tr>
+<tr><td>Horas de alarme falso e neutro por mês</td><td class="n">48,9</td><td class="n">≈133</td></tr>
+</table>
+<ul>
+<li><b>Latência de notificação:</b> o episódio só vira alarme depois de 120 min (60 se forte). Contando início + 2 h, o início mediano cai de 6 para 5 e a banda de 4,5 para 4 (no dia 1, de 5/8 para 4/8).</li>
+<li><b>Estatística:</b> são 8 eventos e 6 falsos positivos de produção. O intervalo de Poisson do FP/mês é [0,53; 1,81]; a diferença entre 0,344 e 0,5 não é distinguível. O modo sombra só prova FP em 12 meses e detecção em cerca de 16.</li>
+<li><b>Sobreajuste:</b> não há aos eventos nos limiares (LOEO 0,797 = 0,797); há ao "dia 1". O 8/8 de título é sobretudo composição fácil: uma configuração típica faz 54 h no dia 1 contra 117 nas outras.</li>
+<li><b>Fragilidade nova, medida em 07/10:</b> atrasar o relógio das partidas em até 10 min faz 6 de 12 sorteios perderem detecção em alguma composição (até 5 de 8), embora a carga média seja estável (DP 1,8 h/mês). A detecção depende de como a partida é definida (<code>RUNNING_A</code>). O relógio pela ignição (V4) corta 23% da carga sem perder detecção, mas é candidato, ainda sem pré-registro.</li>
+</ul>
+
+<h2>5. Consumo de recursos (benchmark, não produção)</h2>
+<p>Código real do pacote, sob medidor próprio (<code>telemetria_execucao.py</code>), 3 execuções em processo novo. Worker do Cica: AMD Threadripper 7970X, 64 núcleos lógicos, 131 GB, contêiner Python 3.12. Dados históricos reais; ainda não há execução agendada.</p>
+<table>
+<tr><th>Cenário</th><th class="n">Duração</th><th class="n">CPU média (núcleos)</th><th class="n">RAM pico</th><th class="n">Escrita em disco</th></tr>
+<tr><td>Inferência, 2 min, 90 d</td><td class="n">1,3 s</td><td class="n">4,2</td><td class="n">167 MB</td><td class="n">7,8 MB (JSON)</td></tr>
+<tr><td>Inferência, 30 s, 90 d</td><td class="n">5,4 s</td><td class="n">1,8</td><td class="n">750 MB</td><td class="n">7,8 MB</td></tr>
+<tr><td>Retreino, 2 min, 484 d</td><td class="n">2,2 s</td><td class="n">5,3</td><td class="n">522 MB</td><td class="n">0,02 MB</td></tr>
+<tr><td>Retreino, 30 s, 240 d</td><td class="n">5,5 s</td><td class="n">2,7</td><td class="n">1,96 GB</td><td class="n">0,02 MB</td></tr>
+</table>
+<p>Espaço temporário: zero (o pacote não usa <code>TMPDIR</code>). Bundle: cerca de 9 KB por mês (6 JSON; 217 KB os 16). O pico de CPU amostrado (~43 núcleos) é uma rajada de álgebra linear numa janela de 0,1 s; a média é o número que representa o uso. No notebook, 1,6 a 1,8 vez mais lento, com a mesma RAM.</p>
+
+<h2>6. O que continua aberto</h2>
+<table>
+<tr><th style="width:34%">Item</th><th>Situação</th></tr>
+<tr><td><b>Sem execução ao vivo possível hoje</b></td><td>O dado vai até 30/04/2026 e o último bundle serve 04/2026; o bundle vence 62 dias após o fim do baseline, então a inferência recusa rodar (código 2) até haver dado novo. Não pedimos dado novo.</td></tr>
+<tr><td><b>Conversor do <code>.xlsx</code> do portal para o CSV</b></td><td>Não existe. O contrato de entrada é o export de 30 s do PI, cortado na janela (90 dias na inferência, ~240 no retreino).</td></tr>
+<tr><td><b>Agendamento e destino da saída</b></td><td>Fora do pacote; a engenharia define. Recomendamos executar a cada 15 min.</td></tr>
+<tr><td><b>Registro de trips</b></td><td>Precisa ser mantido a cada trip novo e entregue com o pacote. Sugestão aberta: o script parar (e não só avisar) quando ele estiver ausente.</td></tr>
+<tr><td><b>Regra da <code>RUNNING_A</code></b></td><td>Não conhecemos os limiares sobre NGP_A e NPT_A; a tag concorda com quatro sinais independentes em 99,5% de 20.072 h, mas a regra exata e a segunda velocidade precisam de confirmação.</td></tr>
+<tr><td><b>Origem das 10 vibrações</b></td><td>São "mancal N … turbina"; o spread usa mancais do compressor e os trips têm nomes de compressor e selo. Confirmar.</td></tr>
+<tr><td><b>Monitor de drift</b></td><td>Só em amostra; vale se alguém ler o alerta. Se não houver quem leia, o commit <code>9951b21</code> pode ficar de fora sem afetar o resto.</td></tr>
+</table>
+
+<h2>7. Condições para subir ao Drive</h2>
+<ol>
+<li>Regerar a pasta de entrega (<code>monta_entrega_drive.py</code>) a partir de <code>feat/pacote-consolidado</code>, com o <code>registro_trips.csv</code>.</li>
+<li>Reescrever a abertura do <code>README</code>: trocar "8 de 8, 0,344" pela mediana (6,5/8, 0,86 FP/mês, ≈133 h/mês) e dizer que o 8/8 é a melhor composição; dizer que a antecedência de 29 h é média.</li>
+<li>Regerar ou retirar os PDFs de 01 a 21/09 (<code>ENTREGA</code>, <code>DETECTOR_V2</code>, <code>PIPELINE</code>, <code>RELATORIO_PRODUCAO</code>, <code>INTEGRACAO_DASHBOARD</code>) para trazer a latência de 2 h, a paridade e os limites.</li>
+<li>Enquadrar como <b>piloto em modo sombra</b> (<code>sombra.py</code> congela a configuração e fixa os critérios antes), sem promessa de desempenho.</li>
+<li>Aprovação do Diego.</li>
+</ol>
+
+<h2>8. Lembrete ao Diego: o que precisa ser corrigido ou decidido</h2>
+<div class="box w"><b>Correções às mensagens e PDFs que já enviamos</b>
+<ol>
+<li><b>Portão de 20.000.</b> A resposta e o PDF (<code>respostas_engenharia.html</code>, "ajustes recomendados") dizem que "um mês com muita parada passaria com baseline menor". Está errado: o baseline é o <code>tail(20.000)</code> de todo o passado e só fica menor no começo do histórico. O correto: o <code>constroi_bundle</code> recusa abaixo de 20.000 e dá alerta quando o span do baseline passa de 70 dias ou a folga de 7. Os pacotes antigos recusavam só abaixo de 5.000.</li>
+<li><b>Falhas na telemetria.</b> A mensagem diz "nenhuma falha nas 12 execuções de cada pacote". Vale para o pacote da branch; no pacote do Drive 3 de 9 falharam (as de 30 s).</li>
+<li><b>Dia 1 como desempenho.</b> Parar de citar 8/8 e 0,344 como desempenho; usar a mediana das composições.</li>
+<li><b>Tempos.</b> O PDF traz 4,7 s e 4,8 s de uma rodada anterior; a nova medição dá 5,5 s e 5,4 s com o mesmo código. Usar uma só tabela (seção 5).</li>
+</ol></div>
+<div class="box"><b>Decisões que dependem de você</b>
+<ol>
+<li>Convenção de banda e lead: início do voto ou notificável (+2 h). Os números mudam (dia 1 de 5/8 para 4/8).</li>
+<li>Aprovar a <code>feat/pacote-consolidado</code> e a entrega ao Drive nas condições da seção 7.</li>
+<li>Se o monitor de drift entra, dada a existência (ou não) de quem leia o alerta.</li>
+<li>Se o <code>registro_trips.csv</code> deve passar a ser versionado ou obrigatório (parar o script quando ausente).</li>
+<li>Sobre a <code>RUNNING_A</code>: pré-registrar o relógio pela ignição (V4) como candidato?</li>
+</ol></div>
+
+<h2>9. Plano de integração depois da aprovação</h2>
+<ul>
+<li>A <code>feat/detector-4sinais</code> não tem os scripts do pacote hoje (0 arquivos em <code>estrutura_pra_prod/Cabiunas/scripts</code>). A <code>feat/pacote-consolidado</code> está 34 commits à frente dela e ela não tem nenhum commit que a consolidada não tenha: o merge é limpo, <b>sem conflitos</b>, e pode ser fast-forward.</li>
+<li>Atenção ao tamanho: são 293 arquivos e +21.341 linhas, a maioria bundles (16 meses) e documentos, e 34 commits: os 4 deste relatório mais 30 da <code>exp/regua-inicio-e-banda</code>. Sugestão: abrir um PR da consolidada para a <code>feat/detector-4sinais</code> e revisar commit a commit.</li>
+<li>A pesquisa (<code>scripts/pdm_fisico</code>, o medidor de telemetria e as medições) fica na <code>exp/reducao-falsos-positivos</code>; não entra no merge.</li>
+</ul>
+
+<div class="fim">Branches no GitHub: <code>feat/pacote-consolidado</code>, <code>fix/pacote-grade-30s</code>, <code>fix/pacote-monitor-drift</code>, <code>exp/reducao-falsos-positivos</code>. Medidor: <code>scripts/pdm_fisico/telemetria_execucao.py</code>. Tasks ClearML com as medições: <code>964fbc92</code> (pacote da pesquisa) e <code>1bcfe5ae</code> (pacote do Drive), projeto <code>TesteMLCab</code>.</div>
+</body></html>
