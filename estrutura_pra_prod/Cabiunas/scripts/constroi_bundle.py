@@ -58,6 +58,22 @@ FIT_POINTS = 20_000        # ~28 dias de operação estável
 N_COMPONENTS = 0.95        # fração de variância retida
 PHI = 0.10                 # piso do normalizador por sensor (ver abaixo)
 
+# Portões do baseline. O baseline são os últimos FIT_POINTS pontos estáveis de TODO o passado,
+# então só fica com menos de FIT_POINTS no começo do histórico. Um mês com muita parada NÃO
+# o encolhe: faz os 20.000 pontos recuarem no calendário. O que denuncia isso é o espalhamento
+# (span) e a folga até o corte, e não a contagem. Histórico dos 16 bundles: span 27 a 64 d,
+# folga 0 a 3 d. Os limites ficam logo acima do máximo visto: alerta, não bloqueio -- um bundle
+# com baseline velho ainda é melhor que seguir com o do mês anterior, que é mais velho.
+#
+# O QUE O ALERTA DIZ E O QUE NÃO DIZ. Marca SAÍDA DA FAIXA VALIDADA (todo número publicado vem de
+# baselines de 27 a 64 d), não "bundle ruim": em 16 meses nem o span nem a folga predizem a
+# carga do mês (Spearman |rho| <= 0,33, n.s.; `valida_alerta_p99.py` no repositório de pesquisa).
+# Pelo mesmo teste NÃO há alerta de `recon_p99`: o salto mês a mês vai de -30% a +30% no
+# normal (quantis 10-90%: 0,71 a 1,33) e não prediz a carga (rho +0,07 / +0,15, p 0,8 / 0,6).
+SPAN_MAX_DIAS = 70
+FOLGA_MAX_DIAS = 7
+COD_ALERTA = 4             # bundle gerado, mas fora da faixa histórica: revisar antes de publicar
+
 
 def spread_mancal(X: pd.DataFrame) -> pd.Series:
     """Divergência do mancal alvo contra a mediana dos três irmãos.
@@ -157,14 +173,22 @@ def main() -> int:
     # produção não deve depender da precisão com que o parquet foi escrito.
     base = (g.loc[estavel & (g.index < corte), todas]
             .dropna().tail(FIT_POINTS).astype("float64"))
-    if len(base) < FIT_POINTS // 4:
-        print(f"ERRO: só {len(base)} pontos estáveis antes de {a.mes}; "
-              f"mínimo {FIT_POINTS//4}. Bundle não gerado.")
+    if len(base) < FIT_POINTS:
+        print(f"ERRO: só {len(base)} pontos estáveis antes de {a.mes}; o validado é {FIT_POINTS}. "
+              f"Bundle não gerado; a inferência segue com o anterior até ele vencer.")
         return 1
 
     ini, fim = base.index[0], base.index[-1]
+    span, folga = (fim - ini).days, (corte - fim).days
     print(f"baseline: {len(base)} pontos estáveis  {ini:%Y-%m-%d} .. {fim:%Y-%m-%d}"
-          f"  ({(fim-ini).days} d de calendário)")
+          f"  ({span} d de calendário, termina {folga} d antes do corte)")
+    alertas = []
+    if span > SPAN_MAX_DIAS:
+        alertas.append(f"baseline espalhado por {span} d de calendário (histórico: 27 a 64 d, "
+                       f"limite {SPAN_MAX_DIAS}): a máquina passou muito tempo parada ou fora de regime")
+    if folga > FOLGA_MAX_DIAS:
+        alertas.append(f"o baseline termina {folga} d antes do corte (histórico: 0 a 3 d, "
+                       f"limite {FOLGA_MAX_DIAS}): sem regime estável recente")
 
     ft = ajusta_familia(base, TEMPERATURA)
     fp = ajusta_familia(base, PRESSAO)
@@ -234,6 +258,9 @@ def main() -> int:
         "baseline_inicio": f"{ini:%Y-%m-%dT%H:%M:%S%z}",
         "baseline_fim": f"{fim:%Y-%m-%dT%H:%M:%S%z}",
         "baseline_pontos": int(len(base)),
+        "baseline_span_dias": int(span),
+        "baseline_folga_dias": int(folga),
+        "alertas": alertas,
         "validade_dias": 62,
         "cadencia_retreino": "mensal (obrigatória; congelar custa 2 detecções e 15x as horas de FP)",
         "gerado_por": "constroi_bundle.py",
@@ -291,6 +318,11 @@ def main() -> int:
     print(f"\n-> {dest}")
     for f in sorted(dest.iterdir()):
         print(f"     {f.name:28s} {f.stat().st_size/1024:8.1f} KB")
+    for al in alertas:
+        print(f"\nALERTA: {al}")
+    if alertas:
+        print(f"Bundle gerado mas FORA DA FAIXA HISTÓRICA: revisar antes de publicar (código {COD_ALERTA}).")
+        return COD_ALERTA
     return 0
 
 
