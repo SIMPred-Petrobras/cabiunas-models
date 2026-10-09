@@ -141,8 +141,11 @@ disparam em momentos descoordenados; nenhum nível sozinho passa de 4/8 na banda
 acionável, e a união faz 5/8 ao custo do mais barato dos dois.
 
 Desempenho no histórico (8 trips, 01/2025–04/2026, 11,6 meses de operação
-vigiada): **detecção 8/8 · régua de início 6/8 · banda acionável [4 h, 48 h] 5/8
-· 0,344 FP/mês · 6,6 h de alarme falso por mês**. A documentação completa da
+vigiada). **Composição publicada (retreino no dia 1, a mais favorável das oito):
+detecção 8/8 · régua de início 6/8 · banda acionável [4 h, 48 h] 5/8 · 0,344 FP/mês
+· 6,6 h de alarme falso por mês (48,9 h/mês contando os neutros).** **Mediana das oito
+composições de dia de retreino: detecção 6,5/8 · início 6,0 · banda 4,5 · 0,86 FP/mês ·
+≈133 h/mês de carga.** Dimensione o plantão pela mediana. A documentação completa da
 calibração está em `DETECTOR_V2.md` no repositório de pesquisa.
 
 ## Validação do pacote
@@ -156,7 +159,8 @@ o alarme foi comparado ponto a ponto com o do código de pesquisa:
 | pesquisa | 5/8 | 6/8 | 8/8 | 0,344 | 6,6 | 21 |
 | **pacote** | **5/8** | **6/8** | **8/8** | **0,344** | **6,6** | **21** |
 
-Os oito eventos têm antecedência idêntica ao centésimo de hora. A discordância
+Isto prova que o pacote REPRODUZ a pesquisa; não é desempenho esperado (é a composição
+publicada, a mais favorável). Os oito eventos têm antecedência idêntica ao centésimo de hora. A discordância
 residual é de **0,012%** dos pontos (um trecho de 1,33 h em 09/03/2025), sem
 efeito em nenhuma métrica.
 
@@ -209,7 +213,7 @@ qualquer outro parâmetro medido:
 
 | dia do retreino | banda | detecção | FP/mês | h/mês |
 |---|---|---|---|---|
-| **1** (o publicado) | **5/8** | **8/8** | **0,344** | **6,6** |
+| **1** (o publicado, melhor caso) | **5/8** | **8/8** | **0,344** | **6,6** |
 | 8 | 3/8 | 5/8 | 0,947 | 77,3 |
 | 15 | 4/8 | 7/8 | 0,947 | **154,6** |
 | 22 | 5/8 | 7/8 | 0,689 | 76,9 |

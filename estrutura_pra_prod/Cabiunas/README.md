@@ -5,9 +5,21 @@ Turbocompressor TC-33003A, UTGCA Cabiúnas. Projeto SIMPred.
 Detecta degradação antes do trip de 2º estágio usando quatro sinais físicos.
 Não é supervisionado: aprende a operação normal do mês e mede o afastamento.
 
-**Acha 8 de 8** dos trips do período avaliado, com antecedência média de 29 h.
-Custa **0,344 alarme falso por mês**. As ressalvas desses números estão em
-`documentos/ENTREGA_TC33003A.pdf` — leia antes de dimensionar plantão.
+**Desempenho no histórico (8 trips, retreino mensal).** Nas oito composições de dia
+de retreino, a **mediana é 6,5 de 8 trips detectados, 0,86 alarme falso por mês e
+≈133 h/mês de alarme (falso e neutro)**. A composição publicada (retreino no dia 1)
+é a mais favorável das oito: 8 de 8, 0,344 FP/mês, 48,9 h/mês. A antecedência
+média de 29 h é média, não mediana: 4 dos 8 trips estão censurados em 48 h e o
+mínimo é 2,8 h. Com 8 eventos o intervalo é largo (FP/mês: Poisson 95 % entre 0,53
+e 1,81). Trate como **piloto em modo sombra**, não como promessa de desempenho.
+
+O alarme só é confirmado 120 min depois do início do voto (60 min se forte); contando
+essa confirmação, o início mediano cai de 6 para 5 e a banda acionável de 4,5 para 4.
+A convenção de banda e antecedência a adotar está a confirmar.
+
+As ressalvas estão em `documentos/ENTREGA_TC33003A.pdf` — leia antes de dimensionar
+plantão. Esse PDF e os demais em `documentos/` anteriores a 07/10/2026 trazem os
+números da composição publicada (8/8, 0,344), não a mediana.
 
 ---
 

@@ -409,16 +409,21 @@ Códigos de saída: `0` ok · `2` bundle vencido · `3` entrada cega.
 
 ## 7. O que o número significa
 
-O detector acha **8 de 8** eventos-alvo (trips de 2º estágio, janela a partir de
-01/02/2024), com lead médio de 29,0 h — média, não mediana: 4 dos 8 estão
-censurados em 48 h e o mínimo é 2,8 h.
+Na composição publicada (retreino no dia 1, a mais favorável das oito), o detector
+acha **8 de 8** eventos-alvo (trips de 2º estágio, janela a partir de 01/02/2024), com
+lead médio de 29,0 h — média, não mediana: 4 dos 8 estão censurados em 48 h e o mínimo
+é 2,8 h. **A mediana das oito composições é 6,5 de 8** (banda acionável 4,5 de 8).
 
-O custo publicado é **0,344 FP/mês e 6,6 h/mês**. Duas ressalvas que pertencem à
+O custo na composição publicada é **0,344 FP/mês e 6,6 h/mês**; a **mediana das oito é
+0,86 FP/mês e ≈133 h/mês de carga**. O alarme é confirmado 120 min depois do início do
+voto (60 min se forte); contando essa confirmação, o início mediano cai de 6 para 5 e a
+banda de 4,5 para 4 (convenção a confirmar). Duas ressalvas que pertencem à
 integração, não ao rodapé:
 
 - **6,6 h/mês é o mínimo de uma distribuição, não a expectativa.** Variando o
   tamanho do baseline em ±10 %, a faixa vai de 6,6 a 68,1 h/mês.
-- **A carga real sobre a operação é 48,9 h/mês**, somando alarme e os episódios
-  que a régua de avaliação classifica como neutros.
+- **A carga real sobre a operação é 48,9 h/mês na composição publicada** (≈133 h/mês na
+  mediana das oito), somando alarme e os episódios que a régua de avaliação classifica
+  como neutros.
 
-Dimensione a tela e o plantão pela carga, não pelo mínimo.
+Dimensione a tela e o plantão pela carga mediana, não pelo mínimo.
