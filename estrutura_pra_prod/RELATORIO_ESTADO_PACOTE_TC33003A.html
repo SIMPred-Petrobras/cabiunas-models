@@ -129,8 +129,9 @@ ul, ol { margin: 4px 0 4px 18px; padding: 0; } li { margin: 2px 0; }
 
 <h2>9. Plano de integração depois da aprovação</h2>
 <ul>
-<li>A <code>feat/detector-4sinais</code> não tem os scripts do pacote hoje (0 arquivos em <code>estrutura_pra_prod/Cabiunas/scripts</code>). A <code>feat/pacote-consolidado</code> está 34 commits à frente dela e ela não tem nenhum commit que a consolidada não tenha: o merge é limpo, <b>sem conflitos</b>, e pode ser fast-forward.</li>
-<li>Atenção ao tamanho: são 293 arquivos e +21.341 linhas, a maioria bundles (16 meses) e documentos, e 34 commits: os 4 deste relatório mais 30 da <code>exp/regua-inicio-e-banda</code>. Sugestão: abrir um PR da consolidada para a <code>feat/detector-4sinais</code> e revisar commit a commit.</li>
+<li>A <code>feat/detector-4sinais</code> <b>no GitHub</b> (<code>1ca9070</code>, 21/09) já tem uma versão antiga do pacote (5 scripts e os bundles) e é <b>ancestral</b> da <code>feat/pacote-consolidado</code>. Portanto o merge é limpo, <b>sem conflitos</b>, e pode ser fast-forward. (A cópia local costuma estar desatualizada: rodar <code>git fetch</code> antes.)</li>
+<li>Tamanho do que entra: 15 commits, 45 arquivos, +6.260/−47 linhas. São 10 commits da <code>exp/regua-inicio-e-banda</code> (pasta de entrega por script, bundle sem pickle, diagnóstico de entrada, correção do início falso por execução, documentação de integração), os 4 deste relatório e o próprio relatório. Os bundles dos 16 meses já estão na remota. Sugestão: abrir um PR da consolidada para a <code>feat/detector-4sinais</code> e revisar commit a commit.</li>
+<li>O que o merge <b>não</b> resolve: o texto da entrega. O <code>README.md</code> do equipamento, o <code>scripts/README.md</code> e o <code>INTEGRACAO_DASHBOARD.md</code> ainda trazem "8 de 8" e "0,344 FP/mês" (seção 7, item 2). Se o merge for antes de corrigi-los, a branch de integração fica com o número do melhor caso.</li>
 <li>A pesquisa (<code>scripts/pdm_fisico</code>, o medidor de telemetria e as medições) fica na <code>exp/reducao-falsos-positivos</code>; não entra no merge.</li>
 </ul>
 
