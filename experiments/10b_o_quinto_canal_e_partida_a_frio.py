@@ -12,6 +12,15 @@ CRITÉRIO (escrito antes): se pelo menos 50% dos FP A MAIS dos canais simples e 
 EXPECTATIVAS REGISTRADAS: (a) os FP a mais do AE, do H7a e do H7b são em >= 60% de partida a frio (~60%); (b) a partida a frio (tau <= 12 h, parada >= 12 h) ocupa 5% a 15% das horas vigiadas (~75%); (c) o controle tem <= 20% dos seus FP em partida a frio (~65%).
 LIMITES. 7 eventos; 1 deles; a definição de partida a frio (12 h/12 h) é uma escolha fixada aqui; FP "a mais" é a diferença de contagem, não o pareamento episódio a episódio.
 
+RESULTADO (15/10/2026) -- A HIPÓTESE "O QUINTO CANAL É UM DETECTOR DE PARTIDA A FRIO" FOI REFUTADA; O QUE APARECE É A BORDA DO BLACKOUT.
+  Taxa de base: a partida a frio (tau <= 12 h, parada >= 12 h) ocupa só 1,1% das horas vigiadas do período.
+  CONTROLE: 16 episódios, FP 9 (em partida a frio: 3: 16/06, 02/04, 08/04), verdadeiros 7. AE D0_20k temperatura: FP 11 (a frio: 3), +2 contra o controle, 0 a mais a frio. H7a (7 TI): FP 14 (a frio: 4), +5, +1 a frio. H7b (4 mancais): FP 13 (a frio: 4), +4, +1 a frio.
+  CRITÉRIO (>= 50% dos FP a mais em partida a frio): NÃO atendido (AE 0; H7a 1 de 5 = 20%; H7b 1 de 4 = 25%). Previ >= 60% (~60%): ERREI. O controle tem <= 20% dos FP a frio (E c): ERREI (3 de 9 = 33%), mas isso é 30x a taxa de base (1,1%): as partidas a frio SÃO enriquecidas em FP.
+  O ACHADO: CINCO dos NOVE FP do controle nascem com tau = 6 h (31/03, 16/06, 15/10, 02/04, 08/04): a BORDA DO BLACKOUT, qualquer que seja a duração da parada anterior (0 h, 1 h, 80 h, 93 h, 148 h). O mesmo vale para o AE (5 de 11) e para os canais simples. E o episódio do 04/11 também nasce na borda (tau 6,5 h, parada anterior de 77 h) e acaba 8,8 h depois, quando ocorre o trip.
+  LEITURA. (1) O "ganho" do quinto canal no 04/11 é um alarme que abre na borda do blackout (6,5 h depois da partida) e é SUSTENTADO pelo voto extra até passar da duração mínima de 2 h; é o MESMO tipo de episódio que gera cinco dos nove FP do controle (alarmes que abrem na borda e não são seguidos de trip). Não é um precursor da falha: é uma
+        coincidência favorável de um tipo de alarme que, em geral, é falso. (2) Os FP a mais dos quintos canais (+2 a +5) NÃO são partidas a frio (a maioria nasce longe de partida: tau de 11 h a 1.600 h). (3) Casa com o EXP 02 (3 dos 8 trips a 6 a 24 h da partida): o risco entre 6 e 24 h é alto E é onde a borda do blackout gera os FP: a mesma janela serve a ambos.
+PLACAR: ERREI: (a) >= 60% dos FP a mais em partida a frio (0 a 25%); (c) o controle com <= 20% dos FP em partida a frio (33%). ACERTEI: (b) a partida a frio ocupa 5% a 15% das horas vigiadas (ocupa 1,1%: ERREI a faixa).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/10b_o_quinto_canal_e_partida_a_frio.py
 """
 from __future__ import annotations

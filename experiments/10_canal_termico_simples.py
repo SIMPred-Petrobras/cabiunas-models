@@ -14,6 +14,13 @@ CRITÉRIOS (escritos antes). "H7 CONFIRMADA" = detecção 7/7 com FP <= 12 e hor
 EXPECTATIVAS REGISTRADAS: (E1) H7a com V1 detecta 7/7 com FP <= 13 e horas fora <= 700 (~35%); H7b (~30%); (E2) o placebo de H7a atinge 7/7 em <= 1 dos 7 deslocamentos (~55%); (E3) no início do episódio de 04/11, o quinto canal está aceso junto com t ou vb (um mecanismo térmico, não um voto isolado) (~60%); (E4) com V2, H7a mantém 6/7 ou mais com FP <= 10 (~20%).
 LIMITES. 7 eventos, UM deles é o ganho; os limiares do t são herdados sem recalibração; a hipótese saiu de uma leitura do mesmo evento (04/11) no atlas: o canal é desenhado depois de ver o evento (pós-hoc em um sentido), então a confirmação real é o sombra.
 
+RESULTADO (15/10/2026) -- "PARCIAL": os canais simples recuperam o 04/11, a custo um pouco acima do AE.
+  H7a (7 TI) como quinto canal: V1 7/7 | FP 14 | 615 h fora | lead 31,6 h | 04/11 detectado; V2 5/7 | FP 16 | 800 h | 04/11 perdido. H7b (4 mancais): V1 7/7 | FP 13 | 594 h | lead 25,8 h | 04/11 detectado; V2 5/7 | FP 14 | 873 h. REFERÊNCIA (AE D0_20k temperatura, V1): 7/7 | FP 12 | 563 h.
+  PLACEBOS (deslocados de 30 a 210 d, V1): H7a detecção [6, 6, 7, 5, 6, 6, 6] (7/7 em 1 de 7), FP mediano 16, horas fora mediana 1.077, 04/11 em 1 de 7; H7b idem [6, 6, 7, 5, 6, 6, 6], FP 15, 1.210 h.
+  MECANISMO (o episódio que cobre [T - 48 h, T] no 04/11): o MESMO nos três (AE, H7a, H7b): começa em 03/11 21:32 (o instante em que a vigilância abre, 6,5 h depois da partida a frio), dura 8,8 h, e no início os canais do nível A acesos são t, p, vb e o quinto (nível B: p e o quinto): t, p e vb, os três do controle, já estão acesos; o quinto só SUSTENTA o voto.
+  CRITÉRIOS: H7a e H7b são "PARCIAL" (7/7, mas FP 13 a 14 e 594 a 615 h contra 12 e 563 h do AE; placebo 7/7 em 1 de 7 nos dois). Não passam o FP <= 12 do critério "confirmada" (H7b passa o de horas, 594 <= 600).
+PLACAR: ACERTEI: E2 (o placebo atinge 7/7 em <= 1 dos 7); E1 em parte (H7a 7/7 com FP 14 e 615 h: o limite era FP <= 13 e 700 h; H7b 7/7 com FP 13 e 594 h: passa); E4 (com V2 nenhum chega a 6/7). ERREI: E3 (o quinto canal estar aceso junto de t ou vb: sim, mas porque t, p e vb já estavam acesos sozinhos; o mecanismo não é térmico, é de sustentação do voto).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/10_canal_termico_simples.py
 """
 from __future__ import annotations
