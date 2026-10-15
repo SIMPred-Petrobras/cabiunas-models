@@ -26,6 +26,20 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 LIMITES. 7 eventos; arquitetura e hiperparâmetros fixados a priori (k = 4, 64 unidades, 15% de máscara, 6 épocas): sem busca; o mapa de quantis é global no período (ajuste de escala sem rótulo); o contexto de nível lento usa a história de 10 dias, então os primeiros dias de dado não têm contexto (preenchido com 0); treino em CPU e modelos pequenos;
 o AE é um MLP por amostra (sem janela temporal): uma versão sequencial (TCN/Transformer) é o passo seguinte se o contexto mostrar valor.
 
+RESULTADO (15/10/2026) -- 0 DIGNOS e 1 PROMISSOR em 8 combinações; A HIPÓTESE DO HISTÓRICO LONGO FOI REFUTADA: o histórico longo PIORA a especificidade. 24 execuções, ~75 s cada (D0_20k ~7 s).
+  AE DENTRO DA DECISÃO DO v2 (mediana de 3 sementes; faixa entre parênteses; detecção | FP episódios | horas fora das janelas | lead h):
+    canal t:  D0 3/7 (3-3) | 21 | 1.626 | 36,2;   D1 4/7 (3-5) | 21 | 1.526 | 34,9;   D2 6/7 (5-6) | 18 | 1.748 | 25,6;   D0_20k 4/7 (3-5) | 16 | 953 | 34,5.
+    canal p:  D0 6/7 (2-6) | 14 | 1.311 | 27,9;   D1 5/7 (4-5) | 16 | 1.057 | 24,6;   D2 5/7 (4-5) | 15 | 1.003 | 26,8;   D0_20k 6/7 (6-6) | 11 (10-12) | 722 (530-1.197) | 32,7  -> PROMISSOR (o único).
+  CONTROLE: 6/7 | 9 FP | 407 h fora das janelas | lead 32,7 h. COMPARAÇÃO COM OS BASELINES NO CANAL p (EXP 06): FP 11 a 24 e 1.290 a 1.764 h; o D0_20k no p (FP 11, 722 h) é o MELHOR em especificidade entre todos os substitutos do p (-44% nas horas contra o melhor baseline), mas ainda tem 1,8x as horas fora das janelas do p do v2.
+  SOB A POLÍTICA SIMPLES A 1x EM HORAS (semente 0): D2 temperatura 5/7 (13 FP, lead 22,6 h) e D0_20k pressão 5/7 (26 FP): o D2 de temperatura iguala o canal t do v2 (5/7 com 17 FP) com MENOS episódios (13); os demais 2 a 3 de 7.
+LEITURA. (1) O HISTÓRICO LONGO É PIOR: D0 (250.000 amostras) tem 1.626 h fora no t e 1.311 no p; D0_20k (só as últimas 20.000), 953 e 722. A normalidade desta máquina NÃO É ESTACIONÁRIA: a FRESCURA do baseline vale mais que o VOLUME (o desenho do v2, 20.000 amostras mensais, está certo), e o histórico antigo, com outros regimes, aumenta as excursões no mês corrente.
+  (2) OS CONTEXTOS NÃO AJUDAM: o de partida (D1) não reduz os FP (t 21 -> 21; p 14 -> 16) e o nível lento (D2) aumenta a detecção no t (4 -> 6) mas aumenta também as horas falsas (1.526 -> 1.748): absorver a deriva não cortou a persistência das excursões normais.
+  (3) O PISO DE RUÍDO DOS MODELOS NEURAIS É MAIOR QUE O DOS BASELINES: detecção entre sementes de 2 a 6 (D0 p), 3 a 5 (D1 t, D0_20k t) e horas fora de 530 a 1.197 (D0_20k p). Com 3 sementes só se lê a mediana; 5 ou mais seriam necessárias para um veredito.
+  (4) POR QUE NÃO PASSA: dentro da decisão do v2 (CUSUM com memória), as excursões do AE em operação normal são MAIS PERSISTENTES que as do p do v2 mesmo com a mesma distribuição marginal imposta pelo mapa de quantis; o CUSUM as acumula em episódios longos (as horas fora triplicam). A PERSISTÊNCIA das excursões normais, e não a sua frequência, é o que o canal precisa ter baixa.
+PLACAR: ACERTEI: algum PROMISSOR no canal p (~45%: um); o melhor D sob a política simples detecta >= 5/7 (E6: 5/7); nenhum DIGNO no t (~95%). ERREI: o histórico longo reduz as horas fora (E1: aumentou-as em ~70%); o contexto de partida reduz os FP em >= 2 (E2: não); o nível lento reduz as horas fora em >= 20% mas perde detecção (E3: no t aumentou as duas; no p quase igual);
+  o piso de ruído <= 1 evento em >= 70% das combinações (E5: 5 de 8 = 62%).
+PRÓXIMOS PASSOS PLAUSÍVEIS (a pré-registrar): (a) modelo SEQUENCIAL (TCN) com a persistência das excursões como alvo de projeto; (b) treino com peso decrescente no tempo (frescura) sobre o histórico; (c) o AE como QUINTO canal (acrescenta informação em vez de substituir); (d) mais sementes (>= 5) para o piso de ruído.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/07_ae_condicional.py
 """
 from __future__ import annotations
