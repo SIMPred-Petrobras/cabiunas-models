@@ -21,6 +21,17 @@ CRITÉRIOS DO GATE G0 (escritos antes):
 EXPECTATIVAS REGISTRADAS: G0-a passa com ~70% (a grade da pesquisa pode ter preenchimento/interpolação que o bruto não tem; se falhar, a causa se investiga antes de usar a grade); G0-b passa com ~75% (o harness define episódio por corrida de alarme na série, a pesquisa por episódio do detector;
   1 de diferença é o esperado); G0-c passa (por construção). A cobertura ao acaso do controle fica entre 0,15 e 0,45 e o p binomial do `atual` (6/7) é < 0,05 com ~55%.
 
+RESULTADO (15/10/2026) -- GATE G0 ABERTO (G0-a, b, c e d passam).
+  G0-a LINHAGEM: a grade da pesquisa é IDÊNTICA ao CSV bruto reamostrado aqui (38 tags comuns, 2025-01-01 a 2026-04-30): diferença relativa mediana 0,0 no deslocamento 0 (0,00072 nos deslocamentos de +-1 passo), melhor deslocamento 0, 100% das tags <= 1e-3. Não há transformação oculta no artefato derivado; a grade é aceita como fonte (jan/2024 a dez/2024 não tem bruto de 2 min aqui; seguem os .xlsx de 30 s em `tagsselecionadas_30s`).
+  G0-b O HARNESS REPRODUZ O CONTROLE EXATAMENTE (7 eventos a partir de 17/03/2025; 7.356 h vigiadas = 10,1 meses de máquina): atual detecção 6/7 e 9 FP; G168 7/7 e 13; B800 7/7 e 12.
+        atual: início 5, banda 5, lead médio 32,7 h, FP/mês 0,893, 1.304 h de alarme (17,7% do tempo vigiado), 407 h fora das janelas; G168: 6, 6, 29,3 h, 1,29, 1.772 h, 869 h; B800: 6, 6, 25,8 h, 1,191, 1.552 h, 660 h.
+  G0-c AUDITORIA DO FUTURO: `mascaras` passa (diferença máxima 0,0 nos dois cortes). A auditoria foi validada nos testes: pega janela centrada e normalização global e deixa passar EWMA causal.
+  G0-d: 11 testes unitários passam (episódios, detecção/lead/banda/FP, alarme nascido antes da janela, IC por blocos, acaso, binomial, auditoria do futuro, trips conhecidos).
+  ACASO E INCERTEZA (primeiras medidas da nova frente): cobertura ao acaso 0,169 (atual), 0,259 (G168), 0,212 (B800): o p binomial de detecção é < 1e-3 nas três; IC95% por blocos mensais (14 meses) do FP/mês: atual [0,32; 1,54], G168 [0,63; 2,03], B800 [0,54; 1,91]; horas de alarme por 730 h: atual [26; 273];
+        fração detectada: atual [0,50; 1,00]. Leitura: com 14 meses, o FP/mês do controle é conhecido só a +-0,6; "0,893 contra 1,291" NÃO se distingue por este IC (os intervalos se sobrepõem muito).
+  AMBIENTE: venv isolado com PyTorch 2.14 (CPU), LightGBM 4.7, statsmodels 0,15, Optuna 5, ruptures, scikit-learn 1.9 e pandas 3.0.2 (as versões da pesquisa para os dados). O teste do PyTorch na fila remota (Cica) fica para depois.
+PLACAR: ACERTEI: G0-b, G0-c, cobertura ao acaso entre 0,15 e 0,45 (0,17 a 0,26) e p binomial do atual < 0,05. ERREI: G0-a, que previ com ~70% de chance de passar com folga, passou com diferença ZERO (a grade derivada é exatamente o bruto reamostrado); não previ o tamanho do IC mensal (+-0,6 FP/mês).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/00_fundacao.py
 """
 from __future__ import annotations

@@ -38,6 +38,7 @@ def auditoria_do_futuro(f: Callable[[pd.DataFrame], pd.DataFrame], df: pd.DataFr
         alt = df.copy()
         depois = alt.index > c
         num = alt.select_dtypes("number").columns
+        alt[num] = alt[num].astype("float64")                    # a grade vem em float32 e o pandas 3 não aceita gravar float64 nela
         if depois.any():
             vals = alt.loc[depois, num].to_numpy(float)
             alt.loc[depois, num] = vals[rng.permutation(len(vals))] * (1.0 + 0.5 * rng.standard_normal(vals.shape))
