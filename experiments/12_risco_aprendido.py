@@ -16,6 +16,13 @@ MÉTRICAS: detecção por evento (7), FP em episódios e horas totais; AUC do ri
 CRITÉRIO: DIGNO = detecção >= 6/7 a 407 h fora e o placebo (mediana dos 6 deslocamentos) <= detecção - 2; PROMISSOR = >= 5/7 com o placebo <= detecção - 1; NÃO SUPERA = o resto (inclui empatar com o canal t sozinho, 5/7, sem margem sobre o placebo).
 EXPECTATIVAS: DIGNO ~6%; PROMISSOR ~20%; NÃO SUPERA ~74%. AUC mediana por bloco >= 0,70 em L ~40%; G melhor que L em detecção ~35% (poucos positivos favorecem o modelo simples). O placebo chega a >= 4/7 em alguma família ~45% (a política com orçamento de 407 h acerta janelas de 48 h por cobertura: ver `cobertura_ao_acaso`).
 
+RESULTADO (15/10/2026) -- NÃO SUPERA, com folga. (Nota: são 18 features, não 17; erro de contagem no pré-registro, sem efeito no critério.) 248.208 instantes úteis, 6 dobras, orçamento de 407 h fora.
+  [L] logística: detecção 1/7 | início 1 | FP 14 | horas totais 411 | lead 9,3 h | AUC por bloco [0,29; 0,17; 0,83; 0,14; 0,51; 0,37], mediana 0,33. Placebo (det, FP, h fora): (3,22,398) (1,13,407) (0,8,346) (1,11,303) (2,13,409) (3,28,407), mediana de detecção 1,5.
+  [G] GBM raso: detecção 0/7 | FP 16 | horas totais 418 | AUC por bloco [0,40; 0,51; 0,89; 0,44; 0,63; 0,56], mediana 0,54. Placebo: (1,11,407) (1,10,407) (0,7,380) (2,11,407) (2,22,422) (1,19,407), mediana 1,0.
+  REFERÊNCIAS à mesma política e orçamento: controle (voto+CUSUM) 6/7; canal t sozinho 5/7; melhor baseline 4/7. A fusão aprendida (0 a 1 de 7) NÃO chega nem perto, e o rótulo verdadeiro não se distingue do placebo (L 1 contra 1,5; G 0 contra 1,0).
+  LEITURA. Com 6 grupos de evento a fusão supervisionada dos sinais do v2 não aprende uma direção que generalize entre eventos: AUC por bloco abaixo de 0,5 em 4 de 6 blocos na logística (o evento do bloco de teste é o oposto do que o treino viu), o que repete o achado do M31 (AUC LOEO 0,31 e 0,49: os eventos não têm forma comum). O voto + CUSUM do v2 vence por ser NÃO supervisionado: não depende de os eventos se parecerem. O limite é o número de positivos efetivos (6), e nenhum desenho de modelo remove isso.
+PLACAR: ACERTEI: NÃO SUPERA (~74%); G melhor que L em detecção ~35% (não: 0 contra 1; mas G tem AUC mediana maior, 0,54 contra 0,33). ERREI: AUC mediana >= 0,70 em L (~40%: deu 0,33). ACERTEI: o placebo chega a >= 4/7 em alguma família (~45%): NÃO chegou (máximo 3); então o orçamento de 407 h não dá cobertura alta ao acaso nesta política.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/12_risco_aprendido.py
 """
 from __future__ import annotations
