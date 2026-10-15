@@ -1,0 +1,14 @@
+# Nova visão (exp/nova-visao): ambiente isolado do da pesquisa (onde a sombra está congelada).
+# Os pacotes de dados repetem as versões do controle para reproduzir os números do v2.
+numpy==1.26.4
+pandas==3.0.2
+scipy==1.17.1
+scikit-learn==1.9.0
+pyarrow==23.0.1
+matplotlib==3.10.8
+lightgbm
+statsmodels
+optuna
+ruptures
+pytest
+clearml==2.1.6
