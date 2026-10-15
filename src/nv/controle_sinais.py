@@ -45,7 +45,7 @@ def sinais_causais(inicio: pd.Timestamp, cache: Path | None = None) -> pd.DataFr
             with contextlib.redirect_stdout(io.StringIO()):
                 out = ci.preprocessar(modelos, w, trips=conhecidos)
             novo = out[out.index > anterior] if anterior is not None else out
-            pedacos.append(novo[["t", "p", "sp", "vb", "mask"]]); anterior = s
+            pedacos.append(novo[["t", "p", "sp", "vb", "mask", "reset"]]); anterior = s
     res = pd.concat(pedacos)
     res = res[~res.index.duplicated(keep="first")]
     if cache is not None:
