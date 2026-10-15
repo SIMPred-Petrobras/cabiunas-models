@@ -13,6 +13,16 @@ CRITÉRIO (escrito antes): o 7/7 do AE conta como INFORMAÇÃO se os placebos A 
 EXPECTATIVAS REGISTRADAS: (a) os placebos A atingem 7/7 em >= 20% das execuções (~50%); (b) pelo menos 2 dos 6 baselines do placebo B chegam a 7/7 (~40%); (c) o evento a mais é o 29/04/2025, o que quase nunca se detecta (~50%); (d) o FP médio dos placebos A fica em 12 +-2 (o do voto frouxo).
 LIMITES. 7 eventos; o deslocamento circular de uma série de 13 meses mantém a estrutura de ocasiões raras; os placebos A reaproveitam as 5 primeiras sementes do AE; o voto V1 é um dos dois registrados no EXP 09.
 
+RESULTADO (15/10/2026) -- VEREDITO PRÉ-REGISTRADO: INCONCLUSIVO (os placebos A atingem 7/7 em 7 de 35 = 20%, exatamente na fronteira entre "informação" (<= 10%) e "voto frouxo" (> 20%)). A LEITURA POR EVENTO E PELO CUSTO É MAIS CLARA.
+  AE como quinto canal (voto V1, 10 sementes): detecção 7/7 em 10 de 10, FP 12 (10-14), horas fora 563 h. PLACEBO A (o mesmo sinal deslocado no tempo, 35 execuções): detecção mediana 6/7 (faixa 5-7), 7/7 em 7 de 35, FP mediano 15 (11-18), horas fora 1.144 h. CONTROLE: 6/7, 9 FP, 407 h.
+  PLACEBO B (outros escores como quinto canal, V1): rz_max 7/7 | FP 21 | 1.505 h; pca_spe 7/7 | 15 | 1.224 h; pca_t2 7/7 | 22 | 1.729 h; maha_mcd 7/7 | 16 | 1.291 h; iforest 7/7 | 15 | 1.133 h; knn 6/7 | 19 | 1.461 h.
+  ATRIBUIÇÃO: o EVENTO A MAIS é o de 04/11/2025 (o único que o controle não detecta; a partida a frio, vigiada em 53% da janela): o AE o detecta em 100% das execuções, o placebo A em 20%. Os outros seis eventos o controle já detecta; o AE e os placebos também (placebo A de 0,86 a 1,00).
+LEITURA. (1) O +1 detecção é UM evento, o 04/11, e o AE o pega em todas as sementes (contra 20% por acaso do voto frouxo): o ganho de detecção NÃO é só voto frouxo. (2) MAS qualquer escore informativo como quinto canal também chega a 7/7 (5 dos 6 baselines): o ganho é de "um canal térmico/estrutural a mais", não do autoencoder em si.
+  (3) O QUE O AE TEM DE ESPECIAL É A ESPECIFICIDADE: como quinto canal custa FP 12 e 563 h, contra 15 a 22 FP e 1.133 a 1.729 h dos outros escores e 15 FP e 1.144 h do próprio sinal deslocado (um sinal real tem suas excursões coincidindo com as dos outros canais e acrescenta menos votos novos). Entre os quintos canais testados é o mais barato; contra o controle custa +3 FP e +156 h fora das janelas para detectar o 04/11.
+  (4) O CUSTO CONTRA A META DO USUÁRIO: o usuário pediu menos falsos alarmes em troca de detecção; este candidato faz o contrário (mais detecção por mais alarmes falsos). É um resultado de INFORMAÇÃO (o 04/11 é recuperável com um canal a mais), não uma melhoria de ponto de operação.
+  (5) HIPÓTESE H7 (a testar): o 04/11 é recuperável por um canal SIMPLES e INTERPRETÁVEL de nível térmico de mancal/óleo (as TI_03xx e TI_0325), muito específico no normal (<= 1,3%, EXP 01b), sem rede neural.
+PLACAR: ACERTEI: (a) os placebos A atingem 7/7 em >= 20% (20%); (b) >= 2 dos 6 baselines chegam a 7/7 (5 de 6). ERREI: (c) o evento a mais é o 29/04 (é o 04/11); (d) o FP médio dos placebos A em 12 +-2 (15, de 11 a 18); previ o placebo A como o voto frouxo "neutro" e ele é PIOR que o sinal real em especificidade (rompe a correlação entre os canais).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/09b_placebo_do_quinto_canal.py
 """
 from __future__ import annotations

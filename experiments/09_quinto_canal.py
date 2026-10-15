@@ -11,6 +11,12 @@ CRITÉRIOS (iguais aos do EXP 07/08), mediana das sementes: DIGNO = detecção >
 EXPECTATIVAS REGISTRADAS: com o voto V1 o quinto canal aumenta o FP em >= 3 contra o controle (~70%) e mantém a detecção >= 6/7 (~60%); com V2 o FP fica <= 10 (~50%) e a detecção cai a <= 5/7 (~50%); algum DIGNO ~8%, algum PROMISSOR ~25%.
 LIMITES. 7 eventos; o quinto canal herda os limiares do t sem recalibração; o voto V2 é uma escolha minha de equivalência; mapa de quantis global no período.
 
+RESULTADO (15/10/2026). CONTROLE: 6/7 | 9 FP | 407 h fora. Mediana e faixa das sementes (detecção | FP | horas fora das janelas | lead):
+  voto V1 (3, 2): + AE D0_20k temperatura (10 sementes) 7/7 (faixa 7-7) | 12 (11-14) | 563 (466-689) | 29,3 h -> PROMISSOR; + AE D0_20k pressão (10) 6/7 (5-7) | 17 | 1.389 | 33,1 h; + AE D2 temperatura (5) 6/7 (6-7) | 19 | 1.752 | 27,3 h.
+  voto V2 (4, 2): + D0_20k temperatura 5/7 (5-5) | 12 | 728 | 23,2 h -> PROMISSOR; + D0_20k pressão 5/7 (4-6) | 13 | 1.155; + D2 temperatura 5/7 (4-5) | 15 | 1.505.
+  NENHUM DIGNO; 2 PROMISSORES (os dois com o AE de temperatura). O melhor: V1 + D0_20k temperatura, detecção 7/7 estável nas 10 sementes. O 09b mostra que o evento a mais é o de 04/11/2025 e que qualquer escore informativo como quinto canal o recupera; ver o resultado do EXP 09b.
+PLACAR: ACERTEI: algum PROMISSOR (~25%: dois); V1 aumenta o FP em >= 3 (12 contra 9 no melhor; 17 e 19 nos outros). ERREI: V1 mantém a detecção >= 6/7 nos três (sim) mas com FP de 12 a 19; V2 com FP <= 10 (12 a 15, nenhum).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/09_quinto_canal.py
 """
 from __future__ import annotations
