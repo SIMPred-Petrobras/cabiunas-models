@@ -68,7 +68,7 @@ class Normal:
 
     def zhoras(self, E: pd.Timestamp):
         """z horário (mediana das amostras vigiadas, >= 10 por hora) em [E - 7 d, E - 2 h]; None se não houver referência."""
-        i0 = self.idx.searchsorted(E - JAN); i1 = self.idx.searchsorted(E - FIM_H, side="right")
+        i0 = self.idx.searchsorted(E - JAN); i1 = self.idx.searchsorted((E - FIM_H).floor("h"), side="left")       # só horas COMPLETAS (ver a emenda no fim do arquivo)
         ix = self.idx[i0:i1]; est = self.est[i0:i1]
         if len(ix) == 0:
             return None
@@ -209,3 +209,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# EMENDA (15/10/2026, depois do 1.º resultado do EXP 01b): `zhoras` incluía a hora final INCOMPLETA da janela. Os instantes normais são sorteados em hora cheia (floor("h")), então a última hora tinha 1 amostra (< 10) e virava NaN SÓ nos nulos, enquanto os eventos (minutos quebrados) mantinham a hora parcial.
+# No EXP 01b isso zerou a corrida terminal de todas as janelas normais (0,0% em todas as famílias) e deu "percentil 1,00" a qualquer evento: resultado inválido. No EXP 01 o efeito era de uma hora de assimetria (zmax e persistência). Corrigido para eventos e nulos igualmente: a janela termina na última hora completa antes de E - 2 h.
+# O EXP 01 e o 01b foram REPETIDOS com a correção; valem os números repetidos.
