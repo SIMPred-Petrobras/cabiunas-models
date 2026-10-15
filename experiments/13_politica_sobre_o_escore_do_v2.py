@@ -12,6 +12,17 @@ CRITÉRIOS (fixados antes). GANHO = detecção >= 6/7 (a do controle) com FP <= 
 EXPECTATIVAS: nenhuma célula é GANHO (~85%); refratários mais longos que 72 h cortam FP mas perdem detecção em >= 1 evento (~65%); refratário adaptativo é TROCA ou PERDA (~80%); duracao_min = 240 perde >= 1 detecção (~70%); voto_nivel_b = 1 ou voto_nivel_a = 2 sobe o FP em >= 3 (~75%).
 LIMITES. 7 eventos; botões vizinhos do publicado foram o que a pesquisa v2 já varreu em outra régua; um botão por vez não vê interações; nenhum valor aqui se adota sem sombra.
 
+RESULTADO (15/10/2026). CONTROLE 6/7 | início 5 | 9 FP | 407 h fora. Por botão (detecção | FP | h fora; * = publicado):
+  refratario_h 24: 6/7 | 16 | 1.348; 48: 6/7 | 10 | 419; 72*: 6/7 | 9 | 407; 120: 5/7 | 9 | 410 (PERDA); 168: 4/7 | 10 | 932 (PERDA).
+  duracao_min 60: 6/7 | 11 | 410; 120*; 240: 5/7 | 9 | 407 (PERDA).   h_cusum 40: 6/7 | 12 | 432; 80*; 160: 4/7 | 10 | 389 (PERDA).
+  kappa 0,5: 5/7 | 20 | 2.519 (PERDA); 0,75*; 1,0: 3/7 | 13 | 964 (PERDA).   carga_reset 0: 6/7 | 10 | 447; 0,25*; 0,5: idêntico ao publicado.
+  escalada_idade_h 48: 6/7 | 12 | 501; 96*; 192: 6/7 | 7 | 261 -> GANHO (a única célula).   escalada_abs 10: 6/7 | 10 | 680; 20*; 40: 6/7 | 9 | 385.
+  voto_nivel_a 2: 7/7 | 23 | 1.892; 3*; 4: 5/7 | 12 | 725 (PERDA).   voto_nivel_b 1: 6/7 | 21 | 2.557; 2*; 3: 4/7 | 9 | 352 (PERDA).
+  REFRATÁRIO ADAPTATIVO (72 h + duração do episódio): 6/7 | início 4 | FP 7 | 280 h fora -> GANHO pelo critério fixado (FP e horas), mas o INÍCIO cai de 5 a 4 (o critério não o incluía: ver EXP 13b).
+  Células GANHO: 1 de 29 (escalada_idade_h = 192) + o refratário adaptativo.
+LEITURA PRELIMINAR. (1) Quase todos os botões estão numa borda: um passo para qualquer lado perde 1 a 4 detecções ou multiplica o custo (kappa, voto A/B, refratário, h_cusum), o que confirma que o ponto publicado é uma fronteira. (2) Dois candidatos cortam FP e carga sem perder detecção: escalada_idade_h = 192 e o refratário adaptativo. A família tem 30 comparações e o piso de ruído da régua é FP +-1 e carga +-20%: ambos passam o piso nos dois custos, mas é preciso ver QUAIS episódios saíram (a Regra C já mostrou que horas encostadas numa parada saem de graça e 'melhoram' o FP).
+PLACAR: ERREI: nenhuma célula GANHO (~85%): saíram duas. ACERTEI: refratários mais longos perdem detecção (120 e 168: 5/7 e 4/7); duracao_min 240 perde 1; voto_nivel_b = 1 e voto_nivel_a = 2 sobem o FP em >= 3 (21 e 23 contra 9). ERREI: refratário adaptativo é TROCA ou PERDA (~80%): deu GANHO nos dois custos, com perda de 1 no início.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/13_politica_sobre_o_escore_do_v2.py
 """
 from __future__ import annotations
