@@ -24,6 +24,18 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 
 LIMITES. 7 eventos; um período de 13 meses e uma política fixa e simples (o controle tem canais, voto, portões e escalada: mais sofisticado); o orçamento é calibrado com as janelas (otimista e igual para todos); baselines sem ajuste de hiperparâmetros (k, nº de árvores, nº de componentes fixados a priori); a normalização por p99 do treino repete a fragilidade do v2 (M26 da pesquisa).
 
+RESULTADO (15/10/2026). CONTROLE (v2 atual) NO HARNESS: detecção 6/7, lead 32,7 h, 9 FP, 1.304 h de alarme (407 h fora das janelas = o ORÇAMENTO), 7.356 h vigiadas. 34 tags nos baselines. Tempo total ~3 min (modelos pequenos).
+  A CUSTO IGUAL (1x = 407 h de alarme fora das janelas; detecção de 7 | início | lead h | FP episódios | cobertura ao acaso | p binomial):
+    rz_max 4/7 | 3 | 27,1 | 45 | 0,341 | 0,186;  pca_spe 1/7 | 1 | 20,3 | 14 | 0,168 | 0,724;  pca_t2 3/7 | 2 | 31,2 | 47 | 0,355 | 0,480;  maha_mcd 1/7 | 1 | 9,3 | 10 | 0,116 | 0,579;  iforest 4/7 | 3 | 21,8 | 18 | 0,147 | 0,011;  knn 1/7 | 0 | 48,0 | 22 | 0,223 | 0,829.
+  A 0,5x: 1 a 2 de 7 (rz_max 2, pca_t2 2, iforest 2; os demais 1). A 2x: rz_max 5/7, pca_spe 5/7, pca_t2 5/7, knn 4/7, maha_mcd 3/7, iforest 3/7.
+  PISO DE RUÍDO PRÓPRIO (detecção a 1x entre as variantes: treino de 19.000/21.000 e sementes): rz_max 3 a 4; pca_spe 0 a 1; pca_t2 2 a 4; maha_mcd 1 a 1; iforest 2 a 5; knn 1 a 4; lead: rz_max 27 a 29 h, pca_t2 26 a 35 h, iforest 22 a 38 h, knn 13 a 48 h.
+  LEITURA CONTRA O CONTROLE: TODOS ficam ABAIXO do controle (6/7) além do piso de ruído: o máximo de qualquer variante a 1x é 5/7 (um iforest) e a mediana dos baselines é ~2,5/7. Só o iforest tem detecção acima do acaso (p = 0,011).
+  O ORÇAMENTO IGUALA HORAS, NÃO EPISÓDIOS, e isso FAVORECE OS BASELINES: o controle gasta as 407 h em 9 FP (episódios longos, a memória do CUSUM), os baselines em 10 a 47 episódios curtos (a política simples não tem memória). Igualar o NÚMERO de episódios os penalizaria mais.
+  A PCA (SPE) e a Mahalanobis robusta, a base clássica do monitoramento multivariado, são as PIORES (1/7), e o máximo de |z| univariado e o Isolation Forest, as melhores (4/7): o sinal está mais na MAGNITUDE de poucas tags do que na QUEBRA DA ESTRUTURA DE CORRELAÇÃO (consistente com o M31 e a anatomia: vibração e termopares isolados).
+  A VANTAGEM DO v2 (de +2 a +5 detecções a custo igual) NÃO vem de um escore mais sofisticado que estes: vem da ENGENHARIA em torno dele (quatro canais por tipo de sinal, o `vb` com referência rolante, o `sp` do mancal, o CUSUM com memória, o voto entre canais, o portão e a escalada). O próximo experimento decompõe isso (sinais do v2 sob a política simples; baselines sob a política do v2).
+PLACAR: ACERTEI: nenhum baseline supera o controle (E2); o piso de ruído de detecção é de pelo menos 1 evento em >= 3 escores (E4: 4 de 6); o lead do melhor baseline a +-10 h do controle (pca_t2 31,2 h; E5). ERREI: pelo menos 1 baseline detecta >= 6/7 a custo igual (E1: o máximo é 5); PCA-SPE, T2 e Mahalanobis entre os 3 melhores (E3: SPE e Mahalanobis são os piores); o rz_max como o pior (é o melhor, junto com o iforest);
+  cobertura ao acaso entre 0,10 e 0,30 (rz_max 0,34 e pca_t2 0,36 passam do limite).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/04_escada_de_baselines.py
 """
 from __future__ import annotations
