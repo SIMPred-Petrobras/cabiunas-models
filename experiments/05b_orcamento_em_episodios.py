@@ -12,6 +12,14 @@ LEITURA: se a lacuna a 9 episódios é >= 3 eventos, a CONSOLIDAÇÃO DO ALARME 
 
 LIMITES. 7 eventos; FP não monótono no limiar (por isso a grade e o menor limiar viável); mesmo piso de ruído dos EXP 04 e 05 (detecção +-1 evento).
 
+RESULTADO (15/10/2026). CONTROLE: 6/7 a 9 FP, lead 32,7 h, 1.304 h de alarme. A NO MÁXIMO 9 FP EPISÓDIOS (limiar = o menor da grade com FP <= 9; detecção | lead h | horas de alarme):
+  baselines: rz_max 1/7 | 7,4 | 44; pca_spe 1/7 | 20,3 | 249; pca_t2 1/7 | 7,4 | 81; maha_mcd 1/7 | 9,3 | 404; iforest 1/7 | 23,5 | 97; knn 0/7 | 149.
+  sinais do v2 (política simples): canal_t 0/7 | 119; canal_p 1/7 | 20,3 | 63; canal_sp 2/7 | 31,8 | 196; canal_vb 1/7 | 48,0 | 372; max4 1/7 | 177; ord2 0/7 | 141; ord3 0/7 | 100; ord2_spvb 0/7 | 103.
+  MELHOR ESCORE SIMPLES: 2/7 (canal_sp) contra 6/7 do controle: LACUNA DE 4 EVENTOS à mesma contagem de falsos alarmes. A política simples gasta de 44 a 404 h de alarme (o controle, 1.304 h): o controle COBRE os eventos com episódios LONGOS (memória do CUSUM), enquanto a política simples a 9 episódios só acende por pouco tempo.
+LEITURA. Há DOIS custos e eles dão respostas diferentes: (a) a custo igual em HORAS de alarme fora das janelas, os sinais do v2 sob a política simples ficam a 1 evento do controle (5/7 contra 6/7); (b) a custo igual em EPISÓDIOS falsos (o que o operador sente como notificações), a lacuna é de 4 eventos (2/7 contra 6/7). A consolidação do alarme em episódios longos (CUSUM com memória, níveis A/B, portão, escalada)
+  é, portanto, o que compra a detecção por notificação; o preço é a CARGA ATIVA em horas (o que a pesquisa atacou com a gestão de alarme R1, que reduz a carga ativa sem mudar a notificação). Todo candidato deve ser reportado NOS DOIS custos (episódios e horas).
+PLACAR: ACERTEI: nenhum escore simples passa de 3/7 (o máximo é 2); a lacuna para o controle é >= 3 eventos (4); os baselines em 0 a 2 (0 a 1). ERREI: previ o melhor dos sinais do v2 (ord2 ou canal_t) em 2 ou 3 de 7: ambos deram 0 (o melhor é o canal_sp, 2/7).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/05b_orcamento_em_episodios.py
 """
 from __future__ import annotations
