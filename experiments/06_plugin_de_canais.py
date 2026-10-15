@@ -22,6 +22,16 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 
 LIMITES. 7 eventos; o mapa de quantis é global no período (ajuste de escala sem rótulo, mas com a marginal futura); o plug-in troca UM canal por vez (o voto e os portões ficam como estão); o controle foi calibrado para os próprios sinais, e um sinal trocado herda os limiares sem recalibração (uma queda pode ser desencaixe, não falta de informação).
 
+RESULTADO (15/10/2026). VALIDADE DO PLUG-IN: PASSA com folga. A decisão de produção rodada sobre o período inteiro com os sinais originais dá 6/7, início 5, lead 32,7 h, 9 FP, 1.304 h (407 h fora das janelas), IDÊNTICO ao controle, e a série de alarme coincide em 100,00% dos instantes vigiados.
+  SUBSTITUIÇÃO DO CANAL t (detecção de 7 | FP episódios | horas de alarme | horas fora das janelas | piso de ruído em detecção): rz_max 3 | 23 | 1.811 | 1.563 | 3-3; pca_spe 3 | 19 | 2.242 | 1.378 | 3-3; pca_t2 3 | 24 | 2.063 | 1.777 | 3-3; maha_mcd 3 | 19 | 2.177 | 1.314 | 3-3; iforest 5 | 16 | 1.859 | 955 | 4-6; knn 2 | 24 | 1.913 | 1.647 | 2-3.
+  SUBSTITUIÇÃO DO CANAL p: rz_max 5 | 24 | 1.938 | 1.634 | 5-5; pca_spe 6 | 12 | 2.212 | 1.314 | 6-6; pca_t2 5 | 22 | 1.903 | 1.573 | 5-5; maha_mcd 6 | 11 | 2.011 | 1.764 | 6-6; iforest 6 | 11 | 1.544 | 1.290 | 6-6; knn 6 | 15 | 1.604 | 1.296 | 6-6.
+  CONTROLE: 6/7 | 9 FP | 1.304 h | 407 h fora. NENHUMA das 12 combinações chega a >= 6/7 com FP <= 9 (0 de 12).
+LEITURA. (1) O canal t do v2 (PCA das temperaturas) é INSUBSTITUÍVEL por qualquer baseline: trocá-lo derruba a detecção a 2-3 de 7 (o iforest chega a 5) e sobe o FP a 16-24. (2) O canal p é o mais fraco e tolera troca na DETECÇÃO (5 a 6 de 7), mas TODA troca custa mais: FP de 11 a 24 episódios (contra 9) e 3x a 4x as horas de alarme fora das janelas (1.290 a 1.764 h contra 407 h). Com a mesma
+        distribuição marginal no normal (o mapa de quantis a impõe), os sinais do v2 têm excursões menos concentradas e menos persistentes em operação normal: a ESPECIFICIDADE é o que os canais do v2 têm a mais, e nenhum baseline a replica.
+  (3) O piso de ruído dentro da decisão é BAIXO (detecção 0 a 2 de faixa; só 2 de 12 combinações têm faixa >= 1): a consolidação do v2 amortece a variação entre treinos; isso dá ao plug-in uma boa sensibilidade para comparar candidatos.
+  (4) CONSEQUÊNCIA PARA A FASE 3: o critério de um sinal novo é ESPECIFICIDADE (FP em episódios e horas fora das janelas à mesma detecção) contra os canais t e p do v2 no plug-in, e não a detecção isolada. Um modelo de normal que não reduza as excursões em operação normal (deriva, regimes) não passa.
+PLACAR: ACERTEI: pca_spe, maha_mcd e knn no t deixam <= 4/7 (3, 3, 2); trocar o p muda a detecção em no máximo 1 (5 a 6); nenhuma combinação chega a 6/7 com FP <= 9 (0 de 12). ERREI: previ rz_max e iforest no t mantendo >= 5/7 com FP <= 12 (rz_max 3/7; iforest 5/7 com 16 FP); previ o piso de ruído >= 1 evento em >= 50% das combinações (2 de 12).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/06_plugin_de_canais.py
 """
 from __future__ import annotations
