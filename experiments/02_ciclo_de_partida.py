@@ -26,6 +26,17 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 
 LIMITES. 8 eventos; faixas de tau escolhidas aqui; o estado permanente usa a própria história (inclui a deriva); 5 dos 8 trips a <= 31 h é o número de partida da pesquisa e aqui se recalcula com outra definição de partida (ligada suave).
 
+RESULTADO (15/10/2026; a 1.ª execução parou num erro de fuso na fatia de datas, antes de qualquer resultado) -- EXPLORATÓRIO. Período 01/02/2024 a 21/04/2026: 13.370 h ligadas, 96 partidas pela definição "ligada suave" (lacunas < 10 min fundidas; a contagem de 159 subidas de RUNNING_A da pesquisa inclui 63 oscilações).
+  tau (h desde a última partida) nos 8 trips: 150,4 | 211,3 | 13,0 | 73,4 | 31,1 | 15,3 | 9,3 | 676,5 (o 11/04 passa de 21,9 h, na definição da pesquisa, para 73,4 h: uma parada de 18,3 h separa a partida do 07/04 da do 11/04).
+  P1 RISCO POR FAIXA DE tau (exposição em h ligadas | trips | taxa por 1.000 h [IC95% de Poisson]): [0,1) 77 | 0 | 0 ; [1,3) 133 | 0 ; [3,6) 187 | 0 ; [6,12) 355 | 1 | 2,82 [0,07; 15,7] ; [12,24) 615 | 2 | 3,25 [0,39; 11,8] ; [24,48) 1.068 | 1 | 0,94 ; [48,96) 1.770 | 1 | 0,56 ; [96,200) 2.948 | 1 | 0,34 ; [200,inf) 6.096 | 2 | 0,33 [0,04; 1,19].
+        Concentração nas primeiras 32 h: 4 de 8 trips (9,3, 13,0, 15,3 e 31,1 h) em 13,1% da exposição (1.737 de 13.248 h): p binomial unilateral = 0,0133; taxa dentro/fora = 6,6x (IC largo).
+        POR FAIXA: zero trips nas primeiras 6 h (397 h de exposição) e 3 trips entre 6 e 24 h (970 h, 7,3% da exposição). Esta faixa foi escolhida DEPOIS de ver os dados (p binomial do 3 de 8 nela ~0,016): é HIPÓTESE, não achado; só um pré-registro prospectivo (o sombra) a testa.
+  P2 TIPO DE PARTIDA (parada anterior): breve 10-30 min 28 partidas, 3 com trip em 48 h (10,7%); 30 min-12 h 28, 0; 12-72 h 19, 0; > 72 h 21, 1 (4,8%). Fisher unilateral breve contra as demais p = 0,073, razão de chances 8,0; > 72 h p = 0,634.
+        Parada anterior à última partida de cada trip (h): 17,0 | 53,5 | 0,4 | 18,3 | 0,2 | 77,4 | 0,2 | 137,3: três dos quatro trips a <= 32 h vieram depois de uma parada BREVE (07/04: 0,4 h; 29/04: 0,2 h; 09/12: 0,2 h) e um depois de uma partida a frio (04/11: 77,4 h). É o MESMO padrão do M25 da pesquisa (reinício depois de parada breve), nos MESMOS dados: NÃO é confirmação independente.
+  P3 ACOMODAÇÃO: NÃO RESPONDIDA. 35 de 36 tags (todas as vibrações, termopares, T5) têm mediana de acomodação de 0 h; só o PI_0319 (7 h; 13% nunca acomodam) foge. A definição foi leniente demais: o sigma do estado permanente é GLOBAL e inclui a deriva de meses, que é maior que o transiente de uma partida,
+        e portanto |z| <= 3 vale desde a primeira hora. Para ver o transiente é preciso uma escala LOCAL (da própria corrida); fica para o EXP 03. Corridas com >= 30 h: 46 de 96.
+PLACAR: ACERTEI: p da concentração < 0,05 (0,013) e o tipo de partida sem efeito estatisticamente claro (p = 0,073 > 0,05, mas borderline: razão de chances 8). ERREI: a fração da exposição com tau <= 32 h é 13,1% (previ 15% a 35%); a razão de taxas 6,6x (previ 3 a 6x); >= 8 tags com acomodação >= 6 h (1 de 36); vibração a mais lenta (0 de 10); >= 60 corridas de >= 30 h (46). A pergunta P3 não se respondeu por uma definição minha.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/02_ciclo_de_partida.py
 """
 from __future__ import annotations
