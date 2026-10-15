@@ -26,6 +26,16 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 
 LIMITES. 8 eventos; janela de 7 d e referência de 28 d escolhidas aqui (não otimizadas); o percentil mede incomum em magnitude e não em sinal; 38 tags x 8 eventos = 304 percentis (sem correção formal para o relatório descritivo; só a consistência usa o limiar de Bonferroni).
 
+RESULTADO (15/10/2026; repetido com a borda corrigida, números idênticos aos da 1.ª execução) -- EXPLORATÓRIO. 450 janelas normais (referência causal [dia - 28 d, dia - 7 d)); 35 tags.
+  Q1 O INSTANTE T. Em TODOS os trips aplicáveis o RUNNING_A zera no próprio T (0 a 2 min) e a máquina estava estável até ele: o T do registro É o instante da parada. Tempo desde a última partida: 150, 211, 13, 22, 31, 15, 9,4 e 676 h (5 de 8 a <= 31 h). Vigilância das 48 h anteriores: 1,00 em sete eventos e 0,32 em 04/11/2025 (parada de 2 dias e partida a frio 9 h antes do trip).
+        (A coluna "queda T5" estava mal definida: mede nível e foi descartada.)
+  Q2 INCOMUM (percentil do zmax entre as janelas normais; tags >= 0,95 de 35): 27/02 1 (PI_0307, gás de selagem); 17/03 2 (PDI_0317, TV_351X); 07/04 7 (TV_355X/Y 1,00, TC382_04 0,99, TI_0305 0,98, PDI_0317, TC382_05); 11/04 19 (aglomerado: a referência de 11/04 contém a partida e o trip de 07/04, leitura duvidosa);
+        29/04 0 (a mais alta 0,94, z ~ 2); 04/11 3 (TI_0305 1,00 com 76 h, TV_352X, PI_0319); 09/12 4 (TI_0301, TI_0317, TI_0303 a 0,98 com z de 3 a 4 e TV_353Y 0,96); 26/02/2026 1 (PDIT_0305 com um pico de 1 h, z 58). PI_0319 tem zmax ~1.500 também em 90% das janelas normais: inútil em nível.
+  Q3 O "LEAD" (primeira corrida sustentada) É INVÁLIDO: os gráficos mostram que ele pega transiente de começo de janela (09/12: aquecimento depois de uma partida) e deslocamento de nível anterior à janela (04/11: TI_0305 ~6 sigma desde o começo). Substituído pela corrida TERMINAL no EXP 01b.
+  Q4 CONSISTÊNCIA: nenhuma tag é incomum em >= 4 eventos (máximo 3: PDI_0317 e TI_0305; 2: TI_0317, TI_0303, TC382_01/04/05, TV_351X, TV_355X/Y). Por família, eventos com >= 1 tag incomum: processo 7 de 8, vibração 5 de 8, termopares de exaustão 2 de 8.
+PLACAR: ACERTEI: nenhuma tag em >= 4 eventos; >= 6 eventos com alguma tag >= 0,95 (7 de 8; só 29/04 não); >= 5 dos 8 estáveis 24 h antes (7). ERREI: previ T diferente da parada por > 1 h em >= 2 eventos (em nenhum: T é a parada); previ os extremos em sensores de estado (os extremos informativos são vibração, termopares e mancais TI_03; o PI_0319 e afins saturam também no normal);
+  previ o lead mediano entre 6 e 40 h (estatístico inválido); previ vibração como a candidata mais provável a passar em >= 4 eventos (35%): chegou a 2 por tag.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/01_anatomia_trips.py
 """
 from __future__ import annotations
