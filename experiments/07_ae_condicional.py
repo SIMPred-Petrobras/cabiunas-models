@@ -40,6 +40,8 @@ PLACAR: ACERTEI: algum PROMISSOR no canal p (~45%: um); o melhor D sob a políti
   o piso de ruído <= 1 evento em >= 70% das combinações (E5: 5 de 8 = 62%).
 PRÓXIMOS PASSOS PLAUSÍVEIS (a pré-registrar): (a) modelo SEQUENCIAL (TCN) com a persistência das excursões como alvo de projeto; (b) treino com peso decrescente no tempo (frescura) sobre o histórico; (c) o AE como QUINTO canal (acrescenta informação em vez de substituir); (d) mais sementes (>= 5) para o piso de ruído.
 
+CORREÇÃO (EXP 08, 10 sementes): o "PROMISSOR" do D0_20k no canal p (722 h fora) era sorte de semente; com 10 sementes a mediana é 1.075 h (Q1-Q3 695-1.341), acima do limite de 800 h: NÃO é promissor. A detecção de 6/7 e o FP de 11 a 14 se mantêm.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/07_ae_condicional.py
 """
 from __future__ import annotations

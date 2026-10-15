@@ -25,6 +25,15 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 
 LIMITES. 7 eventos; a LRN atenua também precursores lentos (uma queda de detecção pode ser o preço da especificidade); o mapa de quantis é global no período; os parâmetros padrão (28 d, 7 d) vêm do princípio do vb e da guarda de 168 h da pesquisa e foram fixados antes de ver resultado, mas não são independentes dos 8 eventos (a guarda de 168 h foi achada neles).
 
+RESULTADO (15/10/2026) -- A LRN PIORA: NENHUMA MELHORIA DO CONTROLE, NENHUM DIGNO. (A 1.ª execução parou num erro de serialização entre processos, antes de qualquer resultado.)
+  BRAÇO A (canais do v2 com LRN; detecção de 7 | FP | horas fora das janelas), padrão (janela 672 h, guarda 168 h) e perturbações: canal t: 3/7 | 15 | 718 (e 3/7 em todas as perturbações, FP 15 a 16, horas fora de 328 a 984); canal p: 5/7 | 12 | 741 (perturbações 5 a 6/7, FP 11 a 13, 738 a 1.354 h); t+p: 4/7 | 13 | 961 (perturbações 3 a 5/7, FP 13 a 15).
+        CONTROLE: 6/7 | 9 | 407. Nenhum braço cumpre o padrão (det >= 6, FP <= 9, <= 326 h) nem é robusto: MELHORIA DO CONTROLE = não em nenhum.
+  BRAÇOS B e C (mediana de 10 e de 5 sementes; Q1-Q3): D0_20k canal t sem LRN 4/7 | FP 16 | 764 h (665-958) e COM LRN 3/7 | 17 | 1.224 h; D0_20k canal p sem LRN 6/7 (6-6; faixa 6-6) | FP 12 (11-14) | 1.075 h (695-1.341) e COM LRN 6/7 (faixa 5-6) | FP 14 | 1.253 h; D2 canal t sem LRN 5/7 | FP 20 | 1.748 h e COM LRN 4/7 | 18 | 1.872 h. NENHUM DIGNO, NENHUM PROMISSOR.
+CORREÇÃO DO EXP 07: com 10 sementes o D0_20k no canal p tem horas fora MEDIANA de 1.075 h (Q1-Q3 695-1.341), não os 722 h das 3 primeiras sementes: o "PROMISSOR" do EXP 07 era SORTE DE SEMENTE (o limite de 800 h não se mantém). A detecção de 6/7 é estável (todas as 10 sementes) e o FP de 11 a 14; a especificidade fica ~17% melhor que o melhor baseline no p (1.290 h), longe do p do v2 (407 h).
+LEITURA. (1) A normalização local, tanto nos canais do v2 quanto nos do AE, REDUZ a detecção ou mantém e AUMENTA as horas falsas: a referência móvel ABSORVE a deriva lenta que é também o precursor (as corridas terminais dos trips duram 3 a 7 dias, EXP 01b) e ainda amplifica o ruído onde a dispersão da referência é pequena. (2) Junto do EXP 07 (frescura > volume), a mensagem é consistente: a referência do v2, ESTÁTICA no mês e FRESCA (20.000 amostras, retreino mensal),
+        é um ponto doce entre "velha demais" (histórico longo) e "adaptativa demais" (referência móvel); os dois lados pioram. (3) Seis sementes a mais mudaram a leitura do melhor caso: com redes neurais, 3 sementes enganam.
+PLACAR: ERREI tudo que previ de otimista: E1 (a LRN reduz >= 20% as horas fora nos canais do v2: não; o canal t caiu a 3/7), E2 (a LRN no AE reduz >= 30% as horas: aumentou), E3 (o D0_20k p reproduz 700 +-250: 1.075), E4 (algum digno: nenhum). ACERTEI E5 só para o canal p do v2 (4 de 4 perturbações com detecção >= 5/7; no t, 0 de 4; no t+p, 1 de 4).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/08_normalizacao_local.py
 """
 from __future__ import annotations
