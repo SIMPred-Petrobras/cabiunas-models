@@ -11,6 +11,13 @@ CRITÉRIO (mediana das 10 sementes, V1): MELHOR = detecção >= 7/7 com FP <= 10
 EXPECTATIVAS: MELHOR ~12%; IGUAL ~48%; PIOR ~40% (o EXP 07/08 mostrou que contexto e estrutura extra não ajudam, e o piso de ruído neural é maior). O 04/11 continua detectado em >= 8 das 10 sementes ~65%. O escore sequencial acende mais tempo seguido que o pontual (mais horas por episódio) ~55%.
 LIMITES. 7 eventos; uma única arquitetura e janela (sem varredura: seria sobreajuste ao alvo); herda limiares do t sem recalibração; mapa de quantis global.
 
+RESULTADO (15/10/2026) -- IGUAL (veredito pré-registrado). Quinto canal, voto V1, mediana e faixa de 10 sementes:
+  TCN sequencial W15: detecção 7/7 (6-7; por semente [7,7,7,7,7,6,6,6,7,7]) | FP 12 (11-16) | horas fora 634 (448-842) | horas totais 1.535 | lead 29,3 h.
+  AE pontual D0_20k (referência, mesmas sementes): 7/7 (7-7) | FP 12 (10-14) | horas fora 563 (416-724) | horas totais 1.469 | lead 29,3 h.
+  Controle: 6/7 | 9 FP | 407 h fora. A diferença TCN-AE (FP 0; horas fora +71 h, +13%; detecção em 3 de 10 sementes cai a 6/7) está dentro do piso de ruído (FP +-1, carga +-20%): a dinâmica de 30 min NÃO acrescenta especificidade; o AE pontual é igual ou ligeiramente mais estável (detecção 7 em 10 de 10).
+  Não verifiquei QUAL evento as 3 sementes de 6/7 perdem (provavelmente o 04/11, o único que o quinto canal recupera): não afirmar.
+PLACAR: ACERTEI: IGUAL (~48%); MELHOR não ocorreu (~12%). NÃO CONFERIDO: 04/11 em >= 8 de 10 sementes (detecção 7/7 em 7 de 10; a leitura por evento não foi feita). INCONCLUSIVO: horas por episódio maiores (53 contra 47 h), dentro do ruído.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/11_ae_sequencial.py
 """
 from __future__ import annotations
@@ -47,6 +54,10 @@ def tarefa_tcn(sem):
     return sem, s
 
 
+def tarefa_ae(a):
+    return E7.tarefa(a)
+
+
 def tarefa_avalia(a):
     nome, sem = a; proc, det, vigS, reg = GL["proc"], GL["det"], GL["vigS"], GL["reg"]
     d2 = copy.deepcopy(det); d2["sinais"] = list(det["sinais"]) + ["ae"]
@@ -70,7 +81,7 @@ def main():
     print(f"CONTROLE: {E6.linha(ctrl)} | {len(tags)} tags de temperatura", flush=True)
     with Pool(4) as p:
         S = dict(p.map(tarefa_tcn, list(SEMENTES), chunksize=1))
-        P = dict(((c, f, s), v) for (c, f, s), v in p.map(E7.tarefa, [("D0_20k", "temperatura", s) for s in SEMENTES], chunksize=1))
+        P = dict(((c, f, s), v) for (c, f, s), v in p.map(tarefa_ae, [("D0_20k", "temperatura", s) for s in SEMENTES], chunksize=1))
     GL["sinais"] = {}
     for s in SEMENTES:
         GL["sinais"][("TCN sequencial W15", s)] = ewma_vigiado(S[s], vig_g, "1h").reindex(proc.index)
