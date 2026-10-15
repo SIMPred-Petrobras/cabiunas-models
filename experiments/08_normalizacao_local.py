@@ -52,6 +52,10 @@ GL = {}
 PADRAO = (672, 168); PERTURBA = [(576, 168), (768, 168), (672, 144), (672, 192)]
 
 
+def tarefa_ae(a):
+    return E7.tarefa(a)                       # invólucro: uma função de módulo carregado por importlib não se serializa para os processos
+
+
 def tarefa_avalia(a):
     """a = (braco, rotulo, sinal_chave, canais, parametros|None): devolve as métricas do plug-in."""
     braco, rot, chave, canais, par = a
@@ -78,7 +82,7 @@ def main():
     falta = list(dict.fromkeys(falta))
     print(f"CONTROLE: {E6.linha(ctrl)}\ntreinando/lendo {len(falta)} escores do AE (cache)", flush=True)
     with Pool(3) as p:
-        S = dict(p.map(E7.tarefa, falta, chunksize=1))
+        S = dict(p.map(tarefa_ae, falta, chunksize=1))
     GL.update(proc=proc, det=det, vigS=vigS, reg=reg, sinais={})
     for (cfg, fam, sem), s in S.items():
         GL["sinais"][((cfg, sem), {"temperatura": "t", "pressao": "p"}[fam])] = ewma_vigiado(s, vig_g, "1h").reindex(proc.index)
