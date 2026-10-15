@@ -22,6 +22,16 @@ EXPECTATIVAS REGISTRADAS (para poder errar de forma visível):
 
 LIMITES. 7 eventos; a política simples não é a do v2 (que é o controle); o limiar natural (1) e o orçamento são as duas leituras; sem piso de ruído próprio (os sinais não têm aleatoriedade; o piso de ruído do v2 vem do M37 da pesquisa: detecção +-0,5, FP +-0,1); o corte entre "sinal" e "decisão" não é limpo (o EWMA e o `vb` com referência rolante são pré-processamento que também decide).
 
+RESULTADO (15/10/2026). VALIDADE: a máscara extraída pelo caminho de produção tem 7.356 h vigiadas, IGUAL às do controle (+0,00%); 342.029 instantes de 2025-01-01 a 2026-04-21 (39 s). CONTROLE: 6/7, lead 32,7 h, 9 FP, 407 h de orçamento fora das janelas.
+  A CUSTO IGUAL (1x; detecção de 7 | início | lead h | FP episódios | horas fora | cobertura ao acaso | p binomial): canal_t 5/7 | 4 | 21,4 | 17 | 446 | 0,132 | 0,0007; canal_p 2/7 | 2 | 14,8 | 24; canal_sp 2/7 | 1 | 36,8 | 12; canal_vb 1/7 | 0 | 48,0 | 11; max4 3/7 | 3 | 22,0 | 20;
+        ord2 5/7 | 4 | 23,6 | 23 | 407 | 0,191 | 0,0038; ord3 4/7 | 4 | 10,5 | 30; ord2_spvb 4/7 | 4 | 16,3 | 16 | 323 | 0,139 | 0,0091.
+  NO LIMIAR NATURAL DO v2 (nível A, = 1,0; as horas fora das janelas deixam de ser iguais): canal_vb 6/7 | lead 34,0 h | 25 FP | 973 h fora (2,4x o orçamento); max4 6/7 | 28 FP | 2.088 h (5,1x); ord2 5/7 | 31 FP | 612 h; ord3 3/7 | 17 FP | 365 h; canal_t 4/7 | 22 FP | 610 h; canal_sp 3/7 | 1.768 h; canal_p 2/7.
+  CURVA: a 0,5x todos os escores dão 0 a 2 de 7; a 2x ord2 chega a 7/7 (43 FP, 689 h fora, lead 26,3 h), ord2_spvb 6/7, ord3 6/7, canal_t 5/7.
+  LEITURA PRÉ-REGISTRADA: o melhor escore simples dos sinais do v2 a custo igual fica em 5/7 (canal_t e ord2) contra 1 a 4 dos baselines do EXP 04 e 6 do controle: OS SINAIS DO v2 carregam a maior parte da vantagem (+1 a +4 sobre os baselines), e a engenharia da decisão (CUSUM, níveis, portão, escalada) acrescenta ~1 evento e, principalmente, CONSOLIDA o alarme:
+        o controle gasta as 407 h em 9 episódios, a política simples com os mesmos sinais em 16 a 30. O que o v2 tem a mais NÃO é só detecção: é um alarme com MENOS EPISÓDIOS (a métrica que o operador sente) à mesma exposição.
+  SURPRESAS: (i) o canal t (PCA das temperaturas) é o melhor canal sozinho a custo igual (5/7, p binomial 0,0007), não o vb: o vb sozinho dá 1/7 a custo igual e só chega a 6/7 com 2,4x o orçamento (alta sensibilidade, baixa especificidade: a mesma leitura do atlas); (ii) o 2º maior canal ("pelo menos 2 de 4") é o melhor combinador a 1x e a 2x (7/7 com 43 FP); o voto de 3 de 4 perde sensibilidade; (iii) o canal p é o pior (2/7).
+PLACAR: ACERTEI: o melhor escore simples é >= 5/7 (E de ord2 >= 5: 5/7); o FP dos escores simples fica acima do controle (16 a 30 contra 9); ord2 e ord2_spvb de 4 a 6 (5 e 4). ERREI: o vb como o melhor canal sozinho (é o pior a custo igual: 1/7; previ 3 a 5); o canal t de 1 a 3 (foi 5); max4 de 3 a 5 (3) e ord3 de 3 a 5 (4) ok; nenhum escore simples chega a 6/7 a 1x (previ ~30% de algum: nenhum a 1x; 6/7 no limiar natural do vb e max4, a custos maiores).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/05_decomposicao_do_v2.py
 """
 from __future__ import annotations
