@@ -67,7 +67,7 @@ def main():
     SAIDA.mkdir(parents=True, exist_ok=True)
     g = nvio.carrega_grade()
     fim = g.index[g["RUNNING_A"].notna() & g[[c for c in g.columns if c.startswith("TV_")]].notna().any(axis=1)][-1]
-    g = g.loc["2024-02-01":fim]; idx = g.index; lig = ligada_suave(g); n = len(g)
+    g = g.loc[pd.Timestamp("2024-02-01", tz="UTC"):fim]; idx = g.index; lig = ligada_suave(g); n = len(g)
     sub = np.flatnonzero(lig[1:] & ~lig[:-1]) + 1                             # subidas
     start = np.full(n, -1); last = -1; k = 0
     for i in range(n):
