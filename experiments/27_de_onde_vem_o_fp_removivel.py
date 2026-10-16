@@ -12,6 +12,13 @@ EXPECTATIVAS: H-COMB refutada (<= 1 dos 3 FP removíveis com T5 normal e tag est
 INTERPRETAÇÃO PREVISTA. Se H-MANUT confirma, o FP removível é um FP DE REGIME PÓS-MANUTENÇÃO e o remédio é de apresentação/governança (um período de graça ou retreino extra depois de parada longa, já avaliado como 'cabeça de aquecimento' e 'recentragem reprovada'), não de limiar. Se nenhuma confirma, os dois FP são só os dois FP, sem explicação física identificada, e o ganho de removê-los é só amostra.
 LIMITES. 9 + 5 episódios; uma parada longa é definida por mim (>= 72 h); a taxa de base e o enriquecimento são descritivos (poucos eventos); nada se adota.
 
+RESULTADO (15/10/2026) -- AS DUAS HIPÓTESES SÃO REFUTADAS: o FP removível não é máquina sem combustão nem regime pós-parada longa.
+  H-COMB: 0 de 3 FP removíveis (e 0 de 9 FP) a satisfazem: o T5 mediano dos episódios vai de 564 a 724 °C, a fração com T5 < 400 °C é 0 em todos e a RUNNING_A não tem transições dentro dos episódios.
+  H-MANUT: os FP removíveis começam a 121,3 dias (15/10/2025), 133,0 dias (26/10/2025) e 39,2 dias (09/01/2026) do fim da última parada longa (>= 72 h): 0 de 3 a <= 30 dias; a fração de todos os FP nessa condição é 0,33 contra a taxa de base 0,46 (enriquecimento 0,7x; limite >= 2x). Paradas longas no período avaliado: 2025-04-29 (564 h), 06-04 (125 h), 06-09 (148 h), 10-31 (77 h), 11-04 (144 h), 11-10 (132 h), 11-27 (109 h), 2026-01-23 (137 h), 2026-03-02 (...).
+  Canais acesos (nível A) nos FP removíveis: 15/10/2025: t 1,00, sp 1,00, vb 1,00 durante os 5,6 dias (três canais permanentemente acesos); 26/10/2025: t 1,00 e sp 1,00 (vb 0); 09/01/2026: só o p (0,62).
+LEITURA. Os dois FP longos de outubro de 2025 são estados de dois a três canais permanentemente acesos (t e sp, mais o vb no primeiro), sem sinal de combustão ausente e longe de parada longa anterior: a leitura 'regime ago-out/2025' que eu fiz era a leitura de datas, não de mecanismo. Sem explicação física identificada nos dados disponíveis.
+PLACAR: ACERTEI: H-COMB refutada (~85%). ERREI: H-MANUT confirmada para o conjunto (~45%: 0 de 3); enriquecimento >= 2x (~40%: 0,7x); canal dominante vb ou p (~35% cada: nos de outubro foram t e sp).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/27_de_onde_vem_o_fp_removivel.py
 """
 from __future__ import annotations
