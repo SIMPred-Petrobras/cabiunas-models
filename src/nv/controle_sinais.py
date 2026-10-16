@@ -21,13 +21,17 @@ def _ci():
     return ci
 
 
-def sinais_causais(inicio: pd.Timestamp, cache: Path | None = None) -> pd.DataFrame:
+def sinais_causais(inicio: pd.Timestamp, cache: Path | None = None, extra: pd.DataFrame | None = None) -> pd.DataFrame:
+    """`extra`: dados de 30 s ANTERIORES ao CSV bruto (mesmas colunas, índice UTC), concatenados antes de `preparar_grade` para estender o replay para trás."""
     if cache is not None and cache.exists():
         return pd.read_parquet(cache)
     ci = _ci()
     csv = next((PKG / "dados" / "2025_2026").glob("data_*_raw.csv"))
     with contextlib.redirect_stdout(io.StringIO()):
-        df = ci.preparar_grade(ci.carregar_dados(csv))
+        raw = ci.carregar_dados(csv)
+        if extra is not None:
+            raw = pd.concat([extra.loc[extra.index < raw.index[0], raw.columns], raw]).sort_index()
+        df = ci.preparar_grade(raw)
         modelos = ci.carregar_modelos(PKG / "modelos")
     trips = sorted(ci.carregar_trips(PKG / "registro_trips.csv"))
     real = df["RUNNING_A"].notna() & df[[c for c in df.columns if c.startswith("TV_")]].notna().any(axis=1)
