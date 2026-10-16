@@ -10,6 +10,13 @@ EXPECTATIVAS: o consenso domina em algum q ~40%; SUPERA A FRONTEIRA (>= 2 q vizi
 INTERPRETAÇÃO PREVISTA. Se supera, o consenso é um achado de operação (a votação entre vizinhos tira FP idiossincráticos), candidato a hipótese prospectiva na sombra com o q escolhido por critério de custo, não por detecção. Se não supera, é um ponto da fronteira já conhecida: nenhuma melhoria.
 LIMITES. 7 eventos; os 5 q e a escolha dos sorteios são uma família de comparações; o consenso e as individuais variam em torno do MESMO centro (o ponto publicado, que já é o topo da vizinhança: o EXP 25 B mostrou que em centros aleatórios o consenso não ajuda); nada se adota sem sombra.
 
+RESULTADO (15/10/2026) -- O CONSENSO DOMINA A FRONTEIRA DAS CONFIGURAÇÕES INDIVIDUAIS EM q = 0,6, 0,7 E 0,8.
+  Conjunto 2 (60 individuais independentes do consenso, semente 20261017): 7 de 60 BONS; detecção por contagem [4/7: 10, 5/7: 23, 6/7: 24, 7/7: 3]; FP mediano 12. Das 50 individuais com detecção >= 5, o MENOR FP é 9 e as MENORES horas fora são 384 h; nenhuma delas tem FP < 9 ou menos de 384 h.
+  Consenso (do conjunto 1): q = 0,4: 6/7, FP 13, 594 h (56% das individuais com detecção >= 6 têm FP menor: não domina) | q = 0,5: 5/7, FP 10, 412 h (8% têm FP menor, 14% horas menores: não domina por pouco) | q = 0,6: 5/7, FP 8, 237 h (0% das individuais têm FP ou horas menores: DOMINA) | q = 0,7: 5/7, FP 7, 234 h (DOMINA) | q = 0,8: 5/7, FP 6, 227 h (DOMINA).
+  CRITÉRIOS: DOMINA em 3 de 5 valores de q; SUPERA A FRONTEIRA (>= 2 q vizinhos): SIM.
+LEITURA. A 5/7 o consenso entrega FP 6 a 8 e ~230 h fora; nenhuma configuração individual de uma amostra independente da mesma vizinhança com detecção >= 5 faz FP < 9 nem horas < 384: a maioria entre vizinhas tira FP que as individuais carregam (os FP são idiossincráticos de cada configuração) e é um ponto de custo melhor que o da fronteira individual. Ressalvas: o centro é o ponto publicado (o EXP 25 B mostrou que em centros aleatórios não ajuda), 5 valores de q, os mesmos 7 eventos.
+PLACAR: ACERTEI: o consenso domina em algum q (~40%); SUPERA A FRONTEIRA em >= 2 q vizinhos (~25%: sim, três); o percentil de FP do consenso <= 25% em >= 3 dos 5 q (~45%: em quatro, 8% e 0%).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/25b_consenso_contra_a_fronteira.py
 """
 from __future__ import annotations

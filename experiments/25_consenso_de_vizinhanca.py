@@ -12,6 +12,12 @@ EXPECTATIVAS: (A) algum q MANTÉM ~50%; GANHO ~12% (o consenso tende a FP menor,
 INTERPRETAÇÃO PREVISTA. Se o consenso ROBUSTECE, ele é uma hipótese prospectiva para o sombra.py (produção intocada): o ponto de operação esperado é o do consenso, que é menos sensível ao envelhecimento. Se não, a variação entre configurações é sistemática (os mesmos FP em todas) e a fragilidade vem do sinal, não da calibração.
 LIMITES. 7 eventos; o consenso custa 30 a 60 execuções da decisão (barato: os sinais são calculados uma vez); o consenso pode fragmentar episódios (conta mais FP): reportado; o q de 7 valores é uma família de comparações; nada se adota sem sombra.
 
+RESULTADO (15/10/2026) -- (A) O CONSENSO TRAÇA UMA CURVA SUAVE E NÃO MANTÉM 6/7; (B) NÃO ROBUSTECE EM CENTROS ALEATÓRIOS; a pergunta que sobra (25b) é se a curva domina a fronteira das individuais.
+  (A) Consenso de 60 configurações em +-10% do ponto publicado (individuais: 7 de 60 BONS; detecção mediana 6/7; FP mediano 12; horas fora mediana 465): q = 0,2: 7/7 | FP 21 | 1.000 h | q = 0,3: 7/7 | 19 | 916 h | q = 0,4: 6/7 | 13 | 594 h | q = 0,5: 5/7 | 10 | 412 h | q = 0,6: 5/7 | 8 | 237 h | q = 0,7: 5/7 | 7 | 234 h | q = 0,8: 5/7 | 6 | 227 h. Nenhum q GANHA (>= 6/7 com FP <= 7 e <= 326 h) nem MANTÉM (>= 6/7, FP <= 10, <= 500 h): com detecção 6/7 só em q = 0,4 e a 13 FP.
+  (B) 12 centros aleatórios (+-10% do publicado): o detector de UM ponto (o centro) tem 1 de 12 BONS (detecção mediana 5,0; FP 11; 563 h); o consenso em q = 0,4: 0 de 12 BONS (6,0; FP 15; 622 h) e em q = 0,5: 2 de 12 (5,5; FP 12; 460 h). ROBUSTECE: não.
+  LEITURA. Em centros deslocados o consenso é tão ruim quanto o ponto: não conserta calibração envelhecida (a fragilidade é do sinal e do pico, não de ruído de calibração que a média tira). Em torno do ponto publicado (que já é o topo da sua vizinhança) a curva em q é monótona e plana de 0,6 a 0,8 (5/7 com FP 8 a 6). Ver 25b e 25c.
+PLACAR: ERREI: algum q MANTÉM (~50%: nenhum); ROBUSTECE (~35%: não). ACERTEI: o consenso cai a <= 5/7 em q >= 0,7 (~70%); o detector de um ponto tem <= 25% BONS nos 12 centros (~70%: 1 de 12); nenhum GANHO (~88%).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/25_consenso_de_vizinhanca.py
 """
 from __future__ import annotations
