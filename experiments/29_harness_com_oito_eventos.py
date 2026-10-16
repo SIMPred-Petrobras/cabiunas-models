@@ -13,6 +13,13 @@ EXPECTATIVAS: V1 passa ~70% (a interpolação do xlsx muda pouco o 2 min); V2 pa
 INTERPRETAÇÃO PREVISTA. Se V1-V3 passam, o harness passa a ter os 8 eventos (cache novo) e os resultados anteriores seguem válidos como recorte de 7. Se V2 falha só nas primeiras semanas de março (janela mais curta no cache antigo), a diferença é do cache antigo e não do novo: reportado. Se V1 falha, a junção xlsx + CSV não é fiel e o 27/02 não entra por essa via.
 LIMITES. A junção usa xlsx 'interpolated' antes de 01/01/2025 e CSV bruto depois; a produção foi desenhada para o bruto; uma diferença de interpolação pode mudar o vb nas semanas iniciais; nenhum resultado anterior é refeito aqui.
 
+RESULTADO (16/10/2026) -- V3 PASSA (o que importa), V1 e V2 FALHAM pelos limites escritos; o harness de 8 eventos fica disponível e reproduz o controle exatamente.
+  V1 FONTE: FALHA. A grade de produção calculada dos xlsx de jan-fev/2025 contra a do CSV bruto (36.721 instantes, 38 colunas): erro relativo mediano (mediana entre tags) 8,4e-3 (limite 1e-3), máximo entre tags 1,8e-1; fração de NaN 0 nas duas.
+  V2 CONTINUIDADE: FALHA. Contra o cache antigo, de 01/04/2025 em diante: diferença absoluta máxima t 2,1e-3 (mediana 1,5e-7), p 2,8e-3 (7,1e-8), sp 6,6e-6 (1,4e-7), vb 1,5e-4 (1,3e-6); NaN diferentes 0 em todos; máscara idêntica (0 instantes diferentes). Em março de 2025 (o início do cache antigo): t 2,9e-3, vb 7,2e-5.
+  V3 CONTROLE COM 8 EVENTOS: PASSA. `prever` sobre os sinais novos: 7/8, início 6, 9 FP, 0,807 FP/mês, 407 h fora, 1.457 h totais, e a série de alarme coincide 100,00% com a do ledger nos instantes vigiados desde 01/02/2025; o evento de 27/02/2025 é detectado com início; o único não detectado é 04/11.
+LEITURA. As diferenças de V1 e V2 vêm do estado inicial do EWMA e da janela de 75 d (os cortes semanais do cache novo caem em outras datas) e da interpolação dos xlsx na parte ANTIGA (out a dez/2024), que só entra no aquecimento do vb e do EWMA: o CSV bruto tem prioridade desde 01/01/2025. Elas não alteram nenhuma decisão (V3: 100% de coincidência). O limite de 1e-6 de V2 era rígido para a dependência do corte semanal e o de V1 para a interpolação do xlsx, mas os critérios ficam registrados como foram escritos e os dois FALHAM. O harness de 8 eventos é aceito pelo critério de decisão (V3), com esta ressalva.
+PLACAR: ACERTEI: o 27/02/2025 é detectado com início (~75%); V3 passa (~60%). ERREI: V1 passa (~70%: 8,4e-3); V2 passa para t, p e sp (~75%: 2e-3) e para o vb (~55%: 1,5e-4, fora do limite escrito).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/29_harness_com_oito_eventos.py
 """
 from __future__ import annotations
