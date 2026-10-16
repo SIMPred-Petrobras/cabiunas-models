@@ -9,6 +9,12 @@ CRITÉRIOS (fixados antes). ÚTIL = detecção >= 7/8, FP <= 7 e remove FP além
 EXPECTATIVAS: V_T veta >= 1 trip ~55% (as partidas e os transientes são onde caem os trips) e <= 1 FP ~65%; V_F, com duty de ~30% no período avaliado, veta >= 3 episódios ao acaso e o seu efeito não se distingue de aleatório ~70%; algum ÚTIL ~6%.
 LIMITES. Os 9 FP e 9 episódios de trip; as duas condições e os limiares fixados no EXP 37 (que não se ajustam aqui); o veto no nascimento ignora que um episódio pode ter o transiente só depois; nada se adota sem sombra.
 
+RESULTADO (16/10/2026) -- NENHUMA DAS DUAS CONDIÇÕES É UM BOM VETO: o V_T veta trips, o V_F é muito frequente e não é seletivo.
+  (Desvio do pré-registro: com duty de 30% a permutação de 2.000 sorteios estourou o tempo; para o V_F usaram-se 300 sorteios. O V_T usou os 2.000 previstos.)
+  PUBLICADO: 7/8, 9 FP, 18 episódios (9 FP, 9 de trip). V_T (duty 3,86%): veta 2 de 18 episódios, AMBOS trips (11/04/2025 e o de 27/04/2025, onset do trip de 29/04) e nenhum FP: 5/8, 9 FP, 407 h; os aleatórios vetam, mediana, 0 FP e 0 trips (p90 1 e 1), e P(aleatório veta >= 2 trips) = 0,086: o V_T veta trips MAIS que o acaso e nenhum FP: NOCIVO. V_F (duty 30,65%): veta 4 episódios (3 FP: 31/03/2025, 16/06/2025, 02/04/2026; e 1 trip: o de 09/03, onset do trip de 17/03): 6/8, 6 FP, 324 h; os aleatórios do mesmo duty vetam, mediana, 3 FP (p90 5) e 4 trips (p90 6): P(aleatório veta >= 3 FP) = 0,70, logo não remove FP além do acaso; veta menos trips que o acaso (1 contra mediana 4), mas com 30,7% do tempo vigiado em veto (cegueira de quase um terço do tempo): NEUTRO/INCONCLUSIVO e operacionalmente inaceitável.
+LEITURA. (1) A ideia de um 'terceiro elemento de veto' é COERENTE (supressão baseada em estado, ISA-18.2), mas a condição não pode sair dos FP: os FP só-B têm o padrão de canais de trips (EXP 36), e as duas condições a priori derivadas dos dados disponíveis falham: o transiente de carga é justamente onde caem os trips (partidas, EXP 02/03) e os sensores travados são frequentes demais (o limiar do período anterior não se transfere: 5% viram 30,7% do tempo). (2) Um veto implementado como suspensão da vigilância cria alarmes de borda (os vetos aleatórios dobram os FP): se existir uma condição útil, deve agir sobre o alarme/episódio. (3) A fonte certa de condições é a OPERAÇÃO: estados conhecidos em que o alarme não tem significado (gás combustível instável, lavagem, calibração de instrumento, mudança de combustível); sem essa informação, este tipo de veto fica sem condição de teste coerente.
+PLACAR: ACERTEI: V_T veta >= 1 trip (~55%: vetou 2) e corta <= 1 FP (~65%: 0); V_F não se distingue do acaso (~70%); nenhum ÚTIL (~94%). PARCIAL: V_F veta >= 3 episódios ao acaso (~70%: 4 vetados, mediana aleatória 3 FP e 4 trips).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/37b_veto_no_episodio.py
 """
 from __future__ import annotations
@@ -55,7 +61,7 @@ def main():
         r = avalia(al2.reindex(al_c.index).fillna(False), vig, reg, inicio_periodo=INICIO8)
         print(f"\n{nome}: duty {100 * duty:.2f}% | vetados {int(vet.sum())} de {len(eps)} episódios: FP {fpv}, trip {trv} -> {r.det}/8, FP {r.fp}, fora {r.horas_alarme_fora:.0f} h | episódios vetados: {[f'{a:%Y-%m-%d} {t}' for (a, b), t, x in zip(eps, tipo, vet) if x]}", flush=True)
         s = (v & mask).astype(int); d = np.diff(np.concatenate(([0], s, [0]))); comp = max(int(np.median(np.flatnonzero(d == -1) - np.flatnonzero(d == 1))), 1) if (d == 1).any() else 15; pos = np.flatnonzero(mask & en); fps = []; trs = []
-        for _ in range(2000):
+        for _ in range(2000 if duty < 0.10 else 300):
             vv = np.zeros(len(idx), bool); usado = 0; alvo = duty * len(pos)
             while usado < alvo:
                 i = int(rng.choice(pos)); vv[i:i + comp] = True; usado = int((vv & mask & en).sum())

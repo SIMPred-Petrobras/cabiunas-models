@@ -12,6 +12,10 @@ EXPECTATIVAS: V_T custa >= 1 detecção (as partidas e os transientes são onde 
 INTERPRETAÇÃO PREVISTA. Um veto só se justifica com uma condição física que o operador reconheça (gás combustível instável, lavagem, calibração de instrumento, rampa de carga): a conversa com a operação sobre quais estados geram alarme sem significado é a fonte de condições a priori melhores do que as destas duas. Este experimento só mede se as duas candidatas, derivadas dos dados disponíveis, têm utilidade.
 LIMITES. 8 eventos e 9 FP; duas condições; o veto reaproveita a suspensão de vigilância (que zera o CUSUM) e não suprime só o voto; o período de referência dos limiares é curto (3 meses); nada se adota sem sombra.
 
+RESULTADO (16/10/2026) -- COM O VETO IMPLEMENTADO COMO SUSPENSÃO DA VIGILÂNCIA O TESTE É DOMINADO POR UM ARTEFATO; corrigido no EXP 37b.
+  Limiares do período anterior (01/11/2024 a 31/01/2025): V_T |dT5 em 60 min| >= 17,6 °C; V_F fração de tags travadas >= 0,038. PUBLICADO: 7/8, 9 FP. V_T (duty 3,9%): 5/8, 18 FP, somem 3 FP e 3 trips (06/04, 27/04, 25/02); V_F (duty 30,7%): 4/8, 21 FP. Permutação (100 vetos aleatórios do mesmo duty): V_T mediana 6/8 e 18 FP; V_F mediana 4/8 e 22 FP: o veto ALEATÓRIO já leva os FP de 9 a ~18-22, porque fechar a máscara e zerar o CUSUM cria alarmes na reabertura (a 'borda do blackout' da memória). Os dois vetos são rotulados NOCIVO pelo script, mas a comparação relevante (contra os aleatórios) mostra que o V_T perde mais detecção que o acaso (5/8 contra 6/8; pior que 89% dos aleatórios) e o V_F é indistinguível do acaso. O desenho (veto por máscara) é inadequado para medir a ideia: ver EXP 37b.
+PLACAR: ACERTEI: V_T custa >= 1 detecção (~65%); V_F com duty alto (o limiar de um período anterior não se transfere: 30,7% em vez de 5%). ERREI: V_T corta <= 1 FP (~70%: o veto por máscara AUMENTA os FP, artefato).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/37_nivel_de_veto.py
 """
 from __future__ import annotations
