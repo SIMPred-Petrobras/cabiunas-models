@@ -11,6 +11,12 @@ EXPECTATIVAS: F_falha tem duty <= 15% ~55%; F_falha enriquecida nos FP ~35% (o P
 INTERPRETAÇÃO PREVISTA. Se a falha de instrumento declarada concentra os FP e poupa os trips, é um veto de qualidade de dado fisicamente justificado e implementável (a planta já emite o alarme), a confirmar na sombra. Se nenhuma família se enriquece, a terceira via com informação da planta não separa FP de acerto neste conjunto.
 LIMITES. 9 FP e 9 episódios de trip; o diário tem ativações sem par e termina em 18/04/2026; 2 famílias fixadas por texto (a descrição por tag vem do catálogo); o p da permutação com 9 FP tem pouco poder; nada se adota sem sombra.
 
+RESULTADO (16/10/2026) -- INVÁLIDO: o ESTADO de alarme reconstruído do diário não é utilizável (duty de 84% e 94%), então nenhum veto por estado pôde ser avaliado.
+  F_falha ficou ATIVA em 84,0% do tempo vigiado e F_gas em 93,8% (o critério escrito esperava <= 15%); 7 de 9 FP e 8 de 9 trips nascem com F_falha ativa (permutação circular: P(>= 7 FP) = 0,90, média ao acaso 7,7), e 9 de 9 FP e 9 de 9 trips com F_gas ativa (P = 0,57): não separam nada porque estão ligadas quase sempre. O veto 'descartar os episódios que nascem com a família ativa' descarta quase todos (F_falha: 1/8 e 2 FP; F_gas: 0/8): artefato de duty, não resultado.
+  CAUSA. O diário tem 1.056 ativações sem desativação seguinte (28% das 3.757) e os discretos CFN (PI_0319 313 vezes em 16 meses, PI_0315 233, PI_0339 86...) alternam com frequência: pareando ACT com o INACT seguinte (ou fechando em 14 dias), os estados cobrem quase todo o tempo. (A listagem de F_gas impressa saiu vazia porque usou a primeira descrição de cada par tag/condição; o cálculo usou todos os eventos.)
+  Duty de F_falha <= 15% (~55%): ERREI (84%). F_falha enriquecida nos FP (~35%): não avaliável.
+LEITURA. A reconstrução do ESTADO pelo diário é inviável com os dados atuais (pares ACT/INACT incompletos); o EVENTO de ativação é confiável (o fuso e a cascata dos trips bateram no EXP 38). A pergunta passa a ser feita com eventos de ativação em uma janela anterior ao disparo (EXP 39b).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/39_veto_por_estado_da_planta.py
 """
 from __future__ import annotations
