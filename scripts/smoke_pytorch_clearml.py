@@ -19,13 +19,13 @@ def teste():
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("--enqueue", action="store_true"); ap.add_argument("--queue", default=None); ap.add_argument("--image", default="pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime")
+    ap = argparse.ArgumentParser(); ap.add_argument("--enqueue", action="store_true"); ap.add_argument("--queue", default=None); ap.add_argument("--image", default="python:3.11-slim")
     a = ap.parse_args()
     if a.enqueue:
         from clearml import Task
         if not a.queue:
             raise SystemExit("--queue é obrigatório com --enqueue")
-        t = Task.init(project_name="cabiunas-nova-visao", task_name="smoke_pytorch"); t.set_base_docker(a.image); t.set_packages(["torch", "numpy", "scikit-learn", "pandas"]); t.execute_remotely(queue_name=a.queue)
+        t = Task.init(project_name="Cabiunas", task_name="nova-visao | smoke_pytorch"); t.set_base_docker(a.image); t.set_packages(["--extra-index-url https://download.pytorch.org/whl/cpu", "torch==2.14.1", "numpy==1.26.4", "scikit-learn==1.9.0", "pandas==3.0.2", "pyarrow==23.0.1", "scipy==1.17.1", "clearml==2.1.6"]); t.execute_remotely(queue_name=a.queue)
     info = teste()
     if a.enqueue:
         from clearml import Task
