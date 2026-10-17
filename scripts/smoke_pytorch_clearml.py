@@ -28,8 +28,12 @@ if __name__ == "__main__":
         from clearml import Task
         if not a.queue:
             raise SystemExit("--queue é obrigatório com --enqueue")
-        t = Task.init(project_name="Cabiunas", task_name="nova-visao | smoke_pytorch"); t.set_base_docker(a.image); t.set_packages(["--extra-index-url https://download.pytorch.org/whl/cpu", "torch==2.14.1", "numpy==1.26.4", "scikit-learn==1.9.0", "pandas==3.0.2", "pyarrow==23.0.1", "scipy==1.17.1", "clearml==2.1.6"]); t.execute_remotely(queue_name=a.queue)
-    info = teste()
+        t = Task.init(project_name="Cabiunas", task_name="nova-visao | smoke_pytorch"); t.set_base_docker(a.image); t.set_packages(["torch @ https://download.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", "numpy==1.26.4", "scikit-learn==1.9.0", "pandas==3.0.2", "pyarrow==23.0.1", "scipy==1.17.1", "clearml==2.1.6"]); t.execute_remotely(queue_name=a.queue)
+    print("SMOKE: inicio", flush=True)
+    try:
+        info = teste()
+    except BaseException:
+        import traceback; traceback.print_exc(); sys.stdout.flush(); sys.stderr.flush(); raise
     if a.enqueue:
         from clearml import Task
         Task.current_task().get_logger().report_text(str(info))
