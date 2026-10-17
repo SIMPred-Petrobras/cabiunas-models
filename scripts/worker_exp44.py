@@ -65,7 +65,7 @@ def main():
         from clearml import Task
         if not a.queue or not a.insumos:
             raise SystemExit("--queue e --insumos são obrigatórios com --enqueue")
-        t = Task.init(project_name="Cabiunas", task_name="nova-visao | EXP 44 modelos da literatura (KM, FA, LSTM)"); t.set_base_docker(a.image)
+        t = Task.init(project_name="Cabiunas", task_name="nova-visao | EXP 44 modelos da literatura (KM, FA, LSTM)"); t.set_base_docker(a.image, docker_setup_bash_script=["apt-get update -qq", "apt-get install -y -qq libgomp1"])
         t.set_packages(["torch @ https://download.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", "numpy==1.26.4", "pandas==3.0.2", "pyarrow==23.0.1", "scikit-learn==1.9.0", "scipy==1.17.1", "statsmodels==0.15.0", "lightgbm==4.7.0", "clearml==2.1.6"])
         t.set_parameters({"General/insumos": a.insumos, "General/EXP44_PROCS": "12", "General/EXP44_THREADS": "1", "General/EXP44_AUDITORIA_PARALELA": "1"}); t.execute_remotely(queue_name=a.queue)
     ins = a.insumos
