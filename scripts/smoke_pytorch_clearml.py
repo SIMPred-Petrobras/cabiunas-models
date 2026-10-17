@@ -5,7 +5,10 @@ Local (sem ClearML):      PYTHONPATH=src python scripts/smoke_pytorch_clearml.py
 Enfileirar (PUBLICA):     PYTHONPATH=src python scripts/smoke_pytorch_clearml.py --enqueue --queue NOME [--image IMAGEM]
 O enfileiramento cria uma tarefa no servidor ClearML; só rodar com o usuário ciente da fila e da imagem.
 """
-import argparse, time
+import argparse, sys, time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 
 def teste():
