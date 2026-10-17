@@ -192,7 +192,7 @@ def estudo(a):
     canal, cond, fold, semente = a; evs = GL["EV"][cond]; n_ev = len(evs); treino = [i for i in range(n_ev) if i != fold]
     st = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=semente, n_startup_trials=min(30, N_TRIAL)))
     def obj(tr):
-        fam = tr.suggest_categorical("fam", list(FAMS)); cid = tr.suggest_categorical(f"cid_{fam}", GL["por_fam"][fam]); hl = tr.suggest_float("hl", 0.25, 6.0, log=True); pers = tr.suggest_float("pers", 0.5, 6.0, log=True)
+        fam = tr.suggest_categorical("fam", list(GL["por_fam"])); cid = tr.suggest_categorical(f"cid_{fam}", GL["por_fam"][fam]); hl = tr.suggest_float("hl", 0.25, 6.0, log=True); pers = tr.suggest_float("pers", 0.5, 6.0, log=True)
         o = avalia_combo(canal, cid, hl, pers, {cond: evs})
         if o is None:
             return -1.0
