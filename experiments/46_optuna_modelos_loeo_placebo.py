@@ -53,7 +53,7 @@ from nv.politica import ewma_vigiado, episodios, alarme_de
 from nv.walk import walk_forward
 
 ROOT = E34.ROOT; INICIO8 = E34.INICIO8; CACHE = ROOT / "escores_opt46"
-TOTAL = 1457.0; SEMENTE_POOL = 20261018; SHIFTS = (45, 90, 135, 180, 225); FAMS = ("pca", "km", "fa", "gmm", "ocsvm", "iforest", "knn", "lstm")
+TOTAL = 150.0 if os.environ.get("EXP46_TESTE") else 1457.0; SEMENTE_POOL = 20261018; SHIFTS = (45, 90, 135, 180, 225); FAMS = ("pca", "km", "fa", "gmm", "ocsvm", "iforest", "knn", "lstm")
 TESTE = bool(os.environ.get("EXP46_TESTE")); M = 3 if TESTE else 300; N_TRIAL = 5 if TESTE else 200; GL = {}
 
 
@@ -232,7 +232,7 @@ def main():
         if o is None:
             print(f"   [{c}] INVIÁVEL no orçamento de {TOTAL:.0f} h", flush=True); continue
         print(f"   [{c}] real {sum(o['real'][0])}/{len(EV['real'])} (FP {o['real'][1]}), limiar {o['thr']:.4f}, horas {o['horas']:.0f}; placebos " + " ".join(f"{k}:{sum(v[0])}/{len(v[0])}" for k, v in o.items() if k.startswith("p")), flush=True)
-        for orc in (300, 600, 1000, 1457):
+        for orc in ((30, 60, 100, 150) if TESTE else (300, 600, 1000, 1457)):
             q = avalia_combo(c, 0, 1.0, 2.0, {"real": EV["real"]}, orcamento=orc)
             print(f"        orçamento {orc:5d} h: " + ("inviável no piso" if q is None else f"limiar {q['thr']:.4f}, detecção {sum(q['real'][0])}/{len(EV['real'])}, FP {q['real'][1]}, episódios {q['n_ep']}"), flush=True)
     inv = {c: float(np.mean([avalia_combo(c, i, 1.0, 2.0, {}) is None for i in range(len(pool))])) for c in canais}; print("fração de configurações INVIÁVEIS (EWMA 1 h, persistência 2 h):", {c: f"{100 * v:.0f}%" for c, v in inv.items()}, flush=True)
