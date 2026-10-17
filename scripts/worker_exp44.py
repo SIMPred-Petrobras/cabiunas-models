@@ -37,7 +37,7 @@ def monta(insumos_id):
 
 
 def carrega_exp():
-    spec = importlib.util.spec_from_file_location("exp44", RAIZ / "experiments" / "44_modelos_da_literatura.py"); m = importlib.util.module_from_spec(spec); sys.path.insert(0, str(RAIZ / "experiments")); spec.loader.exec_module(m); return m
+    spec = importlib.util.spec_from_file_location("exp44", RAIZ / "experiments" / "44_modelos_da_literatura.py"); m = importlib.util.module_from_spec(spec); sys.modules["exp44"] = m; sys.path.insert(0, str(RAIZ / "experiments")); spec.loader.exec_module(m); return m
 
 
 def teste(m):
@@ -56,6 +56,10 @@ def teste(m):
     for c in ("t", "p"):
         for n in (19000, 20000):
             f = m.ROOT / "escores_sub34" / f"{c}_A_{n}.parquet"; print("referência", f.name, "ok" if f.exists() else "AUSENTE", flush=True)
+    import pickle
+    for fn in (m.auditoria_um, m.tarefa):
+        pickle.dumps(fn)
+    print("pickle das funcoes do Pool: ok", flush=True)
     ini = m.INICIO8; s = walk_forward(m.FABR["FA"], g, tags["t"], est, ini, ini + pd.Timedelta(days=3), n_treino=3000, semente=0); print("walk FA curto:", s.shape, "| NaN", int(s.isna().sum()), flush=True)
 
 
