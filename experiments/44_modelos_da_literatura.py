@@ -14,7 +14,7 @@ LIMITES. 8 eventos (ruído de +-2); hiperparâmetros por convenção; o autoenco
 Uso:  PYTHONPATH=src .venv/bin/python experiments/44_modelos_da_literatura.py
 """
 from __future__ import annotations
-import contextlib, importlib.util, io, time, warnings
+import contextlib, importlib.util, io, os, time, warnings
 from multiprocessing import Pool
 from pathlib import Path
 import numpy as np
@@ -61,12 +61,21 @@ def tarefa(a):
     nome, canal, n = a; f = CACHE / f"{canal}_{nome}_{n}.parquet"
     if f.exists():
         return a
-    import torch; torch.set_num_threads(2); t0 = time.time()
+    import torch; torch.set_num_threads(int(os.environ.get("EXP44_THREADS", 2))); t0 = time.time()
     if nome == "LSTM":
         s = walk_lstm(GL["g"], GL["tags"][canal], GL["est"], INICIO8, GL["fim"], semente=0, n_max=n)
     else:
         s = walk_forward(FABR[nome], GL["g"], GL["tags"][canal], GL["est"], INICIO8, GL["fim"], n_treino=n, semente=0)
     CACHE.mkdir(parents=True, exist_ok=True); s.to_frame("s").to_parquet(f); print(f"      {canal} {nome} n={n}: {time.time() - t0:.0f} s", flush=True); return a
+
+
+def auditoria_um(nome):
+    g, g2, tags, est, fim, corte = GL["g"], GL["g2"], GL["tags"], GL["est"], GL["fim"], GL["corte"]
+    if nome == "LSTM":
+        a = walk_lstm(g, tags["t"], est, INICIO8, pd.Timestamp("2025-10-31", tz="UTC"), n_max=20000, ep0=4); b = walk_lstm(g2, tags["t"], est, INICIO8, pd.Timestamp("2025-10-31", tz="UTC"), n_max=20000, ep0=4)
+    else:
+        a = walk_forward(FABR[nome], g, tags["t"], est, INICIO8, fim, n_treino=20000, semente=0); b = walk_forward(FABR[nome], g2, tags["t"], est, INICIO8, fim, n_treino=20000, semente=0)
+    sl = (a.index >= INICIO8) & (a.index < corte); d = float(np.nanmax(np.abs(a[sl].to_numpy() - b[sl].to_numpy()))); return f"   {nome:5s}: diferença máxima = {d:.2e} -> {'PASSA' if d < 1e-9 else 'FALHA'}"
 
 
 def main():
@@ -78,13 +87,16 @@ def main():
     GL.update(g=g, est=est, fim=fim, tags=tags)
     print("AUDITORIA DE VAZAMENTO (escores até 31/08/2025 idênticos com os dados depois de 01/09/2025 embaralhados), canal t", flush=True)
     corte = pd.Timestamp("2025-09-01", tz="UTC"); g2 = g.copy(); pos = g2.index >= corte; g2.loc[pos, :] = g2.loc[pos, :].sample(frac=1.0, random_state=1).to_numpy()
-    for nome in ("KM", "FA", "LSTM"):
-        if nome == "LSTM":
-            a = walk_lstm(g, tags["t"], est, INICIO8, pd.Timestamp("2025-10-31", tz="UTC"), n_max=20000, ep0=4); b = walk_lstm(g2, tags["t"], est, INICIO8, pd.Timestamp("2025-10-31", tz="UTC"), n_max=20000, ep0=4)
-        else:
-            a = walk_forward(FABR[nome], g, tags["t"], est, INICIO8, fim, n_treino=20000, semente=0); b = walk_forward(FABR[nome], g2, tags["t"], est, INICIO8, fim, n_treino=20000, semente=0)
-        sl = (a.index >= INICIO8) & (a.index < corte); d = float(np.nanmax(np.abs(a[sl].to_numpy() - b[sl].to_numpy()))); print(f"   {nome:5s}: diferença máxima = {d:.2e} -> {'PASSA' if d < 1e-9 else 'FALHA'}", flush=True)
-    with Pool(4) as p:
+    GL.update(g2=g2, corte=corte)
+    procs = int(os.environ.get("EXP44_PROCS", 4))
+    if procs > 1 and os.environ.get("EXP44_AUDITORIA_PARALELA"):
+        with Pool(min(procs, 3)) as p:
+            for linha in p.map(auditoria_um, ("KM", "FA", "LSTM")):
+                print(linha, flush=True)
+    else:
+        for nome in ("KM", "FA", "LSTM"):
+            print(auditoria_um(nome), flush=True)
+    with Pool(int(os.environ.get("EXP44_PROCS", 4))) as p:
         list(p.map(tarefa, [(nm, c, n) for c in ("t", "p") for nm in ("KM", "FA", "LSTM") for n in NS], chunksize=1))
     print("\nESCORES (custo TOTAL de 1.457 h sem rótulos; detecção de 8 | FP | FP/mês; entre parênteses o placebo)", flush=True); res = {}
     for c in ("t", "p"):
