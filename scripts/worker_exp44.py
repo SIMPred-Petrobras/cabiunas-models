@@ -12,7 +12,7 @@ import argparse, importlib.util, os, sys, tempfile
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(RAIZ / "src"))
-DS_PACOTE = "b71d7c5fb84d450ba8f314e49923696f"
+DS_PACOTE = "b71d7c5fb84d450ba8f314e49923696f"; DS_INSUMOS = "745bee7d8bbf4ba4b7da78ffefd3d0d4"
 
 
 def obtem(ds_id, env):
@@ -60,7 +60,7 @@ def teste(m):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--enqueue", action="store_true"); ap.add_argument("--queue", default=None); ap.add_argument("--image", default="python:3.11-slim"); ap.add_argument("--insumos", default=os.environ.get("INSUMOS_ID", "")); ap.add_argument("--teste", action="store_true"); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("--enqueue", action="store_true"); ap.add_argument("--queue", default=None); ap.add_argument("--image", default="python:3.11-slim"); ap.add_argument("--insumos", default=os.environ.get("INSUMOS_ID", DS_INSUMOS)); ap.add_argument("--teste", action="store_true"); a = ap.parse_args()
     if a.enqueue:
         from clearml import Task
         if not a.queue or not a.insumos:
@@ -69,13 +69,10 @@ def main():
         t.set_packages(["torch @ https://download.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", "numpy==1.26.4", "pandas==3.0.2", "pyarrow==23.0.1", "scikit-learn==1.9.0", "scipy==1.17.1", "statsmodels==0.15.0", "lightgbm==4.7.0", "clearml==2.1.6"])
         t.set_parameters({"General/insumos": a.insumos, "General/EXP44_PROCS": "12", "General/EXP44_THREADS": "1", "General/EXP44_AUDITORIA_PARALELA": "1"}); t.execute_remotely(queue_name=a.queue)
     ins = a.insumos
-    if not a.enqueue:
+    if not a.enqueue and os.environ.get("CLEARML_TASK_ID"):
         from clearml import Task
-        tk = Task.current_task()
-        if tk is not None:
-            par = tk.get_parameters(); ins = ins or par.get("General/insumos", "")
-            for k in ("EXP44_PROCS", "EXP44_THREADS", "EXP44_AUDITORIA_PARALELA"):
-                if par.get(f"General/{k}"): os.environ.setdefault(k, par[f"General/{k}"])
+        Task.init(project_name="Cabiunas", task_name="nova-visao | EXP 44 modelos da literatura (KM, FA, LSTM)")
+        os.environ.setdefault("EXP44_PROCS", str(min(12, os.cpu_count() or 4))); os.environ.setdefault("EXP44_THREADS", "1"); os.environ.setdefault("EXP44_AUDITORIA_PARALELA", "1")
     monta(ins); os.environ.setdefault("EXP44_PROCS", str(min(12, os.cpu_count() or 4)))
     print("EXP 44 no worker: CPUs", os.cpu_count(), "| PROCS", os.environ["EXP44_PROCS"], "| THREADS", os.environ.get("EXP44_THREADS"), flush=True)
     m = carrega_exp()
