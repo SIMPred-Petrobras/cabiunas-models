@@ -26,11 +26,12 @@ def main():
         t.set_packages(["torch @ https://download.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", "numpy==1.26.4", "pandas==3.0.2", "pyarrow==23.0.1", "scikit-learn==1.9.0", "scipy==1.17.1", "statsmodels==0.15.0", "lightgbm==4.7.0", "optuna==5.0.0", "clearml==2.1.6"]); t.execute_remotely(queue_name=a.queue)
     if not a.enqueue and os.environ.get("CLEARML_TASK_ID"):
         from clearml import Task
-        Task.init(project_name="Cabiunas", task_name=nome); os.environ.setdefault("EXP47_PROCS", "10")
+        Task.init(project_name="Cabiunas", task_name=nome); os.environ.setdefault("EXP47_PROCS", "8")
     if a.teste:
         os.environ["EXP47_TESTE"] = "1"
-    w44.monta(os.environ.get("INSUMOS_ID", w44.DS_INSUMOS)); os.environ.setdefault("EXP47_PROCS", "10")
-    print("EXP 47 no worker: CPUs", os.cpu_count(), "| PROCS", os.environ["EXP47_PROCS"], "| teste", a.teste, flush=True)
+    w44.monta(os.environ.get("INSUMOS_ID", w44.DS_INSUMOS)); os.environ.setdefault("EXP47_PROCS", "8")
+    mem = [l for l in open("/proc/meminfo").read().splitlines() if l.startswith(("MemTotal", "MemAvailable"))]
+    print("EXP 47 no worker: CPUs", os.cpu_count(), "| PROCS", os.environ["EXP47_PROCS"], "| teste", a.teste, "|", " ".join(x.replace("  ", " ") for x in mem), flush=True)
     m = carrega("exp47", "47_sub_pca_e_variancia_movel.py"); import pickle
     pickle.dumps(m.pontua); print("pickle da funcao do Pool: ok", flush=True); m.main()
     if os.environ.get("CLEARML_TASK_ID") and not a.teste:
