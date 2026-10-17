@@ -15,6 +15,17 @@ EXPECTATIVAS: M1 EQUIVALE ao voto no centro ~45%, GANHA ~6%; a robustez de M1 em
 INTERPRETAÇÃO PREVISTA. Se M1 empata em detecção e tem robustez >= 60%, é um ponto de operação MAIS HONESTO que o publicado (a mesma detecção típica, sem o pico): hipótese prospectiva no sombra.py. Se M2 estabiliza a carga mensal, é o argumento operacional para controle adaptativo do orçamento. Se M1 fica muito abaixo (<= 5/8), os limiares por canal ajustados à mão do v2 carregam informação (a combinação dos 4 canais com pesos diferentes) que a normalização uniforme perde.
 LIMITES. 8 eventos; a razão 1,5 e a política de produção de refratário/escalada/duração permanecem as do v2; o p95 dos 60 dias anteriores contém alarmes; o custo total de 1.457 h inclui horas dentro das janelas; nada se adota sem sombra.
 
+DESVIO DO PRÉ-REGISTRO (registrado depois da 1.ª execução): a grade de kappa_A começava em 1,0 e em 6 de 9 variantes o orçamento de 1.457 h não era alcançável nesse piso (horas 696 a 1.215 com kappa = 1,0), então o custo igual não foi atingido; a grade foi estendida para baixo (0,3 a 8,0, 17 valores) e um erro de código na etapa de robustez foi corrigido. Nada mais mudou.
+
+RESULTADO (16/10/2026) -- A CALIBRAÇÃO POR QUANTIL COM DOIS PARÂMETROS PERDE MUITA DETECÇÃO: a robustez medida é a de um detector ruim; o controle adaptativo não estabiliza a carga mensal.
+  M0 (voto de produção): 7/8, início 6, 9 FP (0,81/mês), 1.457 h; horas por mês: média 97, coeficiente de variação 1,68, máximo 614; placebo ~1,3/8. AUDITORIA DO FUTURO: PASSA (diferença 0).
+  M1 ESTÁTICO (kappa_A pelo total de ~1.457 h sem rótulos, depois de estender a grade para baixo; razão 1,5): detecção/FP/horas por variante (W, pi0): (30, 0,90) 0/8, 10, 1.077 h; (30, 0,95) 1/8, 13, 1.003 h; (30, 0,99) 1/8, 16, 1.310 h; (60, 0,90) 5/8, 12, 1.565 h; (60, 0,95) 2/8, 12, 1.573 h; (60, 0,99) 0/8, 11, 1.410 h; (90, 0,90) 4/8, 14, 1.333 h; (90, 0,95) 2/8, 11, 1.334 h; (90, 0,99) 0/8, 10, 1.339 h. O centro (60, 0,95, kappa_A = 0,8): 2/8, início 1, 12 FP (1,08/mês), 1.573 h, CV mensal 1,61, placebo ~1,6/8. A detecção é de 0 a 5 de 8 nas 9 variantes (nenhuma >= 6/8); M1 NÃO EQUIVALE ao voto (7/8, 9 FP) e não ganha.
+  M2 ADAPTATIVO: 4/8, início 2, 12 FP (1,08/mês), 1.866 h; horas por mês: média 124, CV 1,50 (11% menor que o 1,68 do voto, abaixo dos 30% exigidos), máximo 616; o kappa mensal bate no piso de 0,4 em 9 de 15 meses.
+  ROBUSTEZ DE M1: +-10%: fração BOA 100% (detecção mediana 2/8, mín 1, máx 4; FP mediano 12); +-20%: 96% (detecção mediana 3/8; FP mediano 12, de 9 a 18). Formalmente passa (>= 60% e >= 30%), mas é a robustez de um detector que detecta 2 a 3 de 8: não vale como ganho (o publicado: 10% e 2%, mas com 7/8).
+  CRITÉRIOS: M1 EQUIVALE: NÃO; M1 GANHA: NÃO; robustez de M1: passa formalmente, sem valor (detecção 2/8); M2 estabiliza as horas: NÃO; M1 com detecção >= 6/8 em >= 4 das 9 variantes: NÃO (0 de 9, máximo 5).
+LEITURA. (1) Os limiares por canal do v2 (k de A e B por canal: t 1,1/1,7; p 1,2/1,7; sp 0,9/1,7; vb 2,0/2,2) carregam informação que a normalização uniforme por quantil perde: com uma única escala e o mesmo orçamento total de horas, a detecção cai de 7/8 para 2/8 no centro. Os canais do v2 são ESTADOS que vivem acesos em frações muito diferentes (24 a 52% do tempo normal, memória 'o-detector-esta-numa-fronteira'): dar a todos a mesma probabilidade de cauda (p95) é a calibração errada para um sistema em que o vb exige 2,0 e o sp só 0,9. (2) A tendência por pi0 (0,90 > 0,95 > 0,99: 5/8, 2/8, 0/8 em W = 60) mostra que os limiares do v2 correspondem a caudas muito mais altas em probabilidade do que o p95: calibrar 'em probabilidade' exigiria uma probabilidade por canal, isto é, voltar aos 8 parâmetros. (3) A idéia de controle adaptativo do orçamento de horas não estabilizou a carga mensal (CV 1,50 contra 1,68) e aumentou as horas totais (1.866 h): a carga mensal do v2 vem de poucos episódios longos (EXP 26/36), que um controlador mensal por realimentação não alcança. (4) Fecha-se a idéia de calibração conforme com estes dados; o ponto de operação publicado continua sendo o topo de um pico, sem alternativa de calibração com menos parâmetros que preserve a detecção.
+PLACAR: ERREI: M1 EQUIVALE no centro (~45%: 2/8); M2 estabiliza as horas mensais (~55%: CV 1,50 contra 1,68); M1 com detecção >= 6/8 em >= 4 das 9 variantes (~40%: 0). ACERTEI: a robustez de M1 >= 60% em +-10% (~35%: 100%, mas de um detector ruim); GANHO de M1 (~6%: não).
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/41_calibracao_conforme.py
 """
 from __future__ import annotations
@@ -95,7 +106,7 @@ def main():
     print(f"M0 voto de produção: {lin(r0)} | horas por mês: média {m0.mean():.0f}, CV {cv(m0):.2f}, máx {m0.max():.0f} | placebo ~{placebo(al0, reg):.1f}/8", flush=True)
     print("\nAUDITORIA DO FUTURO", flush=True); corte = pd.Timestamp("2025-09-01", tz="UTC"); p2 = proc.copy(); pos = idx >= corte; p2.loc[pos, list(CANAIS)] = p2.loc[pos, list(CANAIS)].sample(frac=1.0, random_state=1).to_numpy()
     na, nb = normaliza(proc), normaliza(p2); sl = (idx >= INICIO8) & (idx < corte); d = max(float(np.nanmax(np.abs(na[c].to_numpy()[sl] - nb[c].to_numpy()[sl]))) for c in CANAIS); print(f"   diferença máxima dos sinais normalizados antes de 01/09/2025: {d:.2e} -> {'PASSA' if d < 1e-9 else 'FALHA'}", flush=True)
-    variantes = [(W, pi0) for W in (30, 60, 90) for pi0 in (0.90, 0.95, 0.99)]; GL["pn"] = {(W, pi0): normaliza(proc, W, pi0) for (W, pi0) in variantes}; grade = [round(x, 1) for x in np.arange(1.0, 8.01, 0.4)]
+    variantes = [(W, pi0) for W in (30, 60, 90) for pi0 in (0.90, 0.95, 0.99)]; GL["pn"] = {(W, pi0): normaliza(proc, W, pi0) for (W, pi0) in variantes}; grade = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.7, 2.0, 2.5, 3.0, 4.0, 6.0, 8.0]
     with Pool(4) as p:
         res = dict(p.map(tarefa, [((v, RAZAO), k) for v in variantes for k in grade], chunksize=4))
     print("\nM1 ESTÁTICO (kappa_A pelo TOTAL de 1.457 h, sem rótulos; razão k_B/k_A = 1,5): detecção | FP | horas totais | kappa_A", flush=True); centros = {}
@@ -112,7 +123,7 @@ def main():
     for amp in (0.10, 0.20):
         ped = [(((60, 0.95), float(RAZAO * rng.uniform(1 - amp, 1 + amp))), float(kA0 * rng.uniform(1 - amp, 1 + amp))) for _ in range(100)]
         with Pool(4) as p:
-            rs = [x[1] for x in p.map(tarefa2, ped, chunksize=4)]
+            rs = p.map(tarefa2, ped, chunksize=4)
         boa = [(x[0] >= rc[0] - 1 and x[1] <= rc[1] + 2 and x[2] <= 1.3 * rc[2]) for x in rs]; d = [x[0] for x in rs]; f = [x[1] for x in rs]
         print(f"   ±{int(amp * 100)}%: fração BOA {100 * np.mean(boa):.0f}% | detecção mediana {np.median(d):.0f}/8 (mín {min(d)}, máx {max(d)}) | FP mediano {np.median(f):.0f} (mín {min(f)}, máx {max(f)}) | (publicado nos EXP 24/30: BOA 10% em ±10% e 2% em ±20%)", flush=True)
 
