@@ -11,7 +11,17 @@ EXPECTATIVAS: a auditoria passa nos três ~95%; o K-Means PIOR que o PCA em t ~6
 INTERPRETAÇÃO PREVISTA. Se nenhum ganha, fecha-se a lista de modelos de normalidade da literatura de turbina a gás contra o PCA do v2 em condições simétricas; o que a literatura publica como melhor (autoencoder LSTM) não se confirma aqui, o que é coerente com a crítica de avaliação (point-adjust, caso único).
 LIMITES. 8 eventos (ruído de +-2); hiperparâmetros por convenção; o autoencoder LSTM com 20 épocas e uma semente por variante; o custo total inclui horas dentro das janelas; nada se adota sem sombra.
 
+RESULTADO (17/10/2026; rodado no worker do ClearML, 64 CPUs, tarefa 6a0f0dfc56634b33b12bcb6389f84e9e, commit ebbb3fa; 12 escores em 54-433 s). NENHUM GANHO. A auditoria do futuro passa nos três (K-Means 1,95e-14; análise fatorial 0; LSTM 0).
+  Detecção média de 8 (duas variantes de n) contra o PCA(0,95) do mesmo canal:  t: PCA 6,5 | K-Means 5,5 (placebo 3,0) EQUIVALENTE | análise fatorial 3,5 (placebo 3,2) PIOR | LSTM 5,0 (placebo 1,1) EQUIVALENTE;  p: PCA 5,5 | K-Means 4,0 (3,4) EQUIVALENTE | análise fatorial 5,5 (3,2) EQUIVALENTE | LSTM 5,5 (2,6) EQUIVALENTE.
+  Nenhuma das 6 células passa o PCA; cinco ficam abaixo (de -1,0 a -1,5) e a sexta empata. No custo total fixo de 1.457 h, os FP isolados são parecidos em todos (37 a 56 por modelo, contra 43 a 56 do PCA). Só a análise fatorial em t fica no nível do placebo (sem sinal); os demais detectam acima do acaso, mas abaixo do PCA.
+  O piso de ruído domina: o PCA varia sozinho entre n=19000 e n=20000 em 1 evento em t (7 e 6) e em 3 em p (7 e 4), mais que a diferença entre os modelos. "EQUIVALENTE" aqui é ausência de diferença demonstrável, e não prova de igualdade.
+  CONCLUSÃO: a lista de modelos de normalidade da literatura de turbina a gás (K-Means, análise fatorial, autoencoder LSTM) fecha contra o PCA do v2 em condições simétricas; o que a literatura publica como melhor (LSTM) não se confirma. Nada se adota.
+  REPRODUÇÃO: os escores da análise fatorial de t que a execução local salvou antes de ser interrompida (reinício da máquina) batem com os do worker: n=20000 em 1,4e-15 e n=19000 em 4,9e-5 (mesmos NaN).
+  Nota de infraestrutura: no worker (1 thread por processo) o K-Means levou 83-91 s; na máquina local passava de 2 h 49 sem terminar. A causa provável é excesso de threads do BLAS e pressão de memória locais; não foi verificada.
+PLACAR: ACERTEI: a auditoria passa nos três (~95%); nenhum GANHO (~8% de haver algum); a análise fatorial EQUIVALENTE ao PCA em p; o LSTM EQUIVALENTE (~42%, a segunda opção mais provável). ERREI: o K-Means em t previ PIOR com ~65% e deu EQUIVALENTE (5,5 contra 6,5); a análise fatorial em t previ EQUIVALENTE com ~65% e deu PIOR (3,5, no nível do placebo); previ o LSTM PIOR com ~50% e deu EQUIVALENTE em t e em p.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/44_modelos_da_literatura.py
+      no worker: PYTHONPATH=src python scripts/worker_exp44.py --enqueue --queue default --insumos <id do dataset de insumos>
 """
 from __future__ import annotations
 import contextlib, importlib.util, io, os, time, warnings
