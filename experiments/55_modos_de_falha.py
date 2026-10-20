@@ -48,6 +48,33 @@ excluem +-7 d dos trips; nada se adota sem a sombra.
 VERIFICAÇÕES: V1 `ci.prever` sobre o cache dá 7/8 e FP 9; V2 famílias com 36 tags disjuntas, todas na grade; V3 os 8 trips recebem modo; V4 >= 300 valores válidos no nulo por
 família a 48 h; V5 o argmax por sensor reproduz `ci._recon_pca` (diferença <= 1e-9 no máximo normalizado) num mês de amostra.
 
+RESULTADO (20/10/2026; worker do ClearML, tarefa 7399ed7ebe1b46b28e84dbfd648b0d9c, 39 s, 64 CPUs; pré-registro e86c51e, correção do worker 48c85aa; a 1ª tarefa,
+f042bca0, falhou antes do experimento: o --insumos não chegava ao worker). V1-V5 PASSAM (nulo com 390 janelas válidas por família).
+  ETAPA 2 — OBSERVABILIDADE (percentil da família do próprio modo; O >= 0,95, F 0,80-0,95, I < 0,80):
+                     48 h          6 h           1 h
+    SELAGEM 27/02    0,97 O        0,99 O        0,99 O      o modo MAIS visível, e fica mais visível perto do trip
+            29/04    0,93 F        0,97 O        0,97 O
+    MANCAL  17/03    0,96 O        0,99 O        0,99 O
+            07/04    0,94 F        0,98 O        0,97 O
+            11/04    0,92 F        0,91 F        0,89 F
+            09/12    0,87 F        0,63 I        0,55 I      súbito: a subida final cabe nos 10 min excluídos
+    ÓLEO    04/11    0,87 F        0,66 I        0,69 I      fraco em todos os horizontes; nenhum O
+            26/02    0,77 I        0,89 F        0,91 F
+  ETAPA 3 — ATRIBUIÇÃO: A1 acerta o modo em 5 de 7 trips detectados (acaso 2,3; p 0,045 entre os 3 modos; p 0,002 entre as 6 famílias) -> ATRIBUIÇÃO ÚTIL pelo critério. Erra o 11/04
+  (mancal; A1 aponta exaustão, e óleo entre os modos) e o 26/02/2026 (óleo; A1 aponta selagem — a selagem está a 0,95 a 48 h antes desse trip de óleo).
+  FP por família (A1): vibração 2, gás 2, selagem 2, exaustão 1, mancal 1, óleo 1 -> 5/9 em famílias sem trip, MAS o acaso é 4,5 (3 de 6 famílias): o critério que escrevi não
+  comparava com o acaso e foi cumprido trivialmente. LEITURA CORRETA: os FP NÃO se concentram numa família. Pelo A2, a vibração está em 8 de 9 FP e em todos os TP (o vb é estado).
+  DETECÇÕES: 5 de 7 CAUSAIS (27/02, 17/03, 07/04, 11/04, 09/12); INDIRETAS o 29/04 (selagem visível a 0,93-0,97, mas o canal p do v2 acendeu por um sensor de ÓLEO, mais a
+  vibração) e o 26/02/2026 (óleo fraco, 0,77; detectado pelo episódio travado de 647 h, com todas as famílias). O 04/11 (óleo) segue perdido.
+  PÓS-HOC, NÃO PRÉ-REGISTRADO: a força da família física na notificação (máximo de A1) é maior nos TP (mediana 0,979) que nos FP (0,828): AUC 0,746, p 0,056. É da mesma família
+  das regras de força que já morreram no teste (força no nascimento AUC 0,70 nominal, piso de força, portão P1b): no máximo hipótese, e qualquer limiar sairia destes eventos.
+PLACAR: ACERTEI: modos 4/2/2 (~99%); família do modo >= 0,80 a 48 h em 4/4 de mancal (~70%) e 2/2 de selagem (~80%); óleo <= 1/2 a 48 h (~70%); ATRIBUIÇÃO ÚTIL (~45%); >= 5 de 7
+  causais (~50%); >= 5 de 9 FP em famílias sem trip (~55%), mas trivial pelo acaso. ERREI: mancal OBSERVÁVEL a 1 h em >= 3/4 (~60%; foram 2 — o 09/12 é súbito e o 11/04 fica em
+  F); óleo INVISÍVEL nos três horizontes em pelo menos 1 dos 2 (~65%; é FRACO, não invisível: cada um tem um horizonte em F).
+DECISÕES (como pré-registrado): (1) ÓLEO: sem nenhum horizonte observável nas nossas tags, 2 de 8 trips (25%) — argumento quantificado para pedir o sistema de óleo; (2) SELAGEM:
+visível e a mais forte perto do trip, mas o 29/04 entrou no v2 por um sensor de óleo -> o sub-canal de selagem (etapa 4) tem motivação medida; (3) a camada "onde olhar" passa
+no critério (5/7), ainda com 7 eventos; (4) FP não têm família dominante: não há veto por família a propor.
+
 Uso local (teste de encanamento, sem tabelas):  EXP55_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/55_modos_de_falha.py
 No worker:  PYTHONPATH=src python scripts/worker_exp55.py --enqueue --queue default --insumos ID
 """
