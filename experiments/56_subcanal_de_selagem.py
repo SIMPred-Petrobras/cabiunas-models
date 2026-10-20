@@ -35,6 +35,27 @@ sombra.
 VERIFICAÇÕES: V1 o C0 reajustado reproduz `escores_sub34/p_A_{n}` (diferença <= 1e-6); V2 `prever` com o C0 dá 7/8 e FP 9 +- 1; V3 selagem + resto particionam exatamente as 12
 tags do p do bundle.
 
+RESULTADO (20/10/2026; worker do ClearML, tarefa 931e47d25a284159be2b1923b8573630, 15 s, 64 CPUs; pré-registro b344790, código enviado como commit e86c51e + diff do remoto;
+a tarefa a85d4f69 falhou antes de rodar porque registrou o commit local, não publicado). V1 (dif. 0 e 2e-16), V2 (7/8, FP 9) e V3 PASSAM. SEM GANHO: a selagem já está no p.
+    braço (média dos 2 n)        det   FP     horas   duty p   ||  placebos de desenho: det / FP medianos
+    C0 controle (12)             7,0   9,0    1.456   0,34-0,40
+    S1 separação                 7,0  10,0    1.482   0,33-0,35 ||  partição  7,0 / 11,8   -> EQUIVALENTE
+    S2 acréscimo                 7,0   9,5    1.484   0,36-0,42 ||  acréscimo 7,0 / 10,2   -> EQUIVALENTE
+    R0 sem selagem (diagnóstico) 6,0  12,5    1.516   0,23-0,27      perde o 27/02 (trip de SELAGEM) e o início cai de 6 para 4
+  1) A INFORMAÇÃO DE SELAGEM JÁ ENTRA PELO p: tirar as 4 tags de selagem custa o trip de selagem 27/02, 2 de início e +3,5 FP. É o mesmo achado do EXP 52 (PDIT_0305 essencial),
+     agora com o mecanismo nomeado: o p do v2 detecta o 27/02 PELA selagem (p aceso 100% da janela, selagem no máximo 92-100% do tempo em S1/S2).
+  2) O MECANISMO DO 29/04 EXISTE MAS É PEQUENO: com o sub-canal, o p passa a acender em 4-5% da janela de 48 h do 29/04, e nesse tempo é a selagem que manda (no C0, 0%). Não muda a
+     detecção (o 29/04 já era detectado pelo episódio de 27/04) nem o início.
+  3) A FÍSICA DA SELAGEM IMPORTA EM RELAÇÃO AO ACASO DO DESENHO, MAS NÃO GANHA DO CONTROLE: a partição pela selagem (FP 10,0) é melhor que as partições sorteadas (mediana 11,8), e o
+     acréscimo de selagem (9,5) melhor que os acréscimos sorteados (10,2) — qualquer segundo sub-canal no máximo custa FP, e o de selagem custa menos. Mas nenhum fica abaixo dos 9
+     FP do controle; o critério de GANHO exigia as duas coisas.
+PLACAR: ACERTEI: V1-V3 (~90%); S1 sem GANHO (dei ~15% para ganhar); S2 sem GANHO (~10%); MECANISMO em S1 (~55%; mas fraco, 4-5% da janela); S1 ou S2 com FP >= 10 (~45%; S1 10,0);
+  R0 com detecção <= 6 (~60%; perdeu o 27/02); nenhum braço na META (~85%). ERREI: mediana dos placebos a +-1 FP do controle (~60%) — os placebos ficaram 1,2 a 2,8 FP PIORES: dividir
+  ou acrescentar sub-canal no p custa FP por construção.
+VEREDITO (como pré-registrado): sem GANHO, a etapa 4 da selagem FECHA. Fecho da reanálise por modo: mancal e selagem já são detectados pela física certa (5 de 7 detecções causais,
+EXP 55; o p carrega a selagem); o que falta é o ÓLEO, sem precursor observável nas nossas tags, e o estado do vb que sustenta FP e acertos. O próximo ganho vem de dado (sistema de
+óleo; as 47 tags) e do rótulo dos FP pela operação, não de reestruturar canal.
+
 Uso local (encanamento, sem tabelas):  EXP56_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/56_subcanal_de_selagem.py
 No worker:  PYTHONPATH=src python scripts/worker_exp56.py --enqueue --queue default
 """
