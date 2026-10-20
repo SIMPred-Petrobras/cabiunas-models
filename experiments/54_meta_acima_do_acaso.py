@@ -55,6 +55,34 @@ VERIFICAÇÕES:
       faixa com >= 1% dos instantes elegíveis. Correção mecânica: faixas, nulos e critérios não mudam. N1, N3 e as contagens não dependem da idade.
   V5  para C0-C3, o alarme reimplementado coincide com `ci.prever` (a decisão de produção como caixa-preta) em todos os instantes.
 
+RESULTADO (20/10/2026; rodado localmente, ~6 min com o replay do C3; commits do pré-registro cdf8e4a, V2 16844d0, V4 dd13a84). NENHUMA ALAVANCA CONHECIDA ATINGE A META, e a que
+chegava mais perto na régua antiga (o blackout de 12 h) NÃO SE TRANSFERE ao detector publicado.
+  V1-V5 PASSAM (depois de duas correções minhas, ambas sem tocar critério: a V2 exigia igualdade nas 6 h iniciais do replay, que são artefato da 1ª janela; e a idade de campanha
+  saía em unidades misturadas). A idade dos trips agora bate com o atlas: 13,0 / 21,9 / 31,2 / 15,3 / 9,4 / 150 / 211 / 677 h. V5: o alarme reimplementado = `ci.prever` em C0-C3.
+    config                      det  início banda FP  FP/mês horas  fora | acaso N1 / N2 / N3 | S = det - acaso N1 / N2 / N3
+    C0 controle                 7/8   6     5    9   0,807  1.457  407  | 1,90 / 2,77 / 1,57 | +5,10 / +4,23 / +5,43
+    C1 blackout 12 h            6/8   5     4    8   0,717  1.229  344  | 1,63 / 2,07 / 1,35 | +4,37 / +3,93 / +4,65   FORA (FP 8)
+    C2 blackout 12 h + r96      7/8   6     5    8   0,717  1.233  344  | 1,64 / 2,11 / 1,38 | +5,36 / +4,89 / +5,62   FORA (FP 8)
+    C3 EWMA vigiado             6/8   5     4   10   0,897  1.279  381  | 1,76 / 2,51 / 1,48 | +4,24 / +3,49 / +4,52   FORA (FP 10)
+    C4 veto k=4 (depois)        7/8   6     5    5   0,448  1.232  183  | 1,57 / 1,99 / 1,26 | +5,43 / +5,01 / +5,74   META-S (não adotável)
+  dS contra o controle [IC 90% bootstrap dos eventos]: C1 N1 -0,73 [-2,73; +0,27], N2 -0,30 [-2,05; +0,79]; C2 N1 +0,26, N2 +0,66 [+0,37; +0,95]; C3 N1 -0,86, N2 -0,75; C4 N1 +0,32,
+  N2 +0,78. As perdas de C1 e C3 são um só evento, o 11/04/2025 (21,9 h após uma partida).
+  1) O BLACKOUT DE 12 H NÃO É A ALAVANCA QUE PARECIA: no detector publicado ele leva o FP de 9 para 8 (um episódio, o quantum de 0,086/mês), não para 0,517/mês como no M29/M34. Aqueles
+     números eram de outra régua (composições, base de 24 h); esta reproduz o ledger instante a instante (V5). A fronteira "FP ~0,5 a -1,5 detecção" não existe no ponto publicado.
+  2) O EWMA VIGIADO PIORA aqui: FP 9 -> 10 e perde o 11/04, como previsto pelo mecanismo refratário -> duração já documentado.
+  3) A LENTE DO ACASO FUNCIONA, mas não salva nada: sob N2 a perda do blackout de 12 h é só 0,30 detecção de sinal (o 11/04 tinha 48% de cobertura de acaso na faixa dele), mas ele não
+     compra FP. O relógio de partida é real e quantificado: a cobertura de acaso do controle é 41-48% nas primeiras 24 h de campanha contra 18-21% depois de uma semana (2,5x); N2 põe
+     0,87 detecção a mais no acaso do que N1. O controle tem +4,2 a +5,4 detecções acima do acaso, conforme o nulo (p <= 0,002 em todos).
+  4) C2 (blackout 12 h + refratário 96 h) é melhor em todos os eixos — mesma detecção e início, FP 9 -> 8, alarme 1.457 -> 1.233 h, dS > 0 nos três nulos — mas a diferença é UM
+     episódio e 224 h, abaixo do piso de ruído da régua (placebos de +-5% já passaram regras assim). Não é achado; no máximo hipótese para a sombra, e muda a configuração congelada.
+  5) Só o veto k=4 atinge a meta (FP 5, dS > 0), e o veredito de NÃO ADOTAR fica, como pré-registrado: o risco é o limite superior de 24-33% de falhas nascendo com k=4.
+PLACAR: ACERTEI: C1 perde >= 1 detecção (~70%); C3 não chega a FP <= 6 (dei ~45% para chegar) e perde o 11/04 (~50%); C4 com dS >= 0 em N1 e N2 (~85%); acaso do controle maior sob N2
+  que sob N1 (~70%); nenhuma de C1-C3 atinge META-S (dei ~30% para atingir). ERREI: C1 com FP <= 6 (~55%; deu 8); C2 com FP <= 6 (~65%; deu 8) — eu ainda carregava o número da régua
+  antiga; N3 entre N1 e N2 (~50%; ficou abaixo dos dois). E as duas falhas de verificação foram erros meus de implementação, pegos antes da leitura dos resultados no caso da V2 e
+  depois de ver N1/N3 no caso da idade (correção mecânica, sem escolha).
+VEREDITO: a meta do usuário não é alcançável com as alavancas conhecidas no detector publicado sem o veto k=4, que fica vetado pelo risco. Reforça o teto de informação; o caminho é
+dado novo (re-exportar as 47 tags, frota B/C) ou tempo de sombra.
+
 Uso:  PYTHONPATH=src .venv/bin/python experiments/54_meta_acima_do_acaso.py
 """
 from __future__ import annotations
