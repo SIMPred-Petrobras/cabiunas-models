@@ -46,6 +46,8 @@ com a idade de campanha dos trips já conhecida pelo atlas (13/22/31/15/9,4/150/
 VERIFICAÇÕES:
   V1  C0 reimplementado (`E51B.alarme`) dá 7/8 e FP 9.
   V2  a máscara recalculada com blackout de 6 h sobre a grade completa coincide com a do cache em todos os instantes (máscara e reset).
+      CORREÇÃO (20/10, 1ª execução, antes de qualquer resultado): falhou com 180 instantes = as 6 h iniciais do cache (25/10/2024 07:34-13:32), onde a 1ª janela do replay causal
+      começa com a máquina ligada e o `preprocessar` conta a 1ª linha como partida. É artefato do replay, 3 meses antes do período avaliado; a V2 passa a excluir só essas 6 h.
   V3  a cópia de `preprocessar` com a chave desligada reproduz `ci.preprocessar` numa janela de 75 d (diferença máxima 0 em t, p, sp, vb; máscara igual).
   V4  todos os 8 trips têm idade de campanha definida e caem numa faixa.
   V5  para C0-C3, o alarme reimplementado coincide com `ci.prever` (a decisão de produção como caixa-preta) em todos os instantes.
@@ -194,10 +196,13 @@ def main():
 
     x = pd.read_parquet(ROOT / "raw30s_2024q4_2025q1.parquet"); df, g = grade_completa(x)
     m6, est, part, op = mascara(g, 6.0); idx = proc0.index
-    dm = int((m6.reindex(idx).fillna(False).astype(bool) != proc0["mask"]).sum())
-    dr = int(((~m6 | part).reindex(idx).fillna(True).astype(bool) != proc0["reset"]).sum())
+    # CORREÇÃO DA V2 (20/10, antes de ver resultado): a 1ª janela do replay começa com a máquina ligada e o `preprocessar` conta a 1ª linha como partida -> 6 h de blackout
+    # artificial em 25/10/2024, 3 meses antes do período avaliado. A comparação exclui só essas 6 h iniciais do cache.
+    v2 = idx >= idx[0] + pd.Timedelta(hours=6)
+    dm = int((m6.reindex(idx).fillna(False).astype(bool) != proc0["mask"])[v2].sum()); dm0 = int((m6.reindex(idx).fillna(False).astype(bool) != proc0["mask"])[~v2].sum())
+    dr = int(((~m6 | part).reindex(idx).fillna(True).astype(bool) != proc0["reset"])[v2].sum())
     ok["V2"] = dm == 0 and dr == 0
-    print(f"V2 — máscara 6 h recalculada x cache: {dm} instantes diferentes na máscara, {dr} no reset -> {'PASSA' if ok['V2'] else 'FALHA'}", flush=True)
+    print(f"V2 — máscara 6 h recalculada x cache (fora das 6 h iniciais do replay): {dm} instantes diferentes na máscara, {dr} no reset; nas 6 h iniciais {dm0} (artefato da 1ª janela) -> {'PASSA' if ok['V2'] else 'FALHA'}", flush=True)
 
     s = pd.Timestamp("2025-06-01", tz="UTC"); w = df.loc[max(df.index[0], s - JANELA_REPLAY):s]; conhecidos = [t for t in reg if t < s] + [t for t in carrega_registro() if t < pd.Timestamp("2025-02-27", tz="UTC")]
     conhecidos = sorted(set(conhecidos))
