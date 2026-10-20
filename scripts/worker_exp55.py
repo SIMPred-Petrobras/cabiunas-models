@@ -16,6 +16,7 @@ import worker_exp44 as w44
 
 NOME = "modos-de-falha | EXP 55 observabilidade por modo e atribuicao"
 DS_PAI = w44.DS_INSUMOS
+DS_INSUMOS55 = "0367a2b16bba4ad38eeae56811000f1a"   # criado por --cria-insumos em 20/10/2026
 ALARMES_LOCAL = Path("/home/thallys/Documents/projeto-petrobras/Analise-exploratoria-dos-dados/analise_cabiunas/dados/alarmes_mapeados_colunas.csv")
 PACOTES = ["numpy==1.26.4", "pandas==3.0.2", "pyarrow==23.0.1", "scikit-learn==1.9.0", "scipy==1.17.1", "clearml==2.1.6"]
 
@@ -50,7 +51,7 @@ def carrega_exp():
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--enqueue", action="store_true"); ap.add_argument("--queue", default=None); ap.add_argument("--image", default="python:3.11-slim")
-    ap.add_argument("--insumos", default=os.environ.get("INSUMOS_ID")); ap.add_argument("--cria-insumos", action="store_true"); ap.add_argument("--local", action="store_true")
+    ap.add_argument("--insumos", default=os.environ.get("INSUMOS_ID", DS_INSUMOS55)); ap.add_argument("--cria-insumos", action="store_true"); ap.add_argument("--local", action="store_true")
     a = ap.parse_args()
     if a.cria_insumos:
         return cria_insumos()
@@ -64,7 +65,8 @@ def main():
         t.set_packages(PACOTES); t.set_parameters({"General/insumos": a.insumos}); t.execute_remotely(queue_name=a.queue)
     if not a.enqueue and os.environ.get("CLEARML_TASK_ID"):
         from clearml import Task
-        Task.init(project_name="Cabiunas", task_name=NOME)
+        tk = Task.init(project_name="Cabiunas", task_name=NOME)
+        a.insumos = tk.get_parameter("General/insumos") or a.insumos     # o argparse roda antes do Task.init: no worker o --insumos não chega
     monta(a.insumos)
     print("EXP 55 no worker: CPUs", os.cpu_count(), flush=True)
     m = carrega_exp(); m.main()
