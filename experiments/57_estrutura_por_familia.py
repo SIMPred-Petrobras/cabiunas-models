@@ -40,6 +40,28 @@ CORREÇÃO (20/10, antes de qualquer resultado; tarefa e66ec698 parou na V4 e na
 refratário e a fusão de episódios fazem as horas andarem em degraus. Troca: grade densa de f (0,40 a 4,00, passo 0,01), f = o de horas mais próximas. A V4 passa a aceitar, quando
 nenhum f cai em +-5%, a diferença de até 15% (modo relaxado), com as horas de cada braço sempre na tabela. Critérios de GANHO/PIOR inalterados.
 
+RESULTADO (20/10/2026; worker do ClearML, tarefa 0b862ab2d32343c68f9282f380ca7ed7, 168 s, 64 CPUs; pré-registro 62a870d, correções f95edf8 (worker) e 03c8e55 (busca de f);
+a tarefa e66ec698 parou na V4 antes de qualquer resultado). V1-V4 PASSAM (horas igualadas a +-5% em F nos 2 n e em 11 de 12 placebos). PIOR: a estrutura por família
+dispara muito mais episódios ao MESMO custo em horas.
+                              n=19000                        n=20000                  média
+    C0 controle (v2)          7/8 · FP  9 · 1.457 h · 407 h fora                       7,0 · FP  9,0
+    F famílias (f 0,82/0,91)  6/8 · FP 18 · 1.457 h · 865 h  | 7/8 · FP 14 · 1.469 h · 1.087 h  6,5 · FP 16,0 -> PIOR (melhor que os placebos)
+    F' sem óleo               3/8 · FP 15 · 1.476 h · 882 h  | 5/8 · FP 16 · 1.468 h · 696 h    4,0 · FP 15,5 -> PIOR
+    placebos de partição      mediana det 6,0 · FP 20,0 (de 5/8 a 8/8; FP 14 a 25)
+  1) A CUSTO IGUAL, A ORGANIZAÇÃO POR FAMÍLIA FRAGMENTA O ALARME: mesmas ~1.460 h, mas 14-18 FP contra 9, e 700-1.090 h fora das janelas contra 407. O v2 consolida em menos
+     episódios; parte disso vem do PI_0319 e do sp que a estrutura física tirou (no EXP 52, sem o PI_0319, as horas caíam 45% e a detecção 1).
+  2) A FÍSICA IMPORTA EM RELAÇÃO AO ACASO, MAS FICA LONGE DO v2: F (FP 16) é melhor que as partições sorteadas (FP 20), como no EXP 56 — e as duas ficam muito acima dos 9 do controle.
+  3) O ÓLEO AJUDA A DETECTAR, AO CONTRÁRIO DO QUE EU ESPERAVA: sem a família do óleo a detecção cai de 6,5 para 4,0 (perde 07/04, 11/04 e o 04/11), com FP igual.
+  4) F DETECTA O 04/11 NOS DOIS n — o único trip que o v2 sempre perde — MAS PELA BORDA DO BLACKOUT (pós-hoc, declarado; recálculo local de F com n=20000): o episódio vai de
+     03/11 21:32 a 04/11 01:18 (3,8 h), ~30 min depois de a máscara abrir na partida a frio (máquina vigiada 19% da janela), com mancal, óleo e vb acesos no nível A. É o mecanismo
+     já documentado de nascimento na partida (`ewma-come-a-partida`), não precursor novo; e vem junto com FP 14-18.
+PLACAR: ACERTEI: V1-V4 (~90%, depois da correção da busca); F sem GANHO (dei ~8%); F PIOR (~40%); F melhor que a mediana dos placebos (~45%); F detecta os 2 trips de selagem (~70%);
+  nenhum braço na META (~90%). ERREI: F EQUIVALENTE (~52%; foi PIOR); F' com menos FP que F (~55%; 15,5 contra 16,0 é empate, e a detecção desabou); o 04/11 continuaria perdido
+  (~85%; F o pega, pela borda).
+VEREDITO (como pré-registrado): PIOR -> o v2 atual, com o gás (PI_0319) e o sp como votante próprio, carrega algo que a organização física perde: a consolidação dos episódios.
+A questão da estrutura por grupos FECHA. Junto com o EXP 50 (um modelo por grupo), o EXP 56 (sub-canal) e a literatura de blocos, a família fica como camada de DIAGNÓSTICO
+("onde olhar", 5/7 no EXP 55), não de detecção.
+
 Uso local (encanamento, sem tabelas):  EXP57_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/57_estrutura_por_familia.py
 No worker:  PYTHONPATH=src python scripts/worker_exp57.py --enqueue --queue default
 """
