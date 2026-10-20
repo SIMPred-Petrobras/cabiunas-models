@@ -50,6 +50,9 @@ VERIFICAÇÕES:
       começa com a máquina ligada e o `preprocessar` conta a 1ª linha como partida. É artefato do replay, 3 meses antes do período avaliado; a V2 passa a excluir só essas 6 h.
   V3  a cópia de `preprocessar` com a chave desligada reproduz `ci.preprocessar` numa janela de 75 d (diferença máxima 0 em t, p, sp, vb; máscara igual).
   V4  todos os 8 trips têm idade de campanha definida e caem numa faixa.
+      CORREÇÃO 2 (20/10, depois da 2ª execução, que já mostrou N1, N3 e as contagens): a idade saía em unidades misturadas (`asi8` em µs no pandas 3 contra `Timestamp.value` em
+      ns) — os trips davam ~483.000 h e todo elegível caía na faixa 0, e o N2 virou NaN. A V4 não pegou porque só checava faixa válida. Fortalecida: idades entre 0 e 2 anos e toda
+      faixa com >= 1% dos instantes elegíveis. Correção mecânica: faixas, nulos e critérios não mudam. N1, N3 e as contagens não dependem da idade.
   V5  para C0-C3, o alarme reimplementado coincide com `ci.prever` (a decisão de produção como caixa-preta) em todos os instantes.
 
 Uso:  PYTHONPATH=src .venv/bin/python experiments/54_meta_acima_do_acaso.py
@@ -240,13 +243,15 @@ def main():
     # ── nulos sobre o período avaliado, na grade do controle ──
     per = al_c.loc[INICIO8:fim].index
     elig = est.reindex(per).fillna(False).to_numpy(bool)
-    pt = pd.Series(np.where(part.to_numpy(bool), g.index.asi8, np.nan), index=g.index).ffill()
-    idade = ((pd.Series(per.asi8, index=per) - pt.reindex(per)) / 3.6e12).fillna(np.inf).to_numpy()
+    # CORREÇÃO 2 (20/10): a 1ª versão misturava `asi8` (µs no índice do pandas 3) com `Timestamp.value` (ns); agora só aritmética de datas.
+    pt = pd.Series(g.index.where(part.to_numpy(bool)), index=g.index).ffill()
+    idade = ((per.to_series() - pt.reindex(per)).dt.total_seconds() / 3600).fillna(np.inf).to_numpy()
     faixa = np.minimum(np.searchsorted(FAIXAS, idade, side="right") - 1, len(FAIXAS) - 2)
     trips = [t for t in EV["real"] if t >= INICIO8]
-    idade_trip = [float((t.value - pt.loc[:t].dropna().iloc[-1]) / 3.6e12) if pt.loc[:t].notna().any() else np.inf for t in trips]
+    idade_trip = [float((t - pt.loc[:t].dropna().iloc[-1]).total_seconds() / 3600) if pt.loc[:t].notna().any() else np.inf for t in trips]
     faixa_trip = [int(min(np.searchsorted(FAIXAS, h, side="right") - 1, len(FAIXAS) - 2)) for h in idade_trip]
-    ok["V4"] = len(trips) == 8 and all(0 <= b < len(FAIXAS) - 1 for b in faixa_trip)
+    por_faixa = [int((elig & (faixa == b)).sum()) for b in range(len(FAIXAS) - 1)]
+    ok["V4"] = (len(trips) == 8 and all(0 <= h < 2 * 8766 for h in idade_trip) and min(por_faixa) >= 0.01 * elig.sum())
     print(f"V4 — idade de campanha dos trips (h): {[round(h, 1) for h in idade_trip]}; faixas {faixa_trip} -> {'PASSA' if ok['V4'] else 'FALHA'}", flush=True)
     print(f"   instantes elegíveis (operação estável) no período: {elig.sum()} de {len(per)}; por faixa: {[int((elig & (faixa == b)).sum()) for b in range(len(FAIXAS) - 1)]}", flush=True)
 
