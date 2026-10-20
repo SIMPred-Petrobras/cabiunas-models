@@ -35,7 +35,7 @@ def monta(insumos_id):
 
 def carrega_exp():
     sys.path.insert(0, str(RAIZ / "experiments"))
-    spec = importlib.util.spec_from_file_location("exp57", RAIZ / "experiments" / "57_estrutura_por_familia.py"); m = importlib.util.module_from_spec(spec); sys.modules["exp56"] = m
+    spec = importlib.util.spec_from_file_location("exp57", RAIZ / "experiments" / "57_estrutura_por_familia.py"); m = importlib.util.module_from_spec(spec); sys.modules["exp57"] = m
     spec.loader.exec_module(m); return m
 
 
