@@ -26,6 +26,17 @@ LIMITES: 8 eventos; bases compartilham dado; o T5 é indicador imperfeito de car
 VERIFICAÇÕES: V1 bases com as referências (atual 7/8 FP 9; G168 8/8 FP 14; B800 8/8 FP 12); V2 a configuração principal reproduz o secundário do EXP 61 (FP 4, 6, 6, 6);
 V3 os três indicadores têm >= 30 amostras estáveis na referência de todo episódio.
 
+RESULTADO (21/10/2026; worker do ClearML, tarefa 559f579385b74f8e853ce6d17b26c553; pré-registro 8c3a451). V1-V3 PASSAM. FRÁGIL: o sinal é real (melhor que suprimir ao
+acaso em TODAS as bases), mas o ponto de operação é sensível.
+  (a) PRINCIPAL ok: atual 7/8 FP 9 -> 7/8 FP 4; G168 8/8 FP 14 -> 7/8 FP 6; B800 8/8 FP 12 -> 7/8 FP 6 (ambos perdem o 17/03); n=19000 5/8 FP 11 -> 5/8 FP 6.
+  (c) PLACEBO ok em 4/4: suprimir o MESMO número de episódios ao acaso só iguala ou supera a regra em 1,8% / 3,0% / 4,4% / 4,6% das permutações.
+  (b) VIZINHANÇA 5/8 (pedia 6): passam theta 0,4, média dos TC382, referência de 15 d, janela de 1 h e de 4 h; falham theta 0,6 (suprime mais e perde detecção: atual 6/8,
+      n=19000 3/8), o PDI_0317 como indicador (atual 5/8) e a referência de 60 d (atual 6/8, FP 6-8). O lado conservador (theta menor, referência curta) aguenta; o agressivo não.
+PLACAR: ACERTEI: (a) (~95%); (c) (~55%); a média dos TC382 concorda com o T5 (~80%); não ROBUSTO (dei ~35% para ROBUSTO). ERREI: (b) (~50%; 5/8); o PDI_0317 concordaria (~45%; não
+  concorda — o ΔP do gás combustível não é bom indicador de carga aqui).
+VEREDITO (como pré-registrado): FRÁGIL -> a carga entra como CONTEXTO de prioridade na tela ("alarme em carga baixa/alta"), não como regra. Pode ser acompanhada por fora nos ledgers
+da sombra (pós-processamento, não toca no congelado) na configuração principal ou na conservadora (theta 0,4), como hipótese prospectiva.
+
 Uso local (encanamento, sem tabelas):  EXP62_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/62_regra_de_carga.py
 No worker:  PYTHONPATH=src python scripts/worker_exp62.py --enqueue --queue default
 """
