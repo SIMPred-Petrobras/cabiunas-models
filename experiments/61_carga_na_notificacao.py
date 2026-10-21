@@ -28,6 +28,24 @@ LIMITES: os "novos" são poucos e as bases compartilham dado; o T5 é indicador 
 VERIFICAÇÕES: V1 cada base reproduz as suas referências (atual 7/8 FP 9; G168 8/8 FP 14; B800 8/8 FP 12); V2 a medida da base atual reproduz a exploratória (mediana TP 0,88 e
 FP 0,62 na versão global, a +-0,02); V3 todo episódio tem >= 30 amostras estáveis na referência causal.
 
+RESULTADO (21/10/2026; worker do ClearML, tarefa 18a732422e924bb8a16baff25aa5a440; pré-registro 4632727). V1-V3 PASSAM. SINAL REPLICA — o primeiro discriminante de FP x
+acerto que se sustenta fora da amostra nesta frente.
+    base               AUC causal (p; TP/FP)      AUC global (p)
+    atual              0,84 (0,009; 9/9)          0,72 (0,067)     já vista, não conta
+    G168               0,79 (0,010; 10/14)        0,71 (0,048)
+    B800               0,75 (0,026; 10/12)        0,76 (0,022)
+    atual n=19000      0,65 (0,164; 7/11)         0,65 (0,164)
+    NOVOS (fora)       0,75 (0,051; 6/12)         0,67 (0,145)
+  Critério: novos >= 0,65 com p < 0,10 (0,75; 0,051) e >= 0,60 em G168 (0,79) e B800 (0,75) -> REPLICA. A medida causal (contra os 30 d anteriores) é mais forte que a global.
+  SECUNDÁRIO (não era o critério) — filtro "suprimir episódio com L causal < 0,5": atual 7/8 FP 9 -> 7/8 FP 4 (sem perda); G168 8/8 FP 14 -> 7/8 FP 6; B800 8/8 FP 12 -> 7/8 FP 6
+  (ambos perdem o 17/03, cujo episódio nasce em 09/03 com carga 0,24); n=19000 5/8 FP 11 -> 5/8 FP 6. O custo que eu previa (o 27/02) não apareceu na medida causal; apareceu o 17/03.
+  Os trips logo após a partida que a borda perdia no EXP 60 (04/11 e 07/04 no B800) nascem em carga ALTA (0,91 e 0,99) e ficam.
+PLACAR: ACERTEI: SINAL REPLICA (dei ~30%); o filtro perde >= 1 detecção em >= 2 das 4 bases (~70%; G168 e B800, o 17/03); causal e global na mesma direção em todas as bases (~75%).
+  ERREI: o custo previsto do filtro (27/02) — foi o 17/03.
+INTERPRETAÇÃO (como pré-registrada): a carga entra como CONTEXTO de prioridade ("alarme em carga alta" x "em carga baixa") e como hipótese para a sombra. O filtro atinge a meta do
+usuário nas quatro bases (FP 4-6, -0 a -1 detecção), mas NÃO era o critério deste experimento: vira hipótese com pré-registro próprio, na forma "rebaixar a atenção" (não
+suprimir), a validar prospectivamente. Física plausível: em carga alta as variáveis de trip ficam perto dos setpoints; em carga baixa o PCA vê operação fora do regime típico.
+
 Uso local (encanamento, sem tabelas):  EXP61_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/61_carga_na_notificacao.py
 No worker:  PYTHONPATH=src python scripts/worker_exp61.py --enqueue --queue default
 """
