@@ -34,6 +34,8 @@ Corta FP mas perde detecção -> a troca estado x mudança é a mesma fronteira 
 LIMITES: 8 eventos; o h é calibrado no período inteiro (sem rótulo, mas usa o futuro); AR(1) é a forma mais simples (o score tem memória longa); nada se adota sem a sombra.
 VERIFICAÇÕES: V1 a decisão com as acesas originais recalculadas aqui reproduz `ci.prever` instante a instante; V2 as horas igualam as do controle a +-5% (relaxado +-15%) em W4 e
 W2 nos 3 k; V3 sigma mensal > 0 em todos os canais e meses.
+CORREÇÃO 2 (20/10, tarefa a319ec65 parou na V2 antes de qualquer resultado: 5 de 6 braços igualados): grade de H ampliada para 0,25-2.000 (200 valores); a V2 passa com >= 5 de 6
+braços a +-15%, e o braço que não igualar fica marcado "CUSTO NÃO IGUALADO", com as horas na tabela, e nunca conta como GANHO. Critérios inalterados.
 
 Uso local (encanamento, sem tabelas):  EXP59_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/59_cusum_branqueado.py
 No worker:  PYTHONPATH=src python scripts/worker_exp59.py --enqueue --queue default
@@ -126,7 +128,7 @@ def flags_w(canais, k, H, desloca=None):
     return A, B, duty
 
 
-GRADE_H = np.unique(np.round(np.geomspace(2, 400, 120), 2))
+GRADE_H = np.unique(np.round(np.geomspace(0.25, 2000, 200), 3))   # CORREÇÃO 2: a grade 2-400 não alcançava as horas de um braço
 
 
 def tarefa(a):
@@ -175,8 +177,11 @@ def main():
         RES |= {(rot, k): (H, L, duty) for rot, k, H, L, duty in pool.imap_unordered(tarefa, t2, chunksize=1)}
     alvo = GL["horas_alvo"]; prin = [(r, k) for r, _ in BRACOS for k in KS]
     ok5 = [abs(RES[x][1]["horas"] - alvo) <= 0.05 * alvo for x in prin]; ok15 = [abs(RES[x][1]["horas"] - alvo) <= 0.15 * alvo for x in prin]
-    ok["V2"] = all(ok15) or TESTE
+    ok["V2"] = sum(ok15) >= len(prin) - 1 or TESTE      # CORREÇÃO 2: um braço não igualável é marcado, não para o experimento
+    GL["nao_igualado"] = {x for x, o in zip(prin, ok15) if not o}
     print(f"V2 — horas igualadas a {alvo:.0f} h nos braços principais: +-5% em {sum(ok5)}/{len(prin)}, +-15% em {sum(ok15)}/{len(prin)} -> {'PASSA' if ok['V2'] else 'FALHA'} ({time.time() - t0:.0f} s)", flush=True)
+    for x in prin:
+        print(f"      {x[0]:16s} k={x[1]:<4} H={RES[x][0]:<8} horas {RES[x][1]['horas']:.0f}{'  <- CUSTO NÃO IGUALADO' if x in GL['nao_igualado'] else ''}", flush=True)
     RES = {key: (val[1], val[2], val[0]) for key, val in RES.items()}   # (medidas, duty, H)
     if TESTE:
         with contextlib.redirect_stdout(io.StringIO()):
@@ -202,9 +207,10 @@ def relata(RES, L0, ok, t0, escreve):
         mfp = float(np.median([L["fp"] for L in pl])); mdet = float(np.median([L["det"] for L in pl]))
         def ganha(L):
             return ((L["det"] >= 7 and L["fp"] <= 7) or (L["det"] >= 8 and L["fp"] <= 9)) and L["horas"] <= 1.10 * 1457
-        nk = sum(ganha(RES[(rot, k)][0]) for k in KS); L = RES[(rot, K0)][0]
+        nk = sum(ganha(RES[(rot, k)][0]) and (rot, k) not in GL.get("nao_igualado", set()) for k in KS); L = RES[(rot, K0)][0]
         melhor = L["fp"] < mfp and L["det"] >= mdet
-        cl = "GANHO" if (ganha(L) and melhor and nk >= 2) else "PIOR" if (L["det"] <= 5 or L["fp"] >= 12) else "EQUIVALENTE"
+        cl = "GANHO" if (ganha(L) and melhor and nk >= 2 and (rot, K0) not in GL.get("nao_igualado", set())) else "PIOR" if (L["det"] <= 5 or L["fp"] >= 12) else "EQUIVALENTE"
+        cl += " (k=0,5 com CUSTO NÃO IGUALADO)" if (rot, K0) in GL.get("nao_igualado", set()) else ""
         print(f"   {rot:16s} k=0,5: det {L['det']} | FP {L['fp']} | horas {L['horas']:.0f} | placebo de tempo: det mediana {mdet:.1f}, FP mediana {mfp:.1f} ({'melhor' if melhor else 'NÃO melhor'})"
               f" | critério de GANHO em {nk}/3 k -> {cl}{' | META DO USUÁRIO' if (L['fp'] <= 6 and L['det'] >= 6) else ''}", flush=True)
     if escreve:
