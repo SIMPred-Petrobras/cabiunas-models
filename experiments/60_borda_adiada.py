@@ -33,6 +33,23 @@ dado); nada se adota sem a sombra.
 VERIFICAÇÕES: V1 sem a regra, cada base reproduz as suas medidas de referência (atual 7/8 FP 9; G168 8/8 FP 14; B800 8/8 FP 12); V2 a mesma reconstrução da base n = 19.000,
 feita com n = 20.000, coincide com o ledger do controle em >= 99,9% dos instantes vigiados; V3 a regra com X = 0 devolve a série original.
 
+RESULTADO (21/10/2026; worker do ClearML, tarefa 6743fa0abb774535b280da29d866dada; pré-registro 06d80b8). V1-V3 PASSAM. EQUIVALENTE: na base atual a regra atinge a meta,
+mas nas variantes que eu não tinha olhado ela custa detecção — exatamente nos trips que acontecem logo depois de uma partida.
+    base (X = 24 h)      original                   com a regra                     o que se perde
+    atual                7/8 · FP  9 · 1.457 h      7/8 · FP  5 · 1.295 h (0,448)   nada (já visto, não conta)
+    G168                 8/8 · FP 14 · 1.995 h      7/8 · FP 10 · 1.820 h           o 04/11 (episódio de borda de 6 h, 8,8 h antes do trip)
+    B800                 8/8 · FP 12 · 1.712 h      6/8 · FP  8 · 1.501 h           o 04/11 e o 07/04 (borda de 7 h, 6,6 h antes do trip)
+    atual n=19000        5/8 · FP 11 · 1.505 h      5/8 · FP  8 · 1.337 h           nada
+  X = 12 h e 36 h dão o mesmo que 24 h na base atual; no B800, já com 12 h perde as duas detecções. O controle "24 h para TODOS" derruba as quatro bases para 3/8 (o efeito é
+  mesmo da borda, não de persistência genérica). Nenhuma notificação foi atrasada >= 12 h: o que a regra toca, ela PERDE.
+  LEITURA: o 04/11 (partida a frio, trip 15 h depois) e o 07/04 (trip 13 h depois de religar) são os trips de logo após a partida; nas variantes em que são detectados, é por um
+  alarme de borda CURTO. O risco que derrubou o veto k=4 (5 de 8 trips até 31 h após a partida) aparece de novo, agora medido em detector independente.
+PLACAR: ACERTEI: base atual FP 9 -> 5 com detecção igual (~95%, já visto); início e banda inalterados na base atual (~85%); X = 12 igual ao original na base atual (~80%); X = 36
+  igual a X = 24 (~80%); "24 h para todos" perde >= 2 detecções (~90%). ERREI: FP -2 com detecção igual em >= 2 das 3 outras bases (~55%; foi 1 de 3); algum trip com notificação
+  atrasada >= 12 h (~30%; não houve atraso — houve perda).
+VEREDITO (como pré-registrado): EQUIVALENTE. A borda fica como RÓTULO de apresentação ("alarme nascido na partida", com a mesma notificação), não como regra de supressão ou
+adiamento. Como é pós-processamento da série, pode ser acompanhada por fora nos ledgers da sombra, sem tocar no congelado.
+
 Uso local (encanamento, sem tabelas):  EXP60_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/60_borda_adiada.py
 No worker:  PYTHONPATH=src python scripts/worker_exp60.py --enqueue --queue default
 """
