@@ -18,6 +18,9 @@ DESENHO (fixado antes):
   PERGUNTAS ESPECÍFICAS, distribuídas entre os três tipos de janela (para não sinalizar quais interessam): o alarme de pressão baixa de óleo em operação em 31/03/2025 04:45 e
   02/04/2025 02:12 (locais); o motivo da parada de 31/10/2025 06:42 a 03/11/2025 12:04 (locais, 77 h); HI/HIHI do TC382_03_A em 20/10/2025 13:18 e 08/04/2026 10:21-18:53 (locais);
   o motivo das paradas que encerram as janelas de trip (o trip em si já é conhecido); e, para as janelas de controle, a mesma pergunta aberta.
+EMENDA (21/10/2026, ANTES DO ENVIO; nenhuma resposta recebida): perguntas específicas 8 a 11 acrescentadas — o motivo das paradas que encerram dois FP com ΔP baixo na linha
+  de balanceamento do gás de selagem (PDI-6240302, a tag do trip de 29/04/2025): 20/10/2025 13:28 e 04/04/2026 05:56 (locais); o que foi feito na manutenção de 31/10 10:24 a
+  01/11 06:38 (local), entre o FP de 26/10/2025 e o trip de óleo de 04/11; e, para manter o desenho às cegas, as janelas de controle J06 e J22. A regra de decisão não muda.
 REGRA DE DECISÃO (fixada antes):
   FP LÍQUIDO = FP - (nº de FP com U). Relatado SEMPRE junto do FP bruto; o alvo (trip) não muda.
   CONTROLE NEGATIVO: a reclassificação só é CRÍVEL se (U entre os 9 FP) - (U entre as 9 de controle) >= 3; relata-se o p de Fisher unilateral. Se a operação marcar U nas janelas de
