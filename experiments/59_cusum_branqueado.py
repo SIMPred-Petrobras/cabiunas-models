@@ -37,6 +37,22 @@ W2 nos 3 k; V3 sigma mensal > 0 em todos os canais e meses.
 CORREÇÃO 2 (20/10, tarefa a319ec65 parou na V2 antes de qualquer resultado: 5 de 6 braços igualados): grade de H ampliada para 0,25-2.000 (200 valores); a V2 passa com >= 5 de 6
 braços a +-15%, e o braço que não igualar fica marcado "CUSTO NÃO IGUALADO", com as horas na tabela, e nunca conta como GANHO. Critérios inalterados.
 
+RESULTADO (20/10/2026; worker do ClearML, tarefa 92420b325b4d4f02ad714518e1399e85, 65 s; pré-registro c7e76ba, correção 1bb8f59; as tarefas a319ec65 e a anterior pararam na
+V2 antes de qualquer resultado). V1-V3 PASSAM (horas igualadas a +-5% nos 6 braços). PIOR, e com folga: a autocorrelação não é o defeito — é o que consolida o alarme.
+    braço (horas igualadas, 1.454-1.461 h)   k=0,25           k=0,5            k=1,0          placebo de tempo (k=0,5, mediana)
+    C0 controle (v2)                          7/8 · FP  9
+    W4 (4 canais)                             3/8 · FP 55      3/8 · FP 52      4/8 · FP 47    4/8 · FP 50
+    W2 (sp e vb)                              6/8 · FP 34      6/8 · FP 33      6/8 · FP 37    6/8 · FP 32
+  1) AO MESMO CUSTO EM HORAS, O CUSUM DE MUDANÇA FRAGMENTA O ALARME: 33 a 55 FP contra 9. Ele acende em muitas variações curtas do escore, e o voto passa a coincidir por acaso.
+  2) O MOMENTO EM QUE ELE ACENDE NÃO CARREGA INFORMAÇÃO: o placebo de tempo (as acesas deslocadas 30-200 dias) dá o mesmo ou melhor nos dois braços.
+  3) W4 perde 27/02, 17/03, 29/04 e 26/02/2026; W2 perde o 07/04 (o trip CRÔNICO, 48 h a 81-90 °C: estado, não mudança), como previsto pelo mecanismo.
+  LEITURA: a receita da literatura (carta de resíduo) supõe que a falha é um deslocamento de média num processo de resto independente. Aqui a falha é um ESTADO sustentado, e a
+  memória do CUSUM de nível é o que integra a evidência e consolida os episódios — o mesmo achado de `memoria-do-cusum-e-a-cola-do-voto`, por um caminho novo.
+PLACAR: ACERTEI: V1 (~95%); W4 sem GANHO (~12%); W2 sem GANHO (~12%); W4 perde >= 1 detecção (~60%); nenhum braço na META (~10%). ERREI: W4 cortaria >= 2 FP (~50%; SUBIU para
+  52); W melhor que o placebo de tempo (~50%; não é). ERRO DE PRÉ-REGISTRO: a expectativa "horas caem >= 20%" ficou sem sentido quando troquei a calibração para horas igualadas e
+  não a atualizei.
+VEREDITO: PIOR. Fecha a linha "autocorrelação/branqueamento". O CUSUM de nível fica.
+
 Uso local (encanamento, sem tabelas):  EXP59_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/59_cusum_branqueado.py
 No worker:  PYTHONPATH=src python scripts/worker_exp59.py --enqueue --queue default
 """
