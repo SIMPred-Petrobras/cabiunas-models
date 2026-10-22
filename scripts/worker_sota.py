@@ -11,7 +11,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(RAIZ / "src")); sys.path.insert(0, str(RAIZ / "scripts")); sys.path.insert(0, str(RAIZ / "experiments"))
 import worker_exp63 as w63
 
-PACOTES = w63.PACOTES + ["river==0.24.1", "openpyxl==3.1.5"]
+PACOTES = w63.PACOTES + ["river==0.26.1", "openpyxl==3.1.5"]
 
 
 def main():
