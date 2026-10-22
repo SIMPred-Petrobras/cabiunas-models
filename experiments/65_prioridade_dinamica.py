@@ -34,6 +34,23 @@ VERIFICAÇÕES: V1 sem regra, cada base reproduz a referência (atual 7/8 FP 9; 
 EXP 62 (FP 4, 6, 6, 6); V3 com θ = 0 nada é rebaixado e a série volta a ser a original; V4 causalidade: para todo episódio promovido, recalcular a promoção com o T5 cortado no
 instante da promoção devolve o mesmo instante.
 
+RESULTADO (22/10/2026; worker do ClearML, tarefa f911227990fc475c8c9243dfeeb00c15, commit d77de7d sem diff; pré-registro a08a342; a 1ª tarefa, 4b57b959, foi abortada
+por terceiro aos 73 s). DECLARADO: antes desta corrida vi números da dinâmica no histórico pelo `prioridade_sombra.py --verifica` (o pré-registro já estava commitado).
+V1-V4 PASSAM. PARCIAL.
+    base        original                  estática                  dinâmica
+    atual       7/8 · FP  9 · 1.457 h     7/8 · FP 4 (0,359)        7/8 · FP 5 (0,448) · 1.336 h
+    G168        8/8 · FP 14 · 1.995 h     7/8 · FP 6 (0,538)        8/8 · FP 8 (0,717) · 1.406 h
+    B800        8/8 · FP 12 · 1.712 h     7/8 · FP 6 (0,538)        8/8 · FP 7 (0,628) · 1.356 h
+    n=19000     5/8 · FP 11 · 1.505 h     5/8 · FP 6 (0,538)        5/8 · FP 7 (0,628) · 1.377 h
+  (i) PASSA: o 17/03 é promovido em G168 e B800 (episódio de 09/03/2025, 205 h, promovido 3,2 h depois de nascer). (ii) FALHA: G168 FP 8 contra 6 da estática (+2); nas
+  outras +1. O FP que volta em todas as bases é o 09/01/2026 (34-78 h, promovido 17 h depois); no G168 também o 02/01/2026 (164 h, promovido 159 h depois).
+  (iii) vizinhança 5/8 — o MESMO número da estática, mas a falha mudou de natureza: na estática os vizinhos que falham PERDEM DETECÇÃO (θ 0,6, PDI_0317, ref 60 d); na dinâmica
+  os que falham SOBEM O FP (θ 0,4: FP médio 8,2; ref 60 d: 8,8; janela 1 h: 7,2), e nenhum vizinho perde mais de 1 detecção.
+  Placebo informativo: p 1,000 / 0,316 / 0,288 / 1,000 — em atual e n=19.000 a única promoção é um FP; o ganho da dinâmica é só o 17/03 nas variantes.
+PLACAR: ACERTEI: V1-V4 (~90%); o 17/03 é promovido em G168 e B800 (~65%); FP <= estática + 1 nas 4 bases NÃO (dei ~35%); vizinhança >= 6/8 NÃO (dei ~30%); PARCIAL (~35%).
+VEREDITO (como pré-registrado): PARCIAL -> as duas vão para a sombra, nenhuma é adotada (já registradas como H-CARGA e H-CARGA-DIN em `scripts/prioridade_sombra.py`, d77de7d).
+  Leitura, sem mudar o veredito: a dinâmica troca o modo de falha da regra — de "perder um trip" para "um FP a mais" —, o que para a operação é o lado mais seguro do erro.
+
 Uso local (encanamento, sem tabelas):  EXP65_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/65_prioridade_dinamica.py
 No worker:  PYTHONPATH=src python scripts/worker_exp65.py --enqueue --queue default
 """
