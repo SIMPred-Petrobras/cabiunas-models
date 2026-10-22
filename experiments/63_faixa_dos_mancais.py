@@ -25,6 +25,22 @@ LIMITES: 8 eventos; a faixa 0-200 °C é escolha de engenharia (setpoint de trip
 VERIFICAÇÕES: V1 `ci.prever` sobre o cache do controle dá 7/8 e FP 9; V2 no braço A, vb e p são idênticos ao cache em todo instante, e t e sp idênticos nos instantes vigiados sem
 artefato nas 72 h anteriores (diferença <= 1e-6); V3 o harness sem a correção reproduz `escores_sub34` (diferença <= 1e-6).
 
+RESULTADO (21/10/2026; worker do ClearML, tarefa 10cf832efe75405baa41e68522862e34; pré-registro bda8f1a). V1-V3 PASSAM. PIOR.
+  A: 7/8 FP 9 1.457 h -> 6/8 FP 9 1.452 h (início 6->5, banda 5->4). Sai um episódio só: 11/04/2025 09:56 local (4 h, TP); não entra nenhum. EWMA do t acima do limiar A na
+     abertura da máscara 24 -> 21 de 48; sp 16 -> 16. A correção muda o t em 3.927 instantes vigiados e o sp em 938, todos no rastro do EWMA após parada com artefato.
+  B: n=20.000 igual ao A; n=19.000 5/8 FP 11 -> 6/8 FP 12. O efeito na detecção troca de sinal com o n: não é sistemático.
+MECANISMO (medido depois, scratchpad): os sinais do 11/04 são IDÊNTICOS nos dois braços. O que muda é o REFRATÁRIO. No controle o artefato da parada do trip de 07/04
+  (TI_0305 até 871 °C, 07/04 21:40 a 08/04 14:22) mantém o t aceso e funde o voto de 08/04 22:00 a 10/04 19:04 num bloco de 45 h que nasce dentro do refratário do alarme de
+  07/04 e é descartado inteiro. Com a correção o voto se parte, e um pedaço de 56 min em 10/04 16:10 nasce fora do refratário, ARMA um novo bloqueio de 72 h e não vira alarme
+  (dura menos que os 120 min). O precursor do 11/04 cai nesse bloqueio e é descartado. Não é informação no artefato: é a ordem refratário -> duração mínima do `prever`, que
+  deixa um episódio NÃO notificado silenciar os seguintes ("refratário fantasma"). No controle esse mecanismo bloqueia 7 episódios de 6 armamentos, todos FP (23-164 h; o maior
+  com força 1.167): parte dos 9 FP do controle depende dele, e qualquer intervenção que parta ou funda votos mexe em FP e detecção por esse caminho.
+PLACAR: ACERTEI: V1-V3 (~90%); no máximo 3 episódios mudam (~70%; muda 1); o EWMA do t na abertura cai em >= 3 (~75%; cai em exatamente 3). ERREI: HIGIENE OK (~70%); deu
+  PIOR (dei ~15%). GANHO (~30%) não ocorreu.
+VEREDITO (como pré-registrado): PIOR -> a faixa NÃO entra na v2.1 sozinha. O artefato fica documentado como defeito de dado conhecido (871 °C num mancal parado não é
+  medição), mas corrigi-lo sem rever a ordem refratário/duração troca um acerto por acaso. O refratário fantasma é achado novo e pós-hoc (nasceu de um evento): qualquer
+  mudança nele é experimento próprio, pré-registrado, com as quatro bases e placebo; e, como bloqueia só FP no histórico, desfazê-lo deve SUBIR o FP.
+
 Uso local (encanamento, janela curta, sem tabelas):  EXP63_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/63_faixa_dos_mancais.py
 No worker:  PYTHONPATH=src python scripts/worker_exp63.py --enqueue --queue default
 """
