@@ -31,6 +31,31 @@ reproduz a sua referência (DECLARADO: a primeira versão desta verificação pe
 out-nov/2024, antes do período: 180 são as primeiras 6 h do cache, porque o replay começa em 25/10/2024 e a primeira linha da janela conta como partida, e 1 é um instante
 com RUNNING_A exatamente 0,5; corrigido antes de qualquer resultado) (atual 7/8 FP 9; G168 8/8 FP 14; B800 8/8 FP 12; n=19.000 5/8 FP 11); V2 o p do harness com as 12 tags reproduz o `escores_sub34` (<= 1e-9); V3 o placebo com zero blocos devolve o real.
 
+RESULTADO (22/10/2026; worker do ClearML, tarefa d32245dab5404dbebbb6b1c1237c49ad; pré-registro 8fb3e52). V1-V3 PASSAM. NADA ACEITO: o blackout fica em 6 h e a PI_5134001
+fica no canal p.
+  BASE ATUAL (X = 6 com PI: 7/8, FP 9, 0,807/mês, 1.457 h):
+    com PI   X = 7: 6/8 FP 11 1.422 h | 8: 6/8 FP 10 1.332 h | 10: 6/8 FP 12 633 h | 12: 6/8 FP 8 (0,717) 1.229 h — TODAS perdem o 11/04; só a de 12 h reduz o FP (−1)
+    sem PI   X = 6: 7/8 FP 10 1.593 h (+136 h, como no EXP 52) | 7-12: 6/8, FP 9 a 14, todas perdem o 11/04
+  PASSO 1 (PI): não reduz o FP (+1) -> FICA. Placebo da PI (tirar cada outra tag do p): ΔFP de −1 a +1; p = 0,818 — tirar a PI_5134001 não difere de tirar qualquer tag.
+  PASSO 2 (janela): nenhuma janela de 7-12 h passa (todas perdem o 11/04); LOEO: com o 11/04 escondido a regra escolheria 12 h e perderia exatamente o 11/04 -> fica 6 h.
+  ROBUSTEZ: G168 perde 2 trips com 7-10 h e 3 com 12 h; B800 perde 1 com 7-8 h e 3 com 10-12 h; n=19.000 GANHA 1 (5 -> 6) com 7, 8 e 12 h — o efeito troca de sinal com a base.
+  PLACEBO DO BLACKOUT: as mesmas horas mascaradas em blocos sorteados dão MAIS FP (mediana 16-24) que o blackout real em todas as bases (p = 0,000): mascarar quebra
+    episódios em mais episódios; mascarar depois da partida é menos ruim que mascarar ao acaso, mas não melhora o 6 h.
+  CHECAGEM POR TRIP (última partida antes do trip; início do episódio que o detecta):
+    27/02 partida 20/02 23:14, episódio às 6,5 h (na borda) — sobrevive em todas as janelas (o episódio de 140 h continua depois da janela);
+    17/03 episódio 14,6 h após a partida; 07/04 partida 07/04 05:16 (13 h antes do trip), mas o episódio que detecta nasceu em 06/04 10:10, ANTES da partida — sobrevive em todas;
+    11/04 partida 10/04 16:08 (21,9 h antes), episódio às 17,8 h — FORA de qualquer janela, e mesmo assim PERDIDO com X >= 7. MECANISMO (verificado depois, com a cauda do
+    EXP 64): com 6 h, o voto de 08/04 19:00 a 10/04 16:04 é um bloco de 45 h nascido dentro do refratário do alarme de 06/04 e descartado; com X >= 7 a máscara maior parte
+    esse bloco, e um pedaço curto em 10/04 13:10 nasce fora do refratário, arma um REFRATÁRIO FANTASMA de 72 h (dura menos que os 120 min mínimos) e silencia o 11/04 —
+    o mesmo caminho do EXP 63; 29/04 e 09/12 episódios nascidos antes da partida; 04/11 não detectado na base atual; 26/02/2026 episódio às 6,5 h (borda), sobrevive.
+  OS 9 FP: as janelas mais longas ENCURTAM 5-6 dos 9 e eliminam 1-3 (15/06 com 8 h ou mais; 08/04 com 7, 8 e 12 h; 23/08 com 12 h), mas criam 2-4 FP NOVOS. Sem a PI some
+    o 16/01 e nascem 2 novos. O 26/10 (112 h) não muda em nenhuma configuração.
+PLACAR: ACERTEI: V1-V3 (~85%); sem PI não reduz o FP (~75%); alguma janela de 7-12 h perde trip na base atual (~45%; todas perdem o 11/04); se aceita, a robustez perderia
+  trip em G168/B800 (perde em todas). ERREI: alguma janela reduz o FP na base atual (~70%; só a de 12 h, −1); placebo do blackout p <= 0,10 (~40%; p = 0,000, mas no sentido
+  de o placebo ser PIOR, sem que o real melhore o 6 h). A regra não aceitou nada (dei ~65% para isso).
+VEREDITO (como pré-registrado): nada aceito -> o blackout fica em 6 h e a PI_5134001 fica no p (a higiene não paga). O 11/04 é perdido pelo refratário fantasma, não pela
+  máscara: qualquer mudança que parta os votos perto de uma parada esbarra nele.
+
 Uso local (encanamento):  SOTA_TESTE=1 PYTHONPATH=src:experiments .venv/bin/python -m sota.h7_partida_e_canal
 No worker:  PYTHONPATH=src python scripts/worker_sota.py --exp h7_partida_e_canal --tags sota-h7 --procs 24 --enqueue --queue default
 """
