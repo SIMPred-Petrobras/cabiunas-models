@@ -15,9 +15,11 @@ PACOTES = w63.PACOTES + ["river==0.24.1", "openpyxl==3.1.5"]
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--exp", required=True); ap.add_argument("--tags", nargs="*", default=[]); ap.add_argument("--enqueue", action="store_true")
+    ap = argparse.ArgumentParser(); ap.add_argument("--exp", default=None)   # no worker o argparse roda antes do Task.init: o exp vem de General/exp; ap.add_argument("--tags", nargs="*", default=[]); ap.add_argument("--enqueue", action="store_true")
     ap.add_argument("--queue", default=None); ap.add_argument("--image", default="python:3.11-slim"); ap.add_argument("--procs", default="16")
     a = ap.parse_args(); nome = f"sota | {a.exp}"
+    if not a.exp and not os.environ.get("CLEARML_TASK_ID"):
+        raise SystemExit("--exp é obrigatório fora do worker")
     if a.enqueue:
         from clearml import Task
         if not a.queue:
@@ -26,7 +28,7 @@ def main():
         t.set_packages(PACOTES); t.set_parameters({"General/exp": a.exp, "General/insumos": w63.DS_INSUMOS60, "General/SOTA_PROCS": a.procs}); t.execute_remotely(queue_name=a.queue)
     if os.environ.get("CLEARML_TASK_ID"):
         from clearml import Task
-        tk = Task.init(project_name="Cabiunas", task_name=nome); a.exp = tk.get_parameter("General/exp") or a.exp
+        tk = Task.init(project_name="Cabiunas"); a.exp = tk.get_parameter("General/exp") or a.exp
         os.environ.setdefault("SOTA_PROCS", str(tk.get_parameter("General/SOTA_PROCS") or a.procs))
         ins = tk.get_parameter("General/insumos") or w63.DS_INSUMOS60; w63.monta(ins)
         os.environ["ALARMES_CSV"] = str(w63.w44.obtem(ins, "INSUMOS_DIR") / "alarmes" / "alarmes_mapeados_colunas.csv"); os.environ["SAP_DIR"] = "/nao-enviado"
