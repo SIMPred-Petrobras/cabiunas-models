@@ -36,6 +36,24 @@ VERIFICAÇÕES: V1 a política mensal montada aqui reproduz o cache causal de t,
 V2 a política mensal passada pela mesma máquina de políticas reproduz o alarme da V1 (a versão anterior desta verificação, "P2a com k = 0 dispara em toda
 virada", estava errada por causa do piso de 0,05; DECLARADO: ao depurá-la vi que, com o piso, o P2a com k = 0 dispara em 3 das 14 viradas — nenhum parâmetro mudou); V3 causalidade: a decisão de cada gatilho em cada virada não muda se o dado for cortado na virada.
 
+RESULTADO (22/10/2026; worker do ClearML, tarefa 2ae653c1125145409740df89a3551c90; pré-registro a6ca5f5). V1-V3 PASSAM. NENHUMA POLÍTICA SUSTENTA RETREINO SOB DEMANDA.
+    política            retreinos  vencidos  detecção  FP  horas   contra a mensal (pareado)
+    P0 mensal              14         0        7/8      9   1.457
+    P1 congelado            0        13        6/8     24   2.615   FP +1,36/mês [+0,76; +1,99] e horas +105/mês [+21; +206]: PIORA DECLARADA
+    P2a k=1,5 / 2 / 3     6 / 2 / 2  4/10/10  6 / 4 / 4  12/15/15  2.921/1.689/1.689   perde 1 a 3 detecções
+    P2b q=1,5 / 2 / 3    12 / 8 / 7  0 / 4 / 6   6/8      11/10/9  2.167/1.985/1.593   perde 1 detecção; com q=3 (7 retreinos) FP igual e +12 h/mês
+    P2c ADWIN              13         0        7/8      9   1.466   igual à mensal
+    P2d Page-Hinkley       12         0        7/8     10   1.468   igual à mensal (+1 FP)
+    P3 trava           7 (6 forçados) 0        6/8     24   2.356   FP +1,33/mês [+0,54; +2,24]: PIORA DECLARADA
+  LEITURA: (1) os detectores de drift objetivos, com parâmetros padrão e sem calibração, pedem retreino em 12 e 13 das 14 viradas — a "demanda" medida é quase mensal;
+  (2) os gatilhos que economizam retreinos (horas acima do limiar, percentil com q alto) pagam com detecção (−1 a −3) e/ou horas; (3) congelar dobra o FP e as horas;
+  (4) a trava rejeita a maioria dos bundles novos (baseline "sujo" ou semana de sombra pior), fica com bundle velho até a troca forçada aos 62 d e PIORA — coerente
+  com o achado antigo de que o baseline precisa conter anormalidade.
+PLACAR: ACERTEI: V1-V3 (~85%); P1 não sustenta (~90%); ADWIN dispara em >= 10 viradas (~60%; 13); nenhuma P2 sustenta (dei ~75% para isso). ERREI: P2a dispara em >= 10
+  (~50%; 2 a 6); P3 = mensal ou quase (~55%; pior, com piora declarada de FP); TRAVA BOA (~35%; não).
+VEREDITO (como pré-registrado): nenhuma sustenta -> o argumento para o cliente é retreino mensal AUTOMÁTICO (1,5 s, sem intervenção), com o ADWIN como evidência objetiva
+  de que a demanda é mensal; o retreino sob demanda puro tem custo medido (tabela acima). A trava, como especificada, não deve ir para produção.
+
 Uso local (encanamento):  SOTA_TESTE=1 PYTHONPATH=src:experiments .venv/bin/python -m sota.h5_retreino
 No worker:  PYTHONPATH=src python scripts/worker_sota.py --exp h5_retreino --tags sota-h5 --enqueue --queue default
 """
