@@ -15,7 +15,8 @@ PACOTES = w63.PACOTES + ["river==0.24.1", "openpyxl==3.1.5"]
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--exp", default=None)   # no worker o argparse roda antes do Task.init: o exp vem de General/exp; ap.add_argument("--tags", nargs="*", default=[]); ap.add_argument("--enqueue", action="store_true")
+    # no worker o argparse roda antes do Task.init: lá o exp vem de General/exp
+    ap = argparse.ArgumentParser(); ap.add_argument("--exp", default=None); ap.add_argument("--tags", nargs="*", default=[]); ap.add_argument("--enqueue", action="store_true")
     ap.add_argument("--queue", default=None); ap.add_argument("--image", default="python:3.11-slim"); ap.add_argument("--procs", default="16")
     a = ap.parse_args(); nome = f"sota | {a.exp}"
     if not a.exp and not os.environ.get("CLEARML_TASK_ID"):
