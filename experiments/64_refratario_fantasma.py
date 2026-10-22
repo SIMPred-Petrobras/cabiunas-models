@@ -40,6 +40,27 @@ em >= 99,5% dos instantes vigiados (medido antes de fixar, só a reconstrução:
 ledger, 11/01 19:52 contra 13/01 00:18, sem mudar contagem; a medida usa o replay, que tem voto e força); V2 a cauda reimplementada devolve exatamente o `is_anomaly` do `prever` nas 4 bases; V3 com duração mínima zero, "com" e "sem" fantasma
 são idênticos (o contrafactual só toca o fantasma).
 
+RESULTADO (21/10/2026; worker do ClearML, tarefa 2acadf647f8745faa8f822d8c82828ed; pré-registro 493609a). V1-V3 PASSAM nas 4 bases. RISCO (pela ordem pré-registrada), mas
+o fantasma é também CONSISTENTE em 3 das 4 bases: é um supressor de FP sistemático, que custou uma detecção numa base.
+    base        com fantasma (o detector)            sem fantasma (contrafactual)         Δ          placebo P2 / P1
+    atual       7/8 · FP  9 · 0,807/mês · 1.457 h    7/8 · FP 15 · 1,345/mês · 1.825 h    FP −6      p 0,000 / 0,000
+    G168        8/8 · FP 14 · 1,256/mês · 1.967 h    8/8 · FP 20 · 1,794/mês · 2.153 h    FP −6      p 0,000 / 0,000
+    B800        8/8 · FP 12 · 1,076/mês · 1.712 h    8/8 · FP 17 · 1,525/mês · 2.009 h    FP −5      p 0,000 / 0,000
+    n=19000     5/8 · FP 11 · 0,986/mês · 1.505 h    6/8 · FP 15 · 1,345/mês · 1.692 h    FP −4, det −1 (o 11/04/2025)   p 0,000 / 0,002
+  Os bloqueios sorteados no fim de outros votos (P2) tiram em média 1,1-1,4 FP e custam 0,3-0,6 detecção; o fantasma tira 4-6 FP e custa 0 em 3 bases. Os armamentos são os
+  mesmos eventos nas 4 bases (13/08, 21/09, 08/10, 01/12/2025, 01/01 e 09/03/2026: o dado é o mesmo). Somando as bases, 30 bloqueados, 1 TP (o 11/04, que também caiu no
+  EXP 63 pelo mesmo caminho). Cascata: em todas as bases o 14/10/2025 (135 h, FP) só existe COM o fantasma (sem ele, o 08/10 notificado bloqueia o 14/10).
+  MECANISMO (contra a minha expectativa): não é borda nem parada — só 5 de 30 bloqueados nascem na borda e em 6 de 30 a máscara fecha entre o armamento e eles. O fantasma é um
+  voto curto (10-82 min) com a máquina em operação contínua, 3 a 40 h antes de um episódio longo (até 164 h): o refratário trata o episódio longo como repetição do curto, que é
+  o propósito do refratário ("repetir não é notícia"). NADA fica escondido: o `prever` mostra o voto curto e o episódio bloqueado como "atenção" na tela; o fantasma rebaixa o
+  episódio longo de alarme para atenção.
+PLACAR: ACERTEI: V1-V3 (~85%); base atual sem fantasma com FP >= 12 (~85%; 15) e mesma detecção (~80%); FP/mês sem fantasma >= 1,1 (~60%; 1,345); o fantasma custa detecção
+  em alguma base (~35%; n=19.000); p(P2) <= 0,10 em >= 3 bases (~30%; 4 de 4). ERREI: >= 50% dos bloqueados na borda (~55%; 5/30) e com a máscara fechando entre (~60%; 6/30).
+VEREDITO (como pré-registrado): RISCO -> há argumento para corrigir a ordem refratário/duração, mas ele é FRACO e contra a meta: corrigir custa +4 a +6 FP (+0,45 a +0,54
+  FP/mês) e +187 a +368 h de alarme para ganhar 1 detecção em 1 das 4 bases (0 nas outras 3). O fantasma fica, documentado como parte do ponto de operação: o FP de 0,807/mês
+  do controle depende dele, e o FP "sem fantasma" é 1,345/mês. Toda correção futura de dado ou de voto (como a faixa do EXP 63) tem de ser avaliada sabendo que partir ou fundir
+  votos arma ou desarma o fantasma.
+
 Uso local (encanamento, janela curta, sem tabelas):  EXP64_TESTE=1 PYTHONPATH=src .venv/bin/python experiments/64_refratario_fantasma.py
 No worker:  PYTHONPATH=src python scripts/worker_exp64.py --enqueue --queue default
 """
