@@ -26,6 +26,17 @@ EXPECTATIVAS: V1 passa (~90%); NÃO CHEGA PERTO (~75%: 17 univariados com voto d
 LIMITES: hiperparâmetros sem busca; 3 sementes; a régua secundária depende do diário (alarmes suprimidos ou perdidos não contam); timebox de 1 dia.
 VERIFICAÇÃO: V1 nenhum treino usa dado do mês avaliado nem das janelas de trip conhecidas; os limiares de nível só usam a validação (anterior ao mês).
 
+RESULTADO (22/10/2026; worker do ClearML, tarefa fd1a4ac1de444463b7b2a7ba8042f4ea; pré-registro 6663e59). V1 PASSA. NÃO CHEGA PERTO — registrado, sem ajuste.
+    PCA v2 (atual)            7/8 | FP   9 (0,807/mês) | 1.457 h | F1 0,64
+    AE ALARM, 3 sementes      8/8 | FP 102-128 (9,1-11,5/mês) | 6.182-6.608 h (~80% do tempo vigiado em alarme) | F1 0,16-0,23 | lead mediano 48 h (7 de 8 censurados)
+    WARN e CRITICAL           8/8 | FP 88-123 | 6.600-7.400 h
+  Contra o PCA (pareado): FP e horas com alta DECLARADA em todas as sementes e níveis (ΔFP/mês +7 a +10,6; Δh/mês +425 a +535); detecção sem diferença declarada (+1).
+  A detecção de 8/8 é trivial: o alarme fica ligado ~80% do tempo. Régua secundária (a do pipeline, alarmes HI/HIHI do diário): recall macro 0,77-0,83 em 2 sensores com
+  incidente (27 incidentes); cada sensor fica acima do PRÓPRIO q 0,90 em 22-27% do tempo vigiado (mediana; máx. 37-40%), contra os 10% que o limiar promete — o quantil
+  tirado da validação de cada mês não se sustenta no mês seguinte (deriva), e o voto de 2 em 17 sensores acende quase sempre.
+PLACAR: ACERTEI: V1 (~90%); NÃO CHEGA PERTO (~75%); detecção do ALARM >= 6/8 (~50%; 8/8, trivial); recall macro secundário >= 0,60 (~50%; 0,77-0,83).
+VEREDITO (como pré-registrado): NÃO CHEGA PERTO -> registrado e seguido. O pipeline de AEs, sem calibrar o limiar no próprio teste, não é comparável ao PCA v2 na régua de trip.
+
 Uso local (encanamento: 2 sensores, 2 meses, 1 semente):  SOTA_TESTE=1 PYTHONPATH=src:experiments .venv/bin/python -m sota.ae_walkforward
 No worker:  PYTHONPATH=src python scripts/worker_sota.py --exp ae_walkforward --tags sota-ae --enqueue --queue default
 """
