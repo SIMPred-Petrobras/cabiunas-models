@@ -18,6 +18,16 @@ LIMITES: 8 eventos; hiperparâmetros do TSB-AD/oficial, sem busca; CPU; 3 sement
 VERIFICAÇÕES: V1 o MESMO laço de walk-forward deste arquivo, com o PCA fiel e janela 1, reproduz os escores do harness (`escores_sub34`, t e p com n = 20.000) com
 diferença <= 1e-9; V2 nenhuma janela de treino tem instante no mês pontuado ou depois.
 
+RESULTADO (22/10/2026; worker do ClearML, tarefa df6909b4cf96429c8c4b3513549c424a; pré-registro 2fc1d4c). V1-V2 PASSAM. EQUIVALENTE pela regra — e pior em ponto em todas
+as sementes; nenhum ganho.
+    PCA v2 (atual)          7/8 | início 6 | FP  9 (0,807/mês) | 1.457 h | F1 0,64
+    TranAD t+p, sementes    5/8, 6/8, 4/8 | FP 13, 13, 13 (1,166/mês) | 1.476, 1.366, 1.682 h | F1 0,38, 0,44, 0,32 -> EQUIVALENTE, EQUIVALENTE, PIOR (Δdet −3 [−6; −1])
+    TranAD só t             6/8, 6/8, 5/8 | FP 13 | ΔFP/mês +0,36 [+0,09; +0,66] (alta DECLARADA)
+    TranAD só p             5/8, 7/8, 6/8 | FP 13, 12, 12
+  Em todas as sementes e variantes: detecção igual ou menor (−0 a −3), FP maior (+3 a +4); horas parecidas. O ruído entre sementes cobre até 2 detecções (4/8 a 6/8 na t+p).
+PLACAR: ACERTEI: V1-V2 (~90%); EQUIVALENTE (~45%); o ruído entre sementes cobre >= 1 detecção (~70%). (Dei ~45% a PIOR e ~10% a MELHOR.)
+VEREDITO (como pré-registrado): EQUIVALENTE -> o TranAD não substitui o PCA; a H3 do brief não se confirma aqui (como K-Means, FA, LSTM-AE, CNN-1D e Optuna antes dele).
+
 Uso local (encanamento: 2 meses, 1 semente, 2 épocas):  SOTA_TESTE=1 PYTHONPATH=src:experiments .venv/bin/python -m sota.h3_tranad
 No worker:  PYTHONPATH=src python scripts/worker_sota.py --exp h3_tranad --tags sota-h3 --procs 24 --enqueue --queue default
 """
