@@ -17,6 +17,17 @@ EXPECTATIVAS: ΔR² < 0,10 nos quatro canais (~60%: NGP, NPT e T5 andam juntos n
 LIMITES: 9 meses, 5 trips agrupados (mar-abr/2025), 5 FP no período; R² de um canal dominado pela cauda é instável; descritivo, não mede detecção.
 VERIFICAÇÃO: V1 depois do deslocamento de −3 h o T5 do dataset coincide com o da grade (correlação >= 0,999); V2 o walk-forward nunca treina com dado do mês testado.
 
+RESULTADO (22/10/2026; worker do ClearML, tarefa 6d81032933e74281b336c272feb4b505; pré-registro a26517a). V1-V2 PASSAM. VALE PEDIR (pela regra), COM RESSALVA FORTE.
+  M1 R² fora da amostra de log(1 + sinal), mar-out/2025:   t  A −0,398  B −0,246  ΔR² +0,152 | p  −0,268 −0,257 +0,011 | sp  −0,825 −0,385 +0,440 | vb  −0,598 −0,611 −0,013
+  M2 transiente de rotação que o T5 não vê nas 2 h antes do nascimento: 0 de 5 FP e 0 de 6 acertos (nenhum).
+  RESSALVA: TODOS os R² são negativos — nenhum dos dois conjuntos prevê melhor que a média do próprio mês testado (a mudança de nível entre meses domina). O ΔR² diz que
+  a rotação REDUZ o erro em relação ao T5 sozinho, sobretudo no spread do mancal (sp: a temperatura do mancal depende da rotação do eixo, que o T5 de exaustão não mede)
+  e um pouco no t; não diz que um modelo de comportamento esperado com rotação explicaria o canal. E não houve transiente escondido do T5 em nenhum nascimento.
+PLACAR: ACERTEI: o transiente que o T5 não vê aparece em <= 1 FP (~65%; 0). ERREI: ΔR² < 0,10 nos quatro canais (~60%; sp +0,44 e t +0,15); NÃO VALE (~55%).
+VEREDITO (como pré-registrado): VALE PEDIR a NGP_A e a NPT_A no export — a evidência é que elas carregam informação de regime que o T5 não carrega para o canal do mancal
+  (sp) e, menos, para o t. NÃO há evidência de que melhorem a detecção (5 trips agrupados; não medido aqui). O pedido é barato (tags padrão do PI) e é pré-requisito
+  para testar a H1 e a H2 de verdade quando houver dado novo.
+
 Uso local:  PYTHONPATH=src:experiments .venv/bin/python -m sota.h1b_ngp_descritivo
 No worker:  PYTHONPATH=src python scripts/worker_sota.py --exp h1b_ngp_descritivo --tags sota-h1 --enqueue --queue default
 """
