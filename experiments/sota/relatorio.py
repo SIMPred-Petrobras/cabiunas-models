@@ -20,7 +20,7 @@ from sota import protocolo as P
 
 SAIDA = RAIZ / "reports"; FIG = SAIDA / "figs"
 TAREFAS = dict(baseline="0d0309cd896f4a55ac30d48763ea12ef", h6="6e11bc034e0949ba8a39e1241c566357", triagem="6cf66f6e124c412a9509cd3331c927ac",
-               h5="2ae653c1125145409740df89a3551c90", h1b="6d81032933e74281b336c272feb4b505", ae="fd1a4ac1de444463b7b2a7ba8042f4ea", tranad="df6909b4cf96429c8c4b3513549c424a")
+               h5="2ae653c1125145409740df89a3551c90", h1b="6d81032933e74281b336c272feb4b505", ae="fd1a4ac1de444463b7b2a7ba8042f4ea", tranad="df6909b4cf96429c8c4b3513549c424a", h7="d32245dab5404dbebbb6b1c1237c49ad")
 AZUL, LARANJA, AQUA = "#2a78d6", "#eb6834", "#1baf7a"; TINTA, TINTA2, GRADE, FUNDO = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 
 
@@ -146,6 +146,7 @@ def main():
     det = modelos[-1]["detector"]; A = artefatos()
     B = A[("baseline", "baseline_pca_v2")]; AE = A[("ae", "ae_walkforward")]; TR = A[("tranad", "h3_tranad")]; POL = A[("h5", "politicas")]; DEC = A[("h5", "decisoes_por_virada")]
     TRI = A[("triagem", "triagem_fp")]; H6 = A[("h6", "h6_top3")]; R2 = A[("h1b", "r2_por_canal")]
+    H7 = {k: A[("h7", k)] for k in ("h7_configuracoes", "h7_checagem_por_trip", "h7_fp_antes_depois", "h7_fp_novos")}
     L = []
     for r in B.itertuples():
         L.append(dict(familia="PCA v2", rotulo=f"PCA v2 — {r.base}", fp_mes=r.fp_mes, ic_fp=tup(r.ic_fp_mes), horas_mes=r.horas_mes, det=r.det))
@@ -154,7 +155,7 @@ def main():
     for r in TR[TR.variante == "t+p"].itertuples():
         L.append(dict(familia="TranAD", rotulo=f"TranAD t+p — semente {r.semente}", fp_mes=r.fp_mes, ic_fp=tup(r.ic_fp_mes), horas_mes=r.horas_mes, det=r.det))
     fig_canais(ci, det); fig_modelos(L); fig_retreino(POL, DEC); TI = tempo_inferencia(ci, modelos)
-    GL.update(B=B, AE=AE, TR=TR, POL=POL, TRI=TRI, H6=H6, R2=R2, TI=TI)
+    GL.update(B=B, AE=AE, TR=TR, POL=POL, TRI=TRI, H6=H6, R2=R2, TI=TI, H7=H7)
     escreve(); print(f"relatório em {SAIDA / 'estado_da_arte_comparativo.md'}; figuras em {FIG}", flush=True)
 
 
@@ -174,6 +175,54 @@ def lista(s):
     return ", ".join(f"{k} ×{v}" if v > 1 else k for k, v in s.value_counts().items())
 
 
+def secao_h7():
+    H = GL["H7"]; C = H["h7_configuracoes"]; T = H["h7_checagem_por_trip"]; F = H["h7_fp_antes_depois"]; N = dict(zip(H["h7_fp_novos"].config, H["h7_fp_novos"].fp_novos))
+    sim = lambda v: "sim" if str(v) == "True" else "não"
+    L = ["## 7. H7 — blackout pós-partida mais longo e canal p sem a PI_5134001", "",
+         "Pré-registrado antes de rodar (commit 8fb3e52). Blackout após cada partida em 6 (atual), 7, 8, 10 e 12 h, cada um com e sem a PI_5134001 no canal p. **Regra do usuário, "
+         "fixada antes:** aceitar a menor janela que não perca nenhum trip, reduza o FP/mês e não perca trip em LOEO (empate → menor janela); a PI sai só se, sozinha, passar no mesmo critério. "
+         "Decisão na base atual; G168, B800 e n = 19.000 como robustez; placebos do blackout (as mesmas horas mascaradas em blocos sorteados) e da PI (tirar cada outra tag do p).", "",
+         "### 7.1 Base atual: cada configuração contra o blackout de 6 h com a PI", "",
+         "| PI no canal p | blackout | detecção | FP | FP/mês [IC] | horas | ΔFP/mês [IC pareado] | Δhoras/mês [IC pareado] |", "|---|---|---|---|---|---|---|---|"]
+    for r in C[C.base == "atual"].sort_values(["pi", "X"]).itertuples():
+        L.append(f"| {'sim' if r.pi == 'com' else 'não'} | {r.X} h | {r.det}/8 | {r.fp} | {br(r.fp_mes, 3)} {ic_txt(r.ic_fp_mes)} | {br(r.horas, 0)} | "
+                 f"{br(r.d_fp_mes)} {ic_txt(r.ic_d_fp_mes)} | {br(r.d_horas_mes, 1)} {ic_txt(r.ic_d_horas_mes, 1)} |")
+    L += ["", "Todas as janelas de 7 a 12 h, com ou sem a PI, perdem o trip de 11/04 (6/8). Só a de 12 h com a PI reduz o FP (9 → 8). Sem a PI, o 6 h dá +1 FP e +136 h de alarme.", "",
+          "### 7.2 Robustez: detecção e FP por base (com a PI)", "", "| base | 6 h | 7 h | 8 h | 10 h | 12 h |", "|---|---|---|---|---|---|"]
+    for b in ("atual", "G168", "B800", "n=19000"):
+        x = C[(C.base == b) & (C.pi == "com")].set_index("X")
+        L.append(f"| {b} | " + " | ".join(f"{x.loc[X, 'det']}/8 · FP {x.loc[X, 'fp']}" for X in (6, 7, 8, 10, 12)) + " |")
+    L += ["", "G168 perde 2 a 3 trips e B800 perde 1 a 3; a base com retreino n = 19.000 ganha 1 com 7, 8 e 12 h — o efeito troca de sinal com a base. Placebo do blackout: as mesmas horas "
+          "mascaradas ao acaso dão **mais** FP (mediana 16 a 24) que o blackout real em todas as bases (p = 0,000): mascarar parte episódios e cria FP; mascarar logo depois da partida é "
+          "menos ruim que mascarar ao acaso, mas não melhora o 6 h. Placebo da PI: tirar cada uma das outras 11 tags do p muda o FP de −1 a +1; tirar a PI_5134001 (+1) não se distingue "
+          "(p = 0,82).", "",
+          "### 7.3 Checagem por trip (base atual): a última partida e o início do episódio que detecta", "",
+          "| trip (local) | última partida | partida → trip (h) | início do episódio | partida → início (h) | início dentro de 7 / 8 / 10 / 12 h? | detecta com 6 / 7 / 8 / 10 / 12 h |", "|---|---|---|---|---|---|---|"]
+    for r in T.itertuples():
+        dentro = " / ".join(sim(getattr(r, f"inicio_na_janela_{X}h")) for X in (7, 8, 10, 12)); det = " / ".join(sim(getattr(r, f"detecta_{X}h")) for X in (6, 7, 8, 10, 12))
+        L.append(f"| {r.trip} | {r.ultima_partida} | {br(r.h_partida_ate_trip, 1)} | {r.inicio_episodio} | {br(r.h_partida_ate_inicio, 1)} | {dentro} | {det} |")
+    L += ["", "- **07/04/2025:** a última partida foi às 05:16 do próprio dia, 13 h antes do trip, mas o episódio que o detecta nasceu em 06/04 às 10:10, ANTES dessa partida. Ele sobrevive "
+          "a todas as janelas.",
+          "- **11/04/2025:** a última partida foi em 10/04 às 16:08; o episódio que detecta nasce 17,8 h depois, fora de qualquer janela de até 12 h, e mesmo assim é perdido com 7 h ou mais. "
+          "O mecanismo é o **refratário fantasma** (EXP 63/64): com 6 h, o voto de 08/04 a 10/04 forma um bloco de 45 h que nasce dentro do refratário do alarme de 06/04 e é descartado; "
+          "com a máscara maior esse bloco se parte, um pedaço curto em 10/04 às 13:10 nasce fora do refratário, arma um bloqueio de 72 h sem virar alarme e silencia o 11/04.",
+          "- **27/02/2025 e 26/02/2026:** os episódios nascem 6,5 h depois da partida (na borda) e entram nas janelas mais longas, mas continuam detectados porque são episódios longos (140 h e "
+          "648 h) que seguem acesos depois da janela.", "",
+          "### 7.4 Os 9 FP do PCA v2: antes e depois", "", "Destino de cada FP do blackout de 6 h com a PI em cada configuração (*sai* = some; *encurta* = fica menor; *igual* = não muda). *FP novos* = episódios falsos que não "
+          "sobrepõem nenhum dos 9.", "",
+          "| FP (local) | duração | 7 h | 8 h | 10 h | 12 h | sem PI 6 h | sem PI 7 h | sem PI 8 h | sem PI 10 h | sem PI 12 h |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    cols = ["7h", "8h", "10h", "12h", "semPI 6h", "semPI 7h", "semPI 8h", "semPI 10h", "semPI 12h"]
+    for r in F.itertuples(index=False):
+        d = r._asdict() if hasattr(r, "_asdict") else dict(zip(F.columns, r))
+        L.append(f"| {d['fp']} | {br(d['dur_h'], 1)} h | " + " | ".join(str(dict(zip(F.columns, r))[c]) for c in cols) + " |")
+    L.append("| **FP novos** | | " + " | ".join(str(N.get(c, "")) for c in cols) + " |")
+    L += ["", "As janelas maiores encurtam 5 a 6 dos 9 FP e eliminam de 1 a 3 (15/06 com 8 h ou mais; 08/04 com 7, 8 e 12 h; 23/08 com 12 h), mas criam 2 a 4 FP novos. "
+          "O FP de 26/10/2025 (112 h) não muda em nenhuma configuração.", "",
+          "**Veredito (regra do usuário):** nada aceito — o blackout fica em 6 h e a PI_5134001 fica no canal p. Com o 11/04 escondido, a regra escolheria 12 h e perderia exatamente o 11/04 "
+          "(LOEO). A lição se soma à do EXP 64: qualquer mudança que parta os votos perto de uma parada esbarra no refratário fantasma.", ""]
+    return L
+
+
 def escreve():
     B, AE, TR, POL, TRI, H6, R2, TI = (GL[k] for k in ("B", "AE", "TR", "POL", "TRI", "H6", "R2", "TI"))
     pca = B[B.base == "atual"].iloc[0]; L = []
@@ -188,6 +237,8 @@ def escreve():
           "- **Os 9 FP do PCA v2:** 6 são de partida/parada (5 nascem 6,5 h após a partida, na borda da vigilância), 2 coincidem com alarme HI/HIHI do TC382_03_A da planta e 1 é puxado pela PI_5134001, "
           "uma tag de OUTRA unidade (ar de instrumentação) que está no canal de pressão.",
           "- **Vale pedir a NGP_A e a NPT_A no export de produção** (barato): a rotação reduz o erro sobretudo no canal do mancal, que o T5 não explica; não há evidência ainda de ganho em detecção.",
+          "- **H7 — blackout pós-partida mais longo e p sem a PI_5134001: nada aceito.** Toda janela de 7 a 12 h perde o trip de 11/04 (pelo refratário fantasma, não pela janela) e só a "
+          "de 12 h tira 1 FP; nas bases G168 e B800 perdem-se 1 a 3 trips; tirar a PI_5134001 dá +1 FP e +136 h. O blackout fica em 6 h e a PI fica no canal — ver a seção 7.",
           "- **Diferença de 1 detecção não declara vencedor** (regra do protocolo): com 8 eventos o IC de detecção de qualquer modelo cobre 2 a 4 eventos.", "",
           "## 2. Protocolo (igual para todos os modelos)", "",
           "- Alvo: os **8 trips** de 27/02/2025 a 26/02/2026; a régua de alarme por sensor do pipeline de AEs é só secundária.",
@@ -261,18 +312,19 @@ def escreve():
     L += ["", "Pela regra fixada antes, **vale pedir** (ΔR² ≥ 0,10 no sp e no t). Ressalva: todos os R² são negativos — nenhum modelo prevê melhor que a média do mês; a rotação reduz o "
           "erro sobretudo no spread do mancal, que depende da rotação do eixo. Nenhum transiente de rotação escondido do T5 apareceu nos nascimentos (0 FP, 0 acertos). O pedido é barato e é "
           "pré-requisito para testar a H1 e a H2 de verdade.", "",
-          "## 7. O que não foi rodado, e por quê", "",
+          *secao_h7(),
+          "## 8. O que não foi rodado, e por quê", "",
           "- **H1 completa (modelo de comportamento esperado):** sem NGP/NPT depois de out/2025; a versão com T5 como variável de operação já foi refutada (`avalia_residuo_carga`), e os trips "
           "acontecem em carga alta — tirar a carga tira sinal.",
           "- **H2 (AE condicionado ao regime):** depende da mesma variável; um AE condicional ao regime (tempo desde a partida e nível recente) já foi testado (EXP 07) sem ganho.",
           "- **H4 (híbrido PCA + deep):** unir o PCA a outro modelo não ganhou (EXP 49); com o TranAD e o AE sem ganho isolado, não há segundo modelo para o híbrido.", "",
-          "## 8. Limitações", "",
+          "## 9. Limitações", "",
           "- 8 trips: qualquer IC de detecção cobre 2 a 4 eventos; ganhos pequenos são indistinguíveis do ruído de retreino.",
           "- Lead censurado em 48 h (3 de 7 eventos do PCA v2 estão no teto).",
           "- O AE foi refeito sem busca de hiperparâmetros (timebox de 1 dia) e em PyTorch; o TranAD usou os hiperparâmetros do TSB-AD/oficial.",
           "- A H1(b) cobre 5 trips agrupados e 9 meses; não mede detecção.",
           "- A triagem depende do diário de alarmes (alarmes suprimidos não aparecem); as ordens do SAP não foram cruzadas no worker.", "",
-          "## 9. Rastreabilidade (ClearML, projeto `Cabiunas`)", ""]
+          "## 10. Rastreabilidade (ClearML, projeto `Cabiunas`)", ""]
     for k, tid in TAREFAS.items():
         L.append(f"- `{k}`: tarefa `{tid}`")
     (SAIDA / "estado_da_arte_comparativo.md").write_text("\n".join(L) + "\n", encoding="utf-8")
