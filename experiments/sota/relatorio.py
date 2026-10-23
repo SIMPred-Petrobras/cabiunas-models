@@ -175,6 +175,27 @@ def lista(s):
     return ", ".join(f"{k} ×{v}" if v > 1 else k for k, v in s.value_counts().items())
 
 
+def secao_refratario():
+    """Números do EXP 64 (ClearML 2acadf64) e da contagem de 22/10 (mesma cauda reimplementada, verificada bit a bit no EXP 64)."""
+    return ["## 8. O refratário de 72 h: o comportamento atual vira especificação (v2.1)", "",
+            "**O que o código faz.** Em `cabiunas_inference.py` (`prever`), o laço do refratário (linhas 665-675 da v2) arma o bloqueio de 72 h para todo episódio de voto que "
+            "nasce fora de um bloqueio, e só DEPOIS aplica a duração mínima (linhas 677-683). Assim, um *episódio de atenção* — voto que não passa nos 120 min e não vira alarme — "
+            "também arma o bloqueio. O comentário dizia \"depois de um alarme\"; nenhum commit ou documento registrava essa ordem como escolha: ela veio da composição das duas "
+            "regras no estudo que escolheu o ponto de operação (`scripts/pdm_fisico/ponto_final.py`).", "",
+            "**Decisão (22/10/2026): o comportamento atual vira especificação**, sem mudar lógica. O comentário e a docstring foram corrigidos e a mudança está no `CHANGELOG.md` "
+            "do pacote, na branch `feat/v2.1-refratario-especificacao` (commit 55e1159). O pacote congelado da sombra não foi tocado (o hash do código continua o mesmo).", "",
+            "| base | bloqueios sem alarme (que bloquearam algo) | voto silenciado: dentro / fora das janelas de trip | FP com o bloqueio da atenção | FP só com bloqueio após alarme |",
+            "|---|---|---|---|---|",
+            "| atual | 10 (6) | 0 / 584 h | 9 (7/8) | 15 (7/8) |", "| G168 | 7 (6) | 0 / 438 h | 14 (8/8) | 20 (8/8) |",
+            "| B800 | 6 (5) | 0 / 565 h | 12 (8/8) | 17 (8/8) |", "| retreino n = 19.000 | 12 (5) | **4 h (11/04)** / 464 h | 11 (5/8) | 15 (6/8) |", "",
+            "O efeito vence o placebo nas 4 bases (bloqueios do mesmo número em pontos sorteados tiram só 1,1 a 1,4 FP; p = 0,000). **Limitação conhecida:** na base com retreino "
+            "n = 19.000, um episódio de atenção de 16 min em 10/04/2025 armou o bloqueio e silenciou o precursor do trip de 11/04/2025 — o mesmo caminho pelo qual o 11/04 cai na H7 "
+            "(blackout > 6 h) e no EXP 63 (faixa dos mancais). Toda mudança futura de dado, máscara ou voto deve ser avaliada sabendo que pode armar ou desarmar esses bloqueios.", "",
+            "**Proposta, não aplicada:** expor na saída do `prever` a coluna `atencao_em_bloqueio` (o voto descartado pelo refratário), sem mudar `is_anomaly` nem `severity`. "
+            "Verificado numa cópia: nas 4 bases, `is_anomaly` e as 18 colunas existentes ficam idênticos bit a bit, e a coluna nova marca exatamente os episódios bloqueados "
+            "(2.150 a 2.380 h no período) e nenhum instante de alarme.", ""]
+
+
 def secao_h7():
     H = GL["H7"]; C = H["h7_configuracoes"]; T = H["h7_checagem_por_trip"]; F = H["h7_fp_antes_depois"]; N = dict(zip(H["h7_fp_novos"].config, H["h7_fp_novos"].fp_novos))
     sim = lambda v: "sim" if str(v) == "True" else "não"
@@ -239,6 +260,8 @@ def escreve():
           "- **Vale pedir a NGP_A e a NPT_A no export de produção** (barato): a rotação reduz o erro sobretudo no canal do mancal, que o T5 não explica; não há evidência ainda de ganho em detecção.",
           "- **H7 — blackout pós-partida mais longo e p sem a PI_5134001: nada aceito.** Toda janela de 7 a 12 h perde o trip de 11/04 (pelo refratário fantasma, não pela janela) e só a "
           "de 12 h tira 1 FP; nas bases G168 e B800 perdem-se 1 a 3 trips; tirar a PI_5134001 dá +1 FP e +136 h. O blackout fica em 6 h e a PI fica no canal — ver a seção 7.",
+          "- **Refratário: o comportamento atual virou especificação (v2.1).** Episódios de atenção — voto que não passa na duração mínima — também armam o bloqueio de 72 h; "
+          "isso tira de 4 a 6 FP em todas as bases e não silenciou hora de janela de trip em 3 de 4. Ver a seção 8.",
           "- **Diferença de 1 detecção não declara vencedor** (regra do protocolo): com 8 eventos o IC de detecção de qualquer modelo cobre 2 a 4 eventos.", "",
           "## 2. Protocolo (igual para todos os modelos)", "",
           "- Alvo: os **8 trips** de 27/02/2025 a 26/02/2026; a régua de alarme por sensor do pipeline de AEs é só secundária.",
@@ -313,18 +336,19 @@ def escreve():
           "erro sobretudo no spread do mancal, que depende da rotação do eixo. Nenhum transiente de rotação escondido do T5 apareceu nos nascimentos (0 FP, 0 acertos). O pedido é barato e é "
           "pré-requisito para testar a H1 e a H2 de verdade.", "",
           *secao_h7(),
-          "## 8. O que não foi rodado, e por quê", "",
+          *secao_refratario(),
+          "## 9. O que não foi rodado, e por quê", "",
           "- **H1 completa (modelo de comportamento esperado):** sem NGP/NPT depois de out/2025; a versão com T5 como variável de operação já foi refutada (`avalia_residuo_carga`), e os trips "
           "acontecem em carga alta — tirar a carga tira sinal.",
           "- **H2 (AE condicionado ao regime):** depende da mesma variável; um AE condicional ao regime (tempo desde a partida e nível recente) já foi testado (EXP 07) sem ganho.",
           "- **H4 (híbrido PCA + deep):** unir o PCA a outro modelo não ganhou (EXP 49); com o TranAD e o AE sem ganho isolado, não há segundo modelo para o híbrido.", "",
-          "## 9. Limitações", "",
+          "## 10. Limitações", "",
           "- 8 trips: qualquer IC de detecção cobre 2 a 4 eventos; ganhos pequenos são indistinguíveis do ruído de retreino.",
           "- Lead censurado em 48 h (3 de 7 eventos do PCA v2 estão no teto).",
           "- O AE foi refeito sem busca de hiperparâmetros (timebox de 1 dia) e em PyTorch; o TranAD usou os hiperparâmetros do TSB-AD/oficial.",
           "- A H1(b) cobre 5 trips agrupados e 9 meses; não mede detecção.",
           "- A triagem depende do diário de alarmes (alarmes suprimidos não aparecem); as ordens do SAP não foram cruzadas no worker.", "",
-          "## 10. Rastreabilidade (ClearML, projeto `Cabiunas`)", ""]
+          "## 11. Rastreabilidade (ClearML, projeto `Cabiunas`)", ""]
     for k, tid in TAREFAS.items():
         L.append(f"- `{k}`: tarefa `{tid}`")
     (SAIDA / "estado_da_arte_comparativo.md").write_text("\n".join(L) + "\n", encoding="utf-8")
