@@ -656,9 +656,16 @@ def prever(modelos, proc: pd.DataFrame) -> pd.DataFrame:
     voto = pd.Series(v, index=idx)
 
     # ── Refratário, com furo para o episódio forte E velho ──
-    # Depois de um alarme, 72 h em que episódio novo é descartado: repetir não é
-    # notícia. Mas se o que vem é forte e o bloqueio já é antigo, é PIORAR — e
-    # piorar é notícia. Sem esse furo a régua de início cai de 6/8 para 4/8.
+    # Todo episódio de voto que nasce fora de um bloqueio ARMA 72 h em que episódio
+    # novo é descartado: repetir não é notícia. Isso vale também para o episódio de
+    # ATENÇÃO -- o que depois não passa na duração mínima (abaixo) e não vira alarme:
+    # o bloqueio é armado ANTES da duração mínima, e essa ordem é a especificação
+    # (v2.1, ver ../CHANGELOG.md). Medido no EXP 64: esses bloqueios tiram de 4 a 6 FP
+    # em todas as bases (placebo p = 0,000) sem silenciar hora de janela de trip em 3
+    # de 4 bases. Limitação conhecida: na base com retreino n = 19.000, um episódio de
+    # atenção de 16 min em 10/04/2025 armou o bloqueio e silenciou o trip de 11/04/2025.
+    # Mas se o que vem é forte e o bloqueio já é antigo, é PIORAR — e piorar é
+    # notícia. Sem esse furo a régua de início cai de 6/8 para 4/8.
     al = pd.Series(False, index=idx)
     bloq = ini_bloq = None
     fortes = []

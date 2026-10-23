@@ -14,9 +14,13 @@ ALVO: FP < 1,00 por mes de operacao. Hoje o melhor ponto validado esta em 3,12.
 
 Nota sobre o que "FP<1" significa em cada mecanismo -- os tres nao sao equivalentes:
   - subir k reduz FP porque o detector VE MENOS. Perde deteccao.
-  - o refratario reduz FP porque REPORTA MENOS VEZES o que ja viu. Nao perde o primeiro
+  - o refratario reduz FP porque REPORTA MENOS VEZES o mesmo estado. Nao perde o primeiro
     alerta (lead perdido medido: 0,00 h nos nove). Mas se uma degradacao NOVA comecar
     dentro da janela refrataria, ela fica muda -- risco que n=9 nao consegue medir.
+    A ORDEM IMPORTA (anotado em 22/10/2026): aqui `refratario` roda ANTES de `dur_min`, entao
+    o bloqueio e armado por TODO episodio do alerta cru, inclusive o curto que `dur_min`
+    descarta depois e que nunca chega a ser reportado. O pacote herdou essa ordem, e ela e a
+    especificacao da v2.1 (EXP 64: esses bloqueios tiram de 4 a 6 FP em todas as bases).
   - o piso reduz custo porque corrige um denominador que colapsou. Nao perde nada.
 Reportamos os tres separados para que a escolha final seja informada, nao so barata.
 """
