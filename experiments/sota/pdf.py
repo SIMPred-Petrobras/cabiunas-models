@@ -19,7 +19,7 @@ h1 { font-size: 17pt; line-height: 1.25; margin: 0 0 6px; color: #0E3A52; }
 h2 { font-size: 12.5pt; margin: 20px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #D2DCE6; color: #0E3A52; break-after: avoid; }
 h3 { font-size: 10.5pt; margin: 14px 0 4px; color: #0E3A52; break-after: avoid; }
 p, li { margin: 4px 0; }
-ul, ol { padding-left: 18px; }
+ul { padding-left: 18px; } ol { padding-left: 28px; }
 code { font-family: "DejaVu Sans Mono", monospace; font-size: 8.4pt; background: #F0F4F8; padding: 0 3px; border-radius: 3px; }
 table { border-collapse: collapse; width: 100%; margin: 6px 0 10px; font-size: 7.4pt; line-height: 1.3; break-inside: auto; }
 thead { display: table-header-group; }
