@@ -74,6 +74,15 @@ CASOS = {
         zooms=[("27/04 parada abrupta", "2025-04-27 16:20", "2025-04-27 17:10"), ("28/04 subida lenta", "2025-04-28 12:00", "2025-04-28 21:30"),
                ("28/04 disparo e parada", "2025-04-28 21:30", "2025-04-29 00:06")],
     ),
+    "2025-11-04": dict(
+        tipo="mancal", titulo="Outubro e novembro de 2025 — excursão do mancal LNA sem trip e o trip de óleo de 04/11 03:22",
+        ini="2025-09-20 00:00", fim="2025-11-12 00:00", base=("2025-02-01", "2025-02-27 05:00"), carga=True,
+        eventos=[("2025-10-27 11:50", "disparo\nque parou"), ("2025-10-31 06:42", ""), ("2025-11-04 03:22", "manutenção 31/10\ne TRIP de óleo")],
+        zooms=[("27/10 disparo que parou", "2025-10-27 11:00", "2025-10-27 14:00"), ("30–31/10 junto de 120 °C", "2025-10-30 12:00", "2025-10-31 06:45"),
+               ("03/11 religamento até o trip", "2025-11-03 11:50", "2025-11-04 03:23")],
+        oleo=dict(ini="2025-11-04 02:55", fim="2025-11-04 03:26", eventos=[("2025-11-04 03:14:30", "carga\ncai"), ("2025-11-04 03:17:30", "carga\ncai"),
+                                                                            ("2025-11-04 03:22:18", "TRIP")]),
+    ),
 }
 
 
@@ -159,7 +168,7 @@ def _eventos(c: dict, axs, y: float):
 
 
 def _fecha(c: dict, fig, axs, destino: Path):
-    axs[-1].xaxis.set_major_locator(mdates.DayLocator(interval=1 if len(pd.date_range(c["ini"], c["fim"])) <= 17 else 2))
+    axs[-1].xaxis.set_major_locator(mdates.DayLocator(interval=max(1, round(len(pd.date_range(c["ini"], c["fim"])) / 14))))  # ~14 rótulos por figura
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
     fig.suptitle(c["titulo"] + " (hora local)", x=0.01, ha="left", fontsize=12, color=TINTA, y=0.995)
     fig.savefig(destino, dpi=140, bbox_inches="tight", facecolor="white"); plt.close(fig)
@@ -266,6 +275,30 @@ def figura_selagem(c: dict, g: pd.DataFrame, R: pd.DataFrame, destino: Path):
     _eventos(c, axs, 12.2); _fecha(c, fig, axs, destino)
 
 
+def figura_oleo(o: dict, destino: Path):
+    """O trip de óleo a 30 s: pressão do óleo do compressor, header da turbina, tanque e carga (limites da planilha da planta)."""
+    tags = ["PI_0308", "PI_0339", "PI_0340", "TI_0325", "T5_AVG_A", "RUNNING_A"]; x = export_30s(o["ini"], o["fim"], tags)
+    fig, axs = plt.subplots(4, 1, figsize=(12, 8.6), sharex=True, gridspec_kw=dict(height_ratios=[1, 1, 0.8, 0.8], hspace=0.38))
+    paineis = [("Pressão do óleo lubrificante do compressor (PI_0308); limites: baixo 0,84, muito baixo 0,56", "kgf/cm²", ["PI_0308"], (0.84, 0.56), (-0.3, 1.8)),
+               ("Header de óleo lubrificante da turbina (PI_0339 azul, PI_0340 cinza); limites: baixo 2,88, muito baixo 1,78", "kgf/cm²", ["PI_0339", "PI_0340"], (2.88, 1.78), (0, 3.8)),
+               ("Temperatura do tanque de óleo (TI_0325)", "°C", ["TI_0325"], (), (55, 70)), ("Carga: temperatura média de exaustão T5", "°C", ["T5_AVG_A"], (), (100, 750))]
+    op = x.RUNNING_A.fillna(0) > 0.5
+    for ax, (tit, un, ts, lim, yl) in zip(axs, paineis):
+        _eixo(ax, tit, un); _paradas(ax, op)
+        for k, t in enumerate(ts):
+            ax.plot(x.index, x[t], color=AZUL if k == 0 else CINZA, lw=1.4 if k == 0 else 1.1)
+        for v in lim:
+            ax.axhline(v, color=TINTA2, lw=0.8, ls=(0, (4, 3)))
+        ax.set_ylim(*yl)
+    for t, rot in o["eventos"]:
+        for a in axs:
+            a.axvline(pd.Timestamp(t), color=TINTA, lw=0.8, ls=(0, (2, 2)), zorder=3)
+        axs[0].text(pd.Timestamp(t), 1.75, rot, fontsize=8, color=TINTA, ha="center", va="top", bbox=dict(fc="white", ec="none", pad=1.2))
+    axs[-1].xaxis.set_major_locator(mdates.MinuteLocator(byminute=range(0, 60, 5))); axs[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    fig.suptitle(f"Trip de óleo de {pd.Timestamp(o['ini']):%d/%m/%Y} no export de 30 s (hora local); faixa clara = máquina parada", x=0.01, ha="left", fontsize=12, color=TINTA, y=0.995)
+    fig.savefig(destino, dpi=140, bbox_inches="tight", facecolor="white"); plt.close(fig)
+
+
 def figura_zooms(c: dict, destino: Path) -> pd.DataFrame:
     """Os trechos decisivos a 30 s. No mancal, mesma escala nos três para comparar a forma da subida."""
     tag, ctx, (lo, hi) = c.get("zoom_tag", "TI_0305"), c.get("zoom_contexto", VIZINHOS), c.get("limites", (H, HH))
@@ -309,6 +342,8 @@ def main():
         figura_selagem(c, g, detector_local(), SAIDA / f"caso_{a.caso}_trajetoria.png")
         print(f"{c['zoom_tag']} por trecho de operação:\n{patamares(g, c['zoom_tag'], c['ini'], c['fim']).to_string(index=False)}", flush=True)
     print(figura_zooms(c, SAIDA / f"caso_{a.caso}_degraus_30s.png").to_string(index=False), flush=True)
+    if c.get("oleo"):
+        figura_oleo(c["oleo"], SAIDA / f"caso_{a.caso}_oleo_30s.png")
     print(f"figuras em {SAIDA}", flush=True)
 
 
