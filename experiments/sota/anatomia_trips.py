@@ -17,7 +17,11 @@ from nv.plugin import decide_v2
 
 ROOT = RAIZ / "data_local"; SAIDA = ROOT / "sota" / "anatomia_trips"
 ALARMES = Path(os.environ.get("ALARMES_CSV", "/home/thallys/Documents/projeto-petrobras/Analise-exploratoria-dos-dados/analise_cabiunas/dados/alarmes_mapeados_colunas.csv"))
-EXTRAS = [pd.Timestamp("2025-02-27 17:33", tz="UTC"), pd.Timestamp("2025-03-18 11:16", tz="UTC")]
+EXTRAS = [pd.Timestamp("2025-02-27 17:33", tz="UTC"), pd.Timestamp("2025-03-18 11:16", tz="UTC"),
+          pd.Timestamp("2024-01-17 10:56", tz="UTC")]  # achado na revisão do relógio do diário (ver DIARIO_LOCAL_ATE), fora do pré-registro
+# O diário até 2024 está em hora LOCAL; a partir de 02/2025, em UTC. Medido pelas paradas da grade com alarme a ±5 min: até 15/11/2024
+# só batem lendo o diário como local (15 contra 1), desde 03/02/2025 só como UTC (43 contra 3); entre as duas datas não há parada com alarme.
+DIARIO_LOCAL_ATE = pd.Timestamp("2025-01-01")
 P = "954005_624_"; H6_TAREFA = "6e11bc034e0949ba8a39e1241c566357"
 ANALOG = {"TI_0305": [P + "TI_0305"], "TI_0303": [P + "TI_0303"], "TI_0307": [P + "TI_0307"], "PDIT_0305": [P + "PDIT_0305"], "PI_0340": [P + "PI_0339", P + "PI_0340"],
           "PALL_6240309": [P + "PI_0339", P + "PI_0340"], "TI_0325": [P + "TI_0325"]}
@@ -43,7 +47,8 @@ def main():
         det = ci.carregar_modelos(PKG / "modelos")[-1]["detector"]
     g = nvio.carrega_grade(); mk = nvio.mascaras(g); op = mk["ligada"]; est = mk["estavel"]; t5 = g["T5_AVG_A"].where(est)
     manut = ci._manutencoes(g); partidas = g.index[mk["partida"].to_numpy(bool)]
-    d = pd.read_csv(ALARMES); d["t"] = pd.to_datetime(d["Data da Ocorrência"]).dt.tz_localize("UTC"); d = d[d["Status"] == "ACT/UNACK"].copy()
+    d = pd.read_csv(ALARMES); bruto = pd.to_datetime(d["Data da Ocorrência"])
+    d["t"] = bruto.where(bruto >= DIARIO_LOCAL_ATE, bruto + pd.Timedelta(hours=3)).dt.tz_localize("UTC"); d = d[d["Status"] == "ACT/UNACK"].copy()
     d["tag"] = d["Tag Alarme"].map(curta); d["nivel_trip"] = d["Descrição Alarme"].astype(str).str.contains(r"Mt\.|TRIP", regex=True)
     registro = sorted(carrega_registro()); casos = [(t, "registro") for t in registro] + [(t, "fora do registro") for t in EXTRAS]
     LED = {v: carrega_controle(v) for v in ("atual", "G168", "B800")}
@@ -93,10 +98,12 @@ def main():
         for v, (al, vg) in LED.items():
             eps = [(a, b) for a, b in episodios_de_serie(al.loc[T - JANELA - pd.Timedelta(days=30):T]) if a <= T and b >= T - JANELA]
             if eps:
-                a0 = eps[0][0]; fic[f"{v}_detecta"] = True; fic[f"{v}_lead_h"] = round((T - max(a0, T - JANELA)).total_seconds() / 3600, 1)
-                fic[f"{v}_inicio"] = a0 >= T - JANELA; fic[f"{v}_banda"] = (a0 >= T - JANELA) and (a0 <= T - TMIN)
+                # início e banda olham TODOS os episódios da janela, como o protocolo: um episódio antigo de pé não esconde um que nasce dentro dela
+                nasc = [a for a, _ in eps if a >= T - JANELA]; a0 = nasc[0] if nasc else eps[0][0]
+                fic[f"{v}_detecta"] = True; fic[f"{v}_lead_h"] = round((T - max(eps[0][0], T - JANELA)).total_seconds() / 3600, 1)
+                fic[f"{v}_inicio"] = bool(nasc); fic[f"{v}_banda"] = any(a <= T - TMIN for a in nasc)
                 if v == "atual":
-                    fic["atual_nascimento"] = loc(a0); fic["atual_canais"] = "+".join(c for c in ("t", "p", "sp", "vb") if bool(R[f"a_{c}"].asof(a0)) or bool(R[f"b_{c}"].asof(a0)))
+                    fic["atual_de_pe_desde"] = loc(eps[0][0]) if eps[0][0] < T - JANELA else "—"; fic["atual_nascimento"] = loc(a0); fic["atual_canais"] = "+".join(c for c in ("t", "p", "sp", "vb") if bool(R[f"a_{c}"].asof(a0)) or bool(R[f"b_{c}"].asof(a0)))
                     if H6 is not None:
                         h = H6[H6.inicio_local == loc(a0)]
                         fic["atual_top3"] = "; ".join(str(x) for x in h[["top1", "top2", "top3"]].iloc[0]) if len(h) else "—"
