@@ -29,12 +29,12 @@ curta = lambda tag: tag.replace(P, "")
 
 
 def h6_top3():
-    try:
+    """No worker, o artefato da tarefa da H6; fora dele, o arquivo local (sem tocar no servidor, que pode estar inacessível)."""
+    if os.environ.get("CLEARML_TASK_ID"):
         from clearml import Task
         return pd.read_csv(Task.get_task(task_id=H6_TAREFA).artifacts["h6_top3"].get_local_copy())
-    except Exception:
-        f = ROOT / "sota" / "h6_atribuicao" / "h6_top3.csv"
-        return pd.read_csv(f) if f.exists() else None
+    f = ROOT / "sota" / "h6_atribuicao" / "h6_top3.csv"
+    return pd.read_csv(f) if f.exists() else None
 
 
 def main():
