@@ -2,6 +2,35 @@
 
 ## v2.1 (em preparação)
 
+### Conteúdo da release candidata (branch `release/v2.1`)
+
+- **Base:** `feat/pacote-consolidado` (e17bf27), que já inclui a leitura do export de 30 s do PI (`fix/pacote-grade-30s`) e
+  o monitor de drift (`fix/pacote-monitor-drift`).
+- **Especificação do refratário** (abaixo). Só comentário e documentação: a lógica é a da v2.
+- **Fora, à espera de decisão:**
+  - a gestão de alarme R1 (`feat/gestao-de-alarme-r1`; validada fora da amostra, −79% de horas de alarme ativo, não aprovada para o pacote);
+  - a coluna `atencao_em_bloqueio`;
+  - a carga como prioridade na tela;
+  - o rótulo "nascido na partida";
+  - as 3 tags que mais pesam em cada alarme;
+  - a saída da PI_0340, que é duplicata.
+
+### Validação de ponta a ponta (24/10/2026)
+
+O teste usou o CSV histórico de 01/01/2025 a 30/04/2026, os 16 bundles e o registro de 9 trips. A release foi comparada
+com o pacote congelado da sombra (commit 1f26e34), cada um rodando em cópia isolada.
+
+- **Inferência** (`tc33003a_exemplo.py --dias 400 --json`): código 0 nos dois. A série (`tc33003a_inferencia.csv`,
+  288.001 instantes) é **idêntica byte a byte**. O `estado.json` também é idêntico, exceto `gerado_em`. Resultado:
+  16 episódios, 34.179 instantes de alarme.
+- **Retreino** (`constroi_bundle.py --mes 2026-05`): o bundle gerado é **idêntico byte a byte** nos dois. A saída tem
+  código 4 ("revisar antes de publicar"), como esperado: o dado real termina em 21/04, 9 dias antes do corte.
+- **Trava de validade:** com bundle vencido, a inferência recusa rodar (código 2) e mostra a mensagem certa.
+- **Observação de robustez, não corrigida:** o `constroi_bundle.py` importa `cabiunas_inference` contando com a pasta do
+  script no caminho de importação. Ele falha se for chamado com `python -I` ou importado de outro lugar. O
+  `tc33003a_exemplo.py` acrescenta a pasta de forma explícita. Antes de agendar o retreino, chame o script direto
+  (`python3 constroi_bundle.py ...`) ou acrescente a mesma linha.
+
 ### Especificação do refratário: episódios de atenção também armam o bloqueio de 72 h
 
 **Mudança de especificação, sem mudança de lógica.** Um *episódio de atenção* é um voto do detector que não passa na
