@@ -1,11 +1,12 @@
 """Dossiê caso a caso dos trips (aprofundamento descritivo do EXP 66; nada se adota). Figuras e números de um caso por vez, em hora local.
 
-Fontes: a grade de 2 min (UTC, convertida para local), o export de 30 s do PI (já em hora local), o diário de alarmes (hora local até 2024, UTC desde 02/2025;
-ver `anatomia_trips.DIARIO_LOCAL_ATE`). Saídas em data_local/sota/anatomia_trips/dossie/.
+Fontes: a grade de 2 min (UTC, convertida para local), o export de 30 s do PI e o diário de alarmes. O export e o diário estão em hora local até 2024 e em UTC
+desde 2025 (o export conferido contra a grade em 25/10: correlação 1,0 na defasagem certa; ver `anatomia_trips.DIARIO_LOCAL_ATE`); aqui tudo sai em hora local.
+A partir de 25/10/2024 entra o replay do detector publicado sobre o cache de sinais (o mesmo do EXP 42). Saídas em data_local/sota/anatomia_trips/dossie/.
 Uso: PYTHONPATH=src:experiments .venv/bin/python -m sota.dossie_trips --caso 2024-01
 """
 from __future__ import annotations
-import argparse, glob, sys, warnings
+import argparse, contextlib, glob, io, sys, warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -22,17 +23,27 @@ from nv.io import RAIZ as RAIZ_PKG
 
 SAIDA = RAIZ / "data_local" / "sota" / "anatomia_trips" / "dossie"
 EXPORT_30S = RAIZ_PKG / "estrutura_pra_prod" / "Cabiunas" / "dados" / "tagsselecionadas_30s"
+EXPORT_LOCAL_ATE = pd.Timestamp("2025-01-01")  # arquivos mensais a partir daqui estão em UTC
+num = lambda v: f"{v:g}".replace(".", ",")  # número com vírgula decimal nos rótulos
 P = "954005_624_"; VIZINHOS = ["TI_0303", "TI_0307"]; H, HH = 120.0, 125.0  # limites dos mancais do compressor (planilha de limites da planta)
 # cores: um matiz categórico (slot 1) para a medida principal; contexto em tinta neutra
 AZUL, TINTA, TINTA2, CINZA, GRADE, PARADA = "#2a78d6", "#0b0b0b", "#52514e", "#8a8984", "#e6e5e1", "#f1f0ed"
 
 CASOS = {
     "2024-01": dict(
-        titulo="Janeiro de 2024 — parada de 16/01 (registro) e trip de 17/01 07:56",
+        tipo="mancal", titulo="Janeiro de 2024 — parada de 16/01 (registro) e trip de 17/01 07:56",
         ini="2024-01-03 00:00", fim="2024-01-18 18:00", base=("2024-01-03", "2024-01-12 12:00"),
         eventos=[("2024-01-04 17:14", "parada sem alarme\n(5,4 d)"), ("2024-01-14 16:00", "degrau\n+15 °C"), ("2024-01-16 06:10", "parada do\nregistro"),
                  ("2024-01-17 07:56", "TRIP\nmuito alto")],
         zooms=[("04/01", "2024-01-04 12:30", "2024-01-04 17:20"), ("14/01", "2024-01-14 15:00", "2024-01-14 19:50"), ("17/01 (trip)", "2024-01-17 07:10", "2024-01-17 08:00")],
+    ),
+    "2025-02": dict(
+        tipo="selagem", titulo="Fevereiro de 2025 — trip de 27/02 05:38 (selagem, registro), repetido às 14:33, e a parada de 20/02 06:13",
+        ini="2025-02-14 00:00", fim="2025-03-02 00:00",
+        eventos=[("2025-02-20 06:13", "parada abrupta\n+ falha do PDIT"), ("2025-02-27 05:38", "TRIP 05:38\ne 14:33"), ("2025-02-27 14:33", "")],
+        zooms=[("20/02 (parada)", "2025-02-20 06:00", "2025-02-20 06:25"), ("27/02 (trip do registro)", "2025-02-27 03:30", "2025-02-27 05:50"),
+               ("27/02 (trip de novo)", "2025-02-27 14:20", "2025-02-27 14:45")],
+        zoom_tag="PDIT_0305", zoom_contexto=[], limites=(2.5, 6.0), zoom_ylim=[(-0.6, 0.9), (-0.5, 11.5), (-0.5, 11.5)],
     ),
 }
 
@@ -44,24 +55,53 @@ def grade_local() -> pd.DataFrame:
 
 
 def export_30s(ini: str, fim: str, tags: list[str]) -> pd.DataFrame:
-    """O export mensal de 30 s (hora local). Lê só as colunas pedidas."""
+    """O export mensal de 30 s, devolvido em hora local. Lê só as colunas pedidas."""
     import openpyxl
     a, b = pd.Timestamp(ini), pd.Timestamp(fim); partes = []
-    for mes in pd.period_range(a, b, freq="M"):
+    for mes in pd.period_range(a, b + pd.Timedelta(hours=3), freq="M"):
         f = sorted(glob.glob(str(EXPORT_30S / str(mes.year) / f"*{mes.year}-{mes.month:02d}-01_*")))
         if not f:
             continue
+        desloc = pd.Timedelta(hours=-3) if mes.start_time >= EXPORT_LOCAL_ATE else pd.Timedelta(0)
         ws = openpyxl.load_workbook(f[0], read_only=True).worksheets[0]; it = ws.iter_rows(values_only=True); hdr = next(it)
         ic = {str(h).replace("bapiha02-", "").replace(P, ""): i for i, h in enumerate(hdr) if h}
         rows = []
         for r in it:
-            t = pd.Timestamp(r[0])
+            t = pd.Timestamp(r[0]) + desloc
             if t > b:
                 break
             if t >= a:
                 rows.append([t] + [r[ic[c]] for c in tags])
         partes.append(pd.DataFrame(rows, columns=["t"] + tags).set_index("t"))
-    return pd.concat(partes).apply(pd.to_numeric, errors="coerce")
+    x = pd.concat(partes).sort_index()
+    return x[~x.index.duplicated()].apply(pd.to_numeric, errors="coerce")
+
+
+def detector_local() -> pd.DataFrame:
+    """Replay do detector publicado sobre o cache de sinais (o mesmo do EXP 42), em hora local. O cache começa em 25/10/2024."""
+    from nv.controle_sinais import _ci, PKG
+    ci = _ci()
+    with contextlib.redirect_stdout(io.StringIO()):
+        det = ci.carregar_modelos(PKG / "modelos")[-1]["detector"]
+        S = pd.read_parquet(RAIZ / "data_local" / "sinais_v2_8ev.parquet"); proc = S[["t", "p", "sp", "vb", "mask", "reset"]].copy(); proc["mask"] = proc["mask"].astype(bool)
+        R = ci.prever({"detector": det}, proc)
+    R.index = R.index.tz_convert(None) - pd.Timedelta(hours=3)
+    return R
+
+
+def _trechos(s: pd.Series) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Os intervalos em que a série booleana fica verdadeira."""
+    d = s.astype(int).diff().fillna(s.iloc[0]); ini = list(s.index[d == 1]); fim = list(s.index[d == -1])
+    if len(fim) < len(ini):
+        fim.append(s.index[-1])
+    return list(zip(ini, fim))
+
+
+def patamares(g: pd.DataFrame, tag: str, ini: str, fim: str) -> pd.DataFrame:
+    """A tag em cada trecho de operação da janela (de uma partida à parada seguinte)."""
+    x = g.loc[ini:fim]; op = (x.RUNNING_A.fillna(0) > 0.5) & (x.T5_AVG_A > 300)
+    return pd.DataFrame([dict(partida=a, parada=b, horas=round((b - a).total_seconds() / 3600, 1), mediana=round(float(x[tag].loc[a:b].median()), 3),
+                              p99=round(float(x[tag].loc[a:b].quantile(0.99)), 3), maximo=round(float(x[tag].loc[a:b].max()), 3)) for a, b in _trechos(op)])
 
 
 def _eixo(ax, titulo: str, unidade: str):
@@ -76,14 +116,24 @@ def _eixo(ax, titulo: str, unidade: str):
 
 def _paradas(ax, op: pd.Series):
     """Sombreia os intervalos com a máquina parada."""
-    parada = ~op; ini = None
-    for t, v in parada.items():
-        if v and ini is None:
-            ini = t
-        elif not v and ini is not None:
-            ax.axvspan(ini, t, color=PARADA, lw=0, zorder=0); ini = None
-    if ini is not None:
-        ax.axvspan(ini, parada.index[-1], color=PARADA, lw=0, zorder=0)
+    for a, b in _trechos(~op):
+        ax.axvspan(a, b, color=PARADA, lw=0, zorder=0)
+
+
+def _eventos(c: dict, axs, y: float):
+    for t, rot in c["eventos"]:
+        t = pd.Timestamp(t)
+        for a in axs:
+            a.axvline(t, color=TINTA, lw=0.8, ls=(0, (2, 2)), zorder=3)
+        if rot:
+            axs[0].text(t, y, rot, fontsize=8, color=TINTA, ha="center", va="top", bbox=dict(fc="white", ec="none", pad=1.2))
+
+
+def _fecha(c: dict, fig, axs, destino: Path):
+    axs[-1].xaxis.set_major_locator(mdates.DayLocator(interval=1 if len(pd.date_range(c["ini"], c["fim"])) <= 17 else 2))
+    axs[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
+    fig.suptitle(c["titulo"] + " (hora local)", x=0.01, ha="left", fontsize=12, color=TINTA, y=0.995)
+    fig.savefig(destino, dpi=140, bbox_inches="tight", facecolor="white"); plt.close(fig)
 
 
 def figura_mancal(c: dict, g: pd.DataFrame, destino: Path) -> dict:
@@ -104,34 +154,64 @@ def figura_mancal(c: dict, g: pd.DataFrame, destino: Path) -> dict:
     ax.set_ylim(0, 45)
     ax = axs[2]; _eixo(ax, "Carga: temperatura média de exaustão T5; faixa clara = máquina parada", "°C")
     _paradas(ax, op); ax.plot(m(x.T5_AVG_A).index, m(x.T5_AVG_A), color=AZUL, lw=1.2); ax.set_ylim(450, 800)
-    for t, rot in c["eventos"]:
-        t = pd.Timestamp(t)
-        for a in axs:
-            a.axvline(t, color=TINTA, lw=0.8, ls=(0, (2, 2)), zorder=3)
-        axs[0].text(t, 133, rot, fontsize=8, color=TINTA, ha="center", va="top", bbox=dict(fc="white", ec="none", pad=1.2))
-    axs[-1].xaxis.set_major_locator(mdates.DayLocator()); axs[-1].xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
-    fig.suptitle(c["titulo"] + " (hora local)", x=0.01, ha="left", fontsize=12, color=TINTA, y=0.995)
-    fig.savefig(destino, dpi=140, bbox_inches="tight", facecolor="white"); plt.close(fig)
+    _eventos(c, axs, 133); _fecha(c, fig, axs, destino)
     z = (dif.where(op) - med) / mad
     return dict(base_mediana=round(med, 2), base_mad=round(mad, 3), z_max=round(float(z.max()), 1), t_z_max=z.idxmax(),
                 primeiro_4mad=z[z > 4].index.min(), horas_acima_4mad=round(float((z > 4).sum()) * 2 / 60, 1))
 
 
+def _painel_detector(ax, R: pd.DataFrame, ini: str, fim: str):
+    """Canais acesos no nível A e o alarme emitido, em faixas."""
+    x = R.loc[ini:fim]; linhas = [("t", "a_t"), ("p", "a_p"), ("sp", "a_sp"), ("vb", "a_vb"), ("alarme", "is_anomaly")]
+    for i, (nome, col) in enumerate(linhas):
+        y = len(linhas) - 1 - i; on = x[col].astype(bool) & x.vigiado.astype(bool)
+        segs = [(mdates.date2num(a), mdates.date2num(b) - mdates.date2num(a)) for a, b in _trechos(on)]
+        ax.broken_barh(segs, (y - 0.32, 0.64), color=TINTA if nome == "alarme" else AZUL, lw=0)
+    ax.set_yticks(range(len(linhas)), [n for n, _ in linhas][::-1]); ax.set_ylim(-0.6, len(linhas) - 0.4); ax.grid(False)
+
+
+def figura_selagem(c: dict, g: pd.DataFrame, R: pd.DataFrame, destino: Path):
+    x = g.loc[c["ini"]:c["fim"]].copy(); op = (x.RUNNING_A.fillna(0) > 0.5) & (x.T5_AVG_A > 300); lo, hi = c["limites"]
+    fig, axs = plt.subplots(4, 1, figsize=(12, 9.6), sharex=True, gridspec_kw=dict(height_ratios=[1.2, 1.0, 0.7, 0.9], hspace=0.34))
+    ax = axs[0]; _eixo(ax, "Vazamento do selo primário, vent LA (PDIT_0305), operando e parada; 10,62 = sinal saturado (~21 mA), −2,49 = malha aberta (~0 mA)", "kgf/cm²")
+    _paradas(ax, op); ax.plot(x.index, x.PDIT_0305, color=AZUL, lw=1.2)
+    for v in (lo, hi):
+        ax.axhline(v, color=TINTA2, lw=0.8, ls=(0, (4, 3)))
+    ax.text(x.index[0], hi + 0.3, f"limites: alto {num(lo)}, muito alto {num(hi)}", fontsize=8, color=TINTA2, ha="left", va="bottom"); ax.set_ylim(-3.2, 12.5)
+    ax = axs[1]; _eixo(ax, "PDIT_0305 com a máquina operando, escala do zero (os picos saem da escala)", "kgf/cm²")
+    _paradas(ax, op); ax.plot(x.index, x.PDIT_0305.where(op), color=AZUL, lw=1.2); ax.set_ylim(-0.03, 0.13)
+    ax = axs[2]; _eixo(ax, "Carga: temperatura média de exaustão T5; faixa clara = máquina parada", "°C")
+    _paradas(ax, op); ax.plot(x.index, x.T5_AVG_A.where(op), color=AZUL, lw=1.2); ax.set_ylim(450, 800)
+    ax = axs[3]; _eixo(ax, "Detector publicado (replay): canais acesos no nível A e alarme emitido", "faixas")
+    _paradas(ax, op); _painel_detector(ax, R, c["ini"], c["fim"])
+    _eventos(c, axs, 12.2); _fecha(c, fig, axs, destino)
+
+
 def figura_zooms(c: dict, destino: Path) -> pd.DataFrame:
-    """Os degraus a 30 s, com a mesma escala vertical, para comparar a forma da subida."""
-    fig, axs = plt.subplots(1, len(c["zooms"]), figsize=(12, 3.6), sharey=True, gridspec_kw=dict(wspace=0.08)); taxas = []
-    tudo = export_30s(min(z[1] for z in c["zooms"]), max(z[2] for z in c["zooms"]), ["TI_0305"] + VIZINHOS + ["RUNNING_A"])  # uma leitura só
-    for ax, (nome, a, b) in zip(axs, c["zooms"]):
-        x = tudo.loc[a:b]; _eixo(ax, nome, "°C")
-        mins = (x.index - x.index[0]).total_seconds() / 60
-        ax.plot(mins, x[VIZINHOS].median(axis=1), color=CINZA, lw=1.1); ax.plot(mins, x.TI_0305, color=AZUL, lw=1.4)
-        for v in (H, HH):
-            ax.axhline(v, color=TINTA2, lw=0.8, ls=(0, (4, 3)))
-        ax.set_xlabel(f"minutos desde {pd.Timestamp(a):%d/%m %H:%M}", fontsize=8.5, color=TINTA2)
-        r = (x.TI_0305.diff().rolling(10).mean() * 2).where(x.RUNNING_A > 0.5)  # °C/min, média de 5 min, só com a máquina operando
-        taxas.append(dict(janela=nome, taxa_max_c_min=round(float(r.max()), 2), subida_c=round(float(x.TI_0305.where(x.RUNNING_A > 0.5).max() - x.TI_0305.iloc[0]), 1)))
-    axs[0].set_ylim(50, 135); axs[0].text(0, HH + 1, "muito alto 125", fontsize=8, color=TINTA2, va="bottom")
-    fig.suptitle("TI_0305 (azul) e vizinhos (cinza) no export de 30 s, mesma escala", x=0.01, ha="left", fontsize=11, color=TINTA, y=1.02)
+    """Os trechos decisivos a 30 s. No mancal, mesma escala nos três para comparar a forma da subida."""
+    tag, ctx, (lo, hi) = c.get("zoom_tag", "TI_0305"), c.get("zoom_contexto", VIZINHOS), c.get("limites", (H, HH))
+    ylims = c.get("zoom_ylim", [(50, 135)] * len(c["zooms"])); unid = "°C" if tag.startswith("TI") else "kgf/cm²"
+    fig, axs = plt.subplots(1, len(c["zooms"]), figsize=(12, 3.6), sharey=len(set(ylims)) == 1, gridspec_kw=dict(wspace=0.08 if len(set(ylims)) == 1 else 0.22)); taxas = []
+    tudo = export_30s(min(z[1] for z in c["zooms"]), max(z[2] for z in c["zooms"]), [tag] + ctx + ["RUNNING_A"])  # uma leitura só
+    for ax, (nome, a, b), yl in zip(axs, c["zooms"], ylims):
+        x = tudo.loc[a:b]; _eixo(ax, nome, unid)
+        mins = (x.index - x.index[0]).total_seconds() / 60; parada = x.RUNNING_A.to_numpy() < 0.5
+        if parada.any():
+            ax.axvspan(mins[parada.argmax()], mins[-1], color=PARADA, lw=0, zorder=0)
+        if ctx:
+            ax.plot(mins, x[ctx].median(axis=1), color=CINZA, lw=1.1)
+        ax.plot(mins, x[tag], color=AZUL, lw=1.4)
+        for v in (lo, hi):
+            if yl[0] < v < yl[1]:
+                ax.axhline(v, color=TINTA2, lw=0.8, ls=(0, (4, 3)))
+        ax.set_ylim(*yl); ax.set_xlabel(f"minutos desde {pd.Timestamp(a):%d/%m %H:%M}", fontsize=8.5, color=TINTA2)
+        r = (x[tag].diff().rolling(10).mean() * 2).where(x.RUNNING_A > 0.5)  # por minuto, média de 5 min, só com a máquina operando
+        taxas.append(dict(janela=nome, taxa_max_por_min=round(float(r.max()), 2), subida=round(float(x[tag].where(x.RUNNING_A > 0.5).max() - x[tag].iloc[0]), 2),
+                          parada=x.index[parada.argmax()] if parada.any() else "—"))
+    if hi < ylims[0][1]:
+        axs[0].text(0, hi + 0.01 * (ylims[0][1] - ylims[0][0]), f"muito alto {num(hi)}", fontsize=8, color=TINTA2, va="bottom")
+    quem = f"{tag} (azul) e vizinhos (cinza)" if ctx else tag
+    fig.suptitle(f"{quem} no export de 30 s; faixa clara = máquina parada", x=0.01, ha="left", fontsize=11, color=TINTA, y=1.02)
     fig.savefig(destino, dpi=140, bbox_inches="tight", facecolor="white"); plt.close(fig)
     return pd.DataFrame(taxas)
 
@@ -139,9 +219,13 @@ def figura_zooms(c: dict, destino: Path) -> pd.DataFrame:
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--caso", required=True, choices=sorted(CASOS)); a = ap.parse_args()
     SAIDA.mkdir(parents=True, exist_ok=True); c = CASOS[a.caso]; g = grade_local()
-    r = figura_mancal(c, g, SAIDA / f"caso_{a.caso}_trajetoria.png")
-    print(f"diferença TI_0305 − vizinhos: base {r['base_mediana']} °C (MAD {r['base_mad']}); máximo {r['z_max']} MAD em {r['t_z_max']:%d/%m %H:%M}; "
-          f"primeiro instante acima de 4 MAD {r['primeiro_4mad']:%d/%m %H:%M}; {r['horas_acima_4mad']} h acima de 4 MAD com a máquina operando", flush=True)
+    if c["tipo"] == "mancal":
+        r = figura_mancal(c, g, SAIDA / f"caso_{a.caso}_trajetoria.png")
+        print(f"diferença TI_0305 − vizinhos: base {r['base_mediana']} °C (MAD {r['base_mad']}); máximo {r['z_max']} MAD em {r['t_z_max']:%d/%m %H:%M}; "
+              f"primeiro instante acima de 4 MAD {r['primeiro_4mad']:%d/%m %H:%M}; {r['horas_acima_4mad']} h acima de 4 MAD com a máquina operando", flush=True)
+    else:
+        figura_selagem(c, g, detector_local(), SAIDA / f"caso_{a.caso}_trajetoria.png")
+        print(f"{c['zoom_tag']} por trecho de operação:\n{patamares(g, c['zoom_tag'], c['ini'], c['fim']).to_string(index=False)}", flush=True)
     print(figura_zooms(c, SAIDA / f"caso_{a.caso}_degraus_30s.png").to_string(index=False), flush=True)
     print(f"figuras em {SAIDA}", flush=True)
 
