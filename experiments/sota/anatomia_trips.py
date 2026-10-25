@@ -122,3 +122,7 @@ def main():
             for r in sq.itertuples():
                 print(f"      {r.minuto:+6.1f} min  {'TRIP ' if r.nivel_trip else '     '}{r.tag:22s} {r.condicao:5s} {r.descricao}", flush=True)
     print(f"\nRESUMO DOS MODOS: {F.modo.value_counts().to_dict()}", flush=True)
+
+
+if __name__ == "__main__":
+    main()
