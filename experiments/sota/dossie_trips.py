@@ -45,6 +45,13 @@ CASOS = {
                ("27/02 (trip de novo)", "2025-02-27 14:20", "2025-02-27 14:45")],
         zoom_tag="PDIT_0305", zoom_contexto=[], limites=(2.5, 6.0), zoom_ylim=[(-0.6, 0.9), (-0.5, 11.5), (-0.5, 11.5)],
     ),
+    "2025-03": dict(
+        tipo="mancal", titulo="Março de 2025 — trip de 17/03 15:16 (mancal LNA, registro) e de novo em 18/03 08:16",
+        ini="2025-02-28 00:00", fim="2025-03-27 00:00", base=("2025-02-01", "2025-02-27 05:00"), carga=True,
+        eventos=[("2025-03-13 11:13", "todos os mancais\n+6 a 8 °C"), ("2025-03-17 15:16", "TRIP 17/03\ne 18/03"), ("2025-03-18 08:16", "")],
+        zooms=[("13/03 (modo comum)", "2025-03-13 11:00", "2025-03-13 11:50"), ("17/03 (trip)", "2025-03-17 14:20", "2025-03-17 15:17"),
+               ("18/03 (religa e trip)", "2025-03-18 05:00", "2025-03-18 08:18")],
+    ),
 }
 
 
@@ -136,12 +143,27 @@ def _fecha(c: dict, fig, axs, destino: Path):
     fig.savefig(destino, dpi=140, bbox_inches="tight", facecolor="white"); plt.close(fig)
 
 
-def figura_mancal(c: dict, g: pd.DataFrame, destino: Path) -> dict:
+def residuo_carga(g: pd.DataFrame, base: tuple[str, str]) -> tuple[pd.Series, np.ndarray, float]:
+    """A diferença TI_0305 − vizinhos descontada a carga: reta dif × T5 ajustada na base (operando, T5 > 550, carga estável há 30 min).
+    Devolve o resíduo (°C, só nos instantes estáveis), os coeficientes e o MAD do resíduo na base."""
+    op = (g.RUNNING_A > 0.5) & (g.T5_AVG_A > 550) & (g.T5_AVG_A.diff().abs().rolling(15).max() < 5)
+    dif = g.TI_0305 - g[VIZINHOS].median(axis=1); b = pd.DataFrame({"d": dif, "T5": g.T5_AVG_A})[op].loc[base[0]:base[1]].dropna()
+    coef = np.polyfit(b.T5, b.d, 1); res = (dif - np.polyval(coef, g.T5_AVG_A)).where(op); rb = res.loc[base[0]:base[1]]
+    return res - rb.median(), coef, float(1.4826 * (rb - rb.median()).abs().median())
+
+
+def figura_mancal(c: dict, g: pd.DataFrame, destino: Path, R: pd.DataFrame | None = None) -> dict:
     x = g.loc[c["ini"]:c["fim"]].copy(); op = x.RUNNING_A.fillna(0) > 0.5
-    viz = x[VIZINHOS].median(axis=1); dif = (x.TI_0305 - viz)
-    b0, b1 = c["base"]; ref = dif.where(op & (x.T5_AVG_A > 600)).loc[b0:b1].dropna()
-    med, mad = float(ref.median()), float(1.4826 * (ref - ref.median()).abs().median())
-    fig, axs = plt.subplots(3, 1, figsize=(12, 8.2), sharex=True, gridspec_kw=dict(height_ratios=[1.3, 1.0, 0.8], hspace=0.32))
+    viz = x[VIZINHOS].median(axis=1); b0, b1 = c["base"]
+    if c.get("carga"):
+        res, coef, mad = residuo_carga(g, c["base"]); dif, med = res.loc[x.index], 0.0
+        tit2 = f"Diferença TI_0305 − vizinhos descontada a carga (reta {num(round(coef[1], 2))} + {num(round(coef[0], 4))}·T5 de {pd.Timestamp(b0):%d/%m} a {pd.Timestamp(b1):%d/%m}); faixa = ± 4 MAD"
+    else:
+        dif = (x.TI_0305 - viz); ref = dif.where(op & (x.T5_AVG_A > 600)).loc[b0:b1].dropna()
+        med, mad = float(ref.median()), float(1.4826 * (ref - ref.median()).abs().median())
+        tit2 = f"Diferença TI_0305 − vizinhos; faixa = mediana ± 4 MAD de {pd.Timestamp(b0):%d/%m} a {pd.Timestamp(b1):%d/%m %H:%M}"
+    n = 3 if R is None else 4
+    fig, axs = plt.subplots(n, 1, figsize=(12, 8.2 if n == 3 else 10.2), sharex=True, gridspec_kw=dict(height_ratios=[1.3, 1.0, 0.8, 0.9][:n], hspace=0.32))
     m = lambda s: s.where(op)  # só com a máquina operando (parada: leitura espúria da TI_0305)
     ax = axs[0]; _eixo(ax, "Mancal radial LNA do compressor (TI_0305) e mancais vizinhos (mediana de TI_0303 e TI_0307), máquina operando", "°C")
     _paradas(ax, op); ax.plot(m(viz).index, m(viz), color=CINZA, lw=1.1, label="vizinhos (mediana)"); ax.plot(m(x.TI_0305).index, m(x.TI_0305), color=AZUL, lw=1.4, label="TI_0305")
@@ -149,15 +171,17 @@ def figura_mancal(c: dict, g: pd.DataFrame, destino: Path) -> dict:
         ax.axhline(v, color=TINTA2, lw=0.8, ls=(0, (4, 3)))
     ax.text(x.index[-1], H - 1.5, "limites: alto 120, muito alto 125", fontsize=8, color=TINTA2, ha="right", va="top")
     ax.set_ylim(50, 135); ax.legend(loc="center left", bbox_to_anchor=(0.16, 0.55), frameon=False, fontsize=8.5, labelcolor=TINTA2)
-    ax = axs[1]; _eixo(ax, f"Diferença TI_0305 − vizinhos; faixa = mediana ± 4 MAD de {pd.Timestamp(b0):%d/%m} a {pd.Timestamp(b1):%d/%m %H:%M}", "°C")
+    ax = axs[1]; _eixo(ax, tit2, "°C")
     _paradas(ax, op); ax.axhspan(med - 4 * mad, med + 4 * mad, color=GRADE, lw=0, zorder=0.5); ax.plot(m(dif).index, m(dif), color=AZUL, lw=1.4)
-    ax.set_ylim(0, 45)
+    ax.set_ylim(*((-10, 30) if c.get("carga") else (0, 45)))
     ax = axs[2]; _eixo(ax, "Carga: temperatura média de exaustão T5; faixa clara = máquina parada", "°C")
-    _paradas(ax, op); ax.plot(m(x.T5_AVG_A).index, m(x.T5_AVG_A), color=AZUL, lw=1.2); ax.set_ylim(450, 800)
+    _paradas(ax, op); ax.plot(m(x.T5_AVG_A).index, m(x.T5_AVG_A), color=AZUL, lw=1.2); ax.set_ylim(400, 800)
+    if R is not None:
+        ax = axs[3]; _eixo(ax, "Detector publicado (replay): canais acesos no nível A e alarme emitido", "faixas"); _paradas(ax, op); _painel_detector(ax, R, c["ini"], c["fim"])
     _eventos(c, axs, 133); _fecha(c, fig, axs, destino)
-    z = (dif.where(op) - med) / mad
+    z = (dif.where(op) - med) / mad; z6 = z.dropna().rolling("6h").median()  # mediana de 6 h: ignora pico isolado de transiente
     return dict(base_mediana=round(med, 2), base_mad=round(mad, 3), z_max=round(float(z.max()), 1), t_z_max=z.idxmax(),
-                primeiro_4mad=z[z > 4].index.min(), horas_acima_4mad=round(float((z > 4).sum()) * 2 / 60, 1))
+                primeiro_4mad=z[z > 4].index.min(), primeiro_4mad_6h=z6[z6 > 4].index.min(), horas_acima_4mad=round(float((z > 4).sum()) * 2 / 60, 1))
 
 
 def _painel_detector(ax, R: pd.DataFrame, ini: str, fim: str):
@@ -195,9 +219,10 @@ def figura_zooms(c: dict, destino: Path) -> pd.DataFrame:
     tudo = export_30s(min(z[1] for z in c["zooms"]), max(z[2] for z in c["zooms"]), [tag] + ctx + ["RUNNING_A"])  # uma leitura só
     for ax, (nome, a, b), yl in zip(axs, c["zooms"], ylims):
         x = tudo.loc[a:b]; _eixo(ax, nome, unid)
-        mins = (x.index - x.index[0]).total_seconds() / 60; parada = x.RUNNING_A.to_numpy() < 0.5
-        if parada.any():
-            ax.axvspan(mins[parada.argmax()], mins[-1], color=PARADA, lw=0, zorder=0)
+        mins = (x.index - x.index[0]).total_seconds() / 60; roda = x.RUNNING_A.to_numpy() >= 0.5
+        for a_, b_ in _trechos(pd.Series(~roda, index=mins)):
+            ax.axvspan(a_, b_, color=PARADA, lw=0, zorder=0)
+        i0 = int(roda.argmax()); depois = ~roda[i0:]  # a primeira parada depois do primeiro instante operando
         if ctx:
             ax.plot(mins, x[ctx].median(axis=1), color=CINZA, lw=1.1)
         ax.plot(mins, x[tag], color=AZUL, lw=1.4)
@@ -206,8 +231,8 @@ def figura_zooms(c: dict, destino: Path) -> pd.DataFrame:
                 ax.axhline(v, color=TINTA2, lw=0.8, ls=(0, (4, 3)))
         ax.set_ylim(*yl); ax.set_xlabel(f"minutos desde {pd.Timestamp(a):%d/%m %H:%M}", fontsize=8.5, color=TINTA2)
         r = (x[tag].diff().rolling(10).mean() * 2).where(x.RUNNING_A > 0.5)  # por minuto, média de 5 min, só com a máquina operando
-        taxas.append(dict(janela=nome, taxa_max_por_min=round(float(r.max()), 2), subida=round(float(x[tag].where(x.RUNNING_A > 0.5).max() - x[tag].iloc[0]), 2),
-                          parada=x.index[parada.argmax()] if parada.any() else "—"))
+        taxas.append(dict(janela=nome, taxa_max_por_min=round(float(r.max()), 2), subida=round(float(x[tag][roda].max() - x[tag].iloc[i0]), 2),
+                          parada=x.index[i0 + int(depois.argmax())] if depois.any() else "—"))
     if hi < ylims[0][1]:
         axs[0].text(0, hi + 0.01 * (ylims[0][1] - ylims[0][0]), f"muito alto {num(hi)}", fontsize=8, color=TINTA2, va="bottom")
     quem = f"{tag} (azul) e vizinhos (cinza)" if ctx else tag
@@ -220,9 +245,11 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--caso", required=True, choices=sorted(CASOS)); a = ap.parse_args()
     SAIDA.mkdir(parents=True, exist_ok=True); c = CASOS[a.caso]; g = grade_local()
     if c["tipo"] == "mancal":
-        r = figura_mancal(c, g, SAIDA / f"caso_{a.caso}_trajetoria.png")
-        print(f"diferença TI_0305 − vizinhos: base {r['base_mediana']} °C (MAD {r['base_mad']}); máximo {r['z_max']} MAD em {r['t_z_max']:%d/%m %H:%M}; "
-              f"primeiro instante acima de 4 MAD {r['primeiro_4mad']:%d/%m %H:%M}; {r['horas_acima_4mad']} h acima de 4 MAD com a máquina operando", flush=True)
+        R = detector_local() if pd.Timestamp(c["ini"]) >= pd.Timestamp("2024-10-25") else None
+        r = figura_mancal(c, g, SAIDA / f"caso_{a.caso}_trajetoria.png", R)
+        print(f"diferença TI_0305 − vizinhos{' descontada a carga' if c.get('carga') else ''}: base {r['base_mediana']} °C (MAD {r['base_mad']}); máximo {r['z_max']} MAD "
+              f"em {r['t_z_max']:%d/%m %H:%M}; primeiro instante acima de 4 MAD {r['primeiro_4mad']:%d/%m %H:%M} (mediana de 6 h: {r['primeiro_4mad_6h']:%d/%m %H:%M}); "
+              f"{r['horas_acima_4mad']} h acima de 4 MAD com a máquina operando", flush=True)
     else:
         figura_selagem(c, g, detector_local(), SAIDA / f"caso_{a.caso}_trajetoria.png")
         print(f"{c['zoom_tag']} por trecho de operação:\n{patamares(g, c['zoom_tag'], c['ini'], c['fim']).to_string(index=False)}", flush=True)
