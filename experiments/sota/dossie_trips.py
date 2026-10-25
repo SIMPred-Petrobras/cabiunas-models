@@ -52,6 +52,14 @@ CASOS = {
         zooms=[("13/03 (modo comum)", "2025-03-13 11:00", "2025-03-13 11:50"), ("17/03 (trip)", "2025-03-17 14:20", "2025-03-17 15:17"),
                ("18/03 (religa e trip)", "2025-03-18 05:00", "2025-03-18 08:18")],
     ),
+    "2025-04-07": dict(
+        tipo="mancal", titulo="Abril de 2025 — trip de 07/04 18:18 (mancal LNA, registro)",
+        ini="2025-03-18 12:00", fim="2025-04-09 00:00", base=("2025-02-01", "2025-02-27 05:00"), carga=True,
+        eventos=[("2025-03-25 00:00", "deriva\nrecomeça"), ("2025-03-31 04:50", "óleo quente\n(parada)"), ("2025-04-02 02:18", "óleo quente\n(parada)"),
+                 ("2025-04-04 09:00", "carga\nsobe"), ("2025-04-07 04:52", ""), ("2025-04-07 18:18", "TRIP")],
+        zooms=[("31/03 (óleo quente)", "2025-03-31 04:20", "2025-03-31 05:00"), ("02/04 (óleo quente)", "2025-04-02 01:25", "2025-04-02 02:25"),
+               ("07/04 (trip)", "2025-04-07 17:30", "2025-04-07 18:19")],
+    ),
 }
 
 
@@ -150,6 +158,39 @@ def residuo_carga(g: pd.DataFrame, base: tuple[str, str]) -> tuple[pd.Series, np
     dif = g.TI_0305 - g[VIZINHOS].median(axis=1); b = pd.DataFrame({"d": dif, "T5": g.T5_AVG_A})[op].loc[base[0]:base[1]].dropna()
     coef = np.polyfit(b.T5, b.d, 1); res = (dif - np.polyval(coef, g.T5_AVG_A)).where(op); rb = res.loc[base[0]:base[1]]
     return res - rb.median(), coef, float(1.4826 * (rb - rb.median()).abs().median())
+
+
+JANELAS = {"7d": (pd.Timedelta(days=7), pd.Timedelta(days=1)), "24h": (pd.Timedelta(hours=24), pd.Timedelta(hours=2)),
+           "2h": (pd.Timedelta(hours=2), pd.Timedelta(minutes=10)), "10min": (pd.Timedelta(minutes=10), pd.Timedelta(0))}
+
+
+def varredura(g: pd.DataFrame, trip: str, base: tuple[str, str], partida_h: float = 2.0) -> pd.DataFrame:
+    """Todas as tags analógicas contra a própria faixa normal, descontada a carga, nas janelas antes do trip (JANELAS: de T − a até T − b).
+    Por tag: reta tag × T5 na base (operando, aquecida, carga estável); nas janelas, a mediana do resíduo em MAD da base (z) e a fração do tempo
+    fora de [p0,5; p99,5] do resíduo na base (fora). O PI_0319 fica fora (alterna entre dois valores). Só conta a máquina operando e aquecida (as primeiras `partida_h` horas depois de cada partida
+    ficam fora). O MAD tem piso de 1% da faixa p1–p99 da base, para tag quase constante não explodir. O T5 entra cru, como contexto de carga."""
+    T = pd.Timestamp(trip); op = (g.RUNNING_A > 0.5) & (g.T5_AVG_A > 300)
+    ultima = pd.Series(g.index.where(op & ~op.shift(1, fill_value=False)), index=g.index).ffill()  # instante da última partida
+    quente = op & ((g.index.to_series() - ultima) > pd.Timedelta(hours=partida_h))
+    bm = (quente & (g.T5_AVG_A > 550) & (g.T5_AVG_A.diff().abs().rolling(15).max() < 5)).loc[base[0]:base[1]]
+    linhas = []
+    for tag in [c for c in g.columns if c not in ("RUNNING_A", "HSX_6240001A", "PI_0319")]:  # PI_0319 (gás de partida) é sinal de dois estados
+        b = g[tag].loc[base[0]:base[1]][bm].dropna()
+        if len(b) < 100 or b.std() == 0:
+            continue
+        if tag == "T5_AVG_A":
+            res = g[tag]
+        else:
+            coef = np.polyfit(g.T5_AVG_A.loc[b.index], b, 1); res = g[tag] - np.polyval(coef, g.T5_AVG_A)
+        rb = res.loc[b.index]; med = rb.median(); mad = max(1.4826 * (rb - med).abs().median(), 0.01 * (rb.quantile(0.99) - rb.quantile(0.01)), 1e-9)
+        lo, hi = rb.quantile(0.005), rb.quantile(0.995); r = res.where(quente); linha = dict(tag=tag)
+        for nome, (a, z) in JANELAS.items():
+            w = r.loc[T - a:T - z].dropna()
+            linha[f"z {nome}"] = round(float((w.median() - med) / mad), 1) if len(w) else np.nan
+            linha[f"fora {nome}"] = round(float(((w < lo) | (w > hi)).mean()), 2) if len(w) else np.nan
+        linhas.append(linha)
+    t = pd.DataFrame(linhas).set_index("tag")
+    return t.reindex(t[[f"z {n}" for n in JANELAS]].abs().max(axis=1).sort_values(ascending=False).index)
 
 
 def figura_mancal(c: dict, g: pd.DataFrame, destino: Path, R: pd.DataFrame | None = None) -> dict:
