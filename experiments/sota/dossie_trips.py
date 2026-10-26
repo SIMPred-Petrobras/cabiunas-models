@@ -90,6 +90,12 @@ CASOS = {
         zooms=[("08/12 parada curta e religamento", "2025-12-08 19:40", "2025-12-08 21:00"), ("08–09/12 madrugada", "2025-12-08 21:00", "2025-12-09 05:00"),
                ("09/12 disparo", "2025-12-09 04:50", "2025-12-09 05:38")],
     ),
+    "2026-02-26": dict(
+        tipo="oleo", titulo="Fevereiro de 2026 — trip de óleo de 26/02 12:34 (registro)",
+        ini="2026-01-20 00:00", fim="2026-02-28 00:00",
+        eventos=[("2026-01-29 08:04", "religa"), ("2026-02-25 16:18", ""), ("2026-02-26 12:34", "pico do PDIT 25/02\ne TRIP 26/02")],
+        oleo=dict(ini="2026-02-26 12:05", fim="2026-02-26 12:37", eventos=[("2026-02-26 12:34:00", "header baixo 12:33:49\ne TRIP 12:34:20")]),
+    ),
 }
 
 
@@ -282,6 +288,24 @@ def figura_selagem(c: dict, g: pd.DataFrame, R: pd.DataFrame, destino: Path):
     _eventos(c, axs, 12.2); _fecha(c, fig, axs, destino)
 
 
+def figura_oleo_trajetoria(c: dict, g: pd.DataFrame, R: pd.DataFrame, destino: Path):
+    """Semanas antes de um trip de óleo: as pressões em escala de perto (os limites ficam fora da escala), o tanque, a carga e o detector."""
+    x = g.loc[c["ini"]:c["fim"]]; op = (x.RUNNING_A.fillna(0) > 0.5) & (x.T5_AVG_A > 300); m = lambda s: s.where(op)
+    fig, axs = plt.subplots(5, 1, figsize=(12, 11), sharex=True, gridspec_kw=dict(height_ratios=[1, 1, 0.8, 0.8, 0.9], hspace=0.36))
+    paineis = [("Pressão do óleo do compressor (PI_0308), operando; limites 0,84 e 0,56 ficam fora da escala", "kgf/cm²", "PI_0308", (1.30, 1.46)),
+               ("Header de óleo da turbina (PI_0339), operando; limites 2,88 e 1,78 ficam fora da escala", "kgf/cm²", "PI_0339", (3.0, 3.5)),
+               ("Temperatura do tanque de óleo (TI_0325)", "°C", "TI_0325", (55, 72)), ("Carga: temperatura média de exaustão T5", "°C", "T5_AVG_A", (400, 800))]
+    for ax, (tit, un, t, yl) in zip(axs, paineis):
+        _eixo(ax, tit, un); _paradas(ax, op); ax.plot(x.index, m(x[t]), color=AZUL, lw=1.1); ax.set_ylim(*yl)
+    ax = axs[4]; _eixo(ax, "Detector publicado (replay): canais acesos no nível A e alarme emitido", "faixas"); _paradas(ax, op); _painel_detector(ax, R, c["ini"], c["fim"])
+    for t, rot in c["eventos"]:
+        for a in axs:
+            a.axvline(pd.Timestamp(t), color=TINTA, lw=0.8, ls=(0, (2, 2)), zorder=3)
+        if rot:
+            axs[0].text(pd.Timestamp(t), 1.455, rot, fontsize=8, color=TINTA, ha="center", va="top", bbox=dict(fc="white", ec="none", pad=1.2))
+    _fecha(c, fig, axs, destino)
+
+
 def figura_oleo(o: dict, destino: Path):
     """O trip de óleo a 30 s: pressão do óleo do compressor, header da turbina, tanque e carga (limites da planilha da planta)."""
     tags = ["PI_0308", "PI_0339", "PI_0340", "TI_0325", "T5_AVG_A", "RUNNING_A"]; x = export_30s(o["ini"], o["fim"], tags)
@@ -345,10 +369,13 @@ def main():
         print(f"diferença TI_0305 − vizinhos{' descontada a carga' if c.get('carga') else ''}: base {r['base_mediana']} °C (MAD {r['base_mad']}); máximo {r['z_max']} MAD "
               f"em {r['t_z_max']:%d/%m %H:%M}; primeiro instante acima de 4 MAD {r['primeiro_4mad']:%d/%m %H:%M} (mediana de 6 h: {r['primeiro_4mad_6h']:%d/%m %H:%M}); "
               f"{r['horas_acima_4mad']} h acima de 4 MAD com a máquina operando", flush=True)
-    else:
+    elif c["tipo"] == "selagem":
         figura_selagem(c, g, detector_local(), SAIDA / f"caso_{a.caso}_trajetoria.png")
         print(f"{c['zoom_tag']} por trecho de operação:\n{patamares(g, c['zoom_tag'], c['ini'], c['fim']).to_string(index=False)}", flush=True)
-    print(figura_zooms(c, SAIDA / f"caso_{a.caso}_degraus_30s.png").to_string(index=False), flush=True)
+    else:
+        figura_oleo_trajetoria(c, g, detector_local(), SAIDA / f"caso_{a.caso}_trajetoria.png")
+    if c.get("zooms"):
+        print(figura_zooms(c, SAIDA / f"caso_{a.caso}_degraus_30s.png").to_string(index=False), flush=True)
     if c.get("oleo"):
         figura_oleo(c["oleo"], SAIDA / f"caso_{a.caso}_oleo_30s.png")
     print(f"figuras em {SAIDA}", flush=True)
